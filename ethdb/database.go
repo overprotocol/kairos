@@ -55,6 +55,11 @@ type Compacter interface {
 	Compact(start []byte, limit []byte) error
 }
 
+type RangeDeleter interface {
+	// DeleteRange deletes a range of keys from the data store.
+	DeleteRange(start, end []byte) error
+}
+
 // KeyValueStore contains all the methods required to allow handling different
 // key-value data stores backing the high level database.
 type KeyValueStore interface {
@@ -65,6 +70,7 @@ type KeyValueStore interface {
 	Iteratee
 	Compacter
 	Snapshotter
+	RangeDeleter
 	io.Closer
 }
 
@@ -188,5 +194,6 @@ type Database interface {
 	Stater
 	Compacter
 	Snapshotter
+	RangeDeleter
 	io.Closer
 }

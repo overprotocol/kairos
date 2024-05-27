@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -36,7 +37,7 @@ func FuzzPrecompiledContracts(f *testing.F) {
 			return
 		}
 		inWant := string(input)
-		RunPrecompiledContract(p, input, gas)
+		RunPrecompiledContract(p, input, gas, AccountRef(common.HexToAddress("1337")), big.NewInt(0), mockEVM)
 		if inHave := string(input); inWant != inHave {
 			t.Errorf("Precompiled %v modified input data", a)
 		}

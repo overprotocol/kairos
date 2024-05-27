@@ -48,6 +48,8 @@ func checkDanglingDiskStorage(chaindb ethdb.KeyValueStore) error {
 	)
 	log.Info("Checking dangling snapshot disk storage")
 
+	epoch := *rawdb.ReadSnapshotEpoch(chaindb)
+
 	defer it.Release()
 	for it.Next() {
 		k := it.Key()
@@ -61,7 +63,13 @@ func checkDanglingDiskStorage(chaindb ethdb.KeyValueStore) error {
 			log.Info("Iterating snap storage", "at", fmt.Sprintf("%#x", accKey), "elapsed", common.PrettyDuration(time.Since(start)))
 			lastReport = time.Now()
 		}
-		if data := rawdb.ReadAccountSnapshot(chaindb, common.BytesToHash(accKey)); len(data) == 0 {
+
+		var currData, ckptData []byte
+		currData = rawdb.ReadAccountSnapshot(chaindb, epoch, common.BytesToHash(accKey))
+		if epoch > 0 {
+			ckptData = rawdb.ReadAccountSnapshot(chaindb, epoch-1, common.BytesToHash(accKey))
+		}
+		if len(currData) == 0 && len(ckptData) == 0 {
 			log.Warn("Dangling storage - missing account", "account", fmt.Sprintf("%#x", accKey), "storagekey", fmt.Sprintf("%#x", k))
 			return fmt.Errorf("dangling snapshot storage account %#x", accKey)
 		}
@@ -75,7 +83,7 @@ func checkDanglingDiskStorage(chaindb ethdb.KeyValueStore) error {
 func checkDanglingMemStorage(db ethdb.KeyValueStore) error {
 	start := time.Now()
 	log.Info("Checking dangling journalled storage")
-	err := iterateJournal(db, func(pRoot, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
+	err := iterateJournal(db, func(pRoot common.Hash, epoch uint32, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
 		for accHash := range storage {
 			if _, ok := accounts[accHash]; !ok {
 				log.Error("Dangling storage - missing account", "account", fmt.Sprintf("%#x", accHash), "root", root)
@@ -95,9 +103,10 @@ func checkDanglingMemStorage(db ethdb.KeyValueStore) error {
 // up through the diff layers.
 func CheckJournalAccount(db ethdb.KeyValueStore, hash common.Hash) error {
 	// Look up the disk layer first
-	baseRoot := rawdb.ReadSnapshotRoot(db)
+	epoch := *rawdb.ReadSnapshotEpoch(db)
+	baseRoot := rawdb.ReadSnapshotRoot(db, epoch)
 	fmt.Printf("Disklayer: Root: %x\n", baseRoot)
-	if data := rawdb.ReadAccountSnapshot(db, hash); data != nil {
+	if data := rawdb.ReadAccountSnapshot(db, epoch, hash); data != nil {
 		account, err := types.FullAccount(data)
 		if err != nil {
 			panic(err)
@@ -106,6 +115,8 @@ func CheckJournalAccount(db ethdb.KeyValueStore, hash common.Hash) error {
 		fmt.Printf("\taccount.balance: %x\n", account.Balance)
 		fmt.Printf("\taccount.root: %x\n", account.Root)
 		fmt.Printf("\taccount.codehash: %x\n", account.CodeHash)
+		fmt.Printf("\taccount.uihash: %x\n", account.UiHash)
+		fmt.Printf("\taccount.storagecount: %d\n", account.StorageCount)
 	}
 	// Check storage
 	{
@@ -119,7 +130,7 @@ func CheckJournalAccount(db ethdb.KeyValueStore, hash common.Hash) error {
 	}
 	var depth = 0
 
-	return iterateJournal(db, func(pRoot, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
+	return iterateJournal(db, func(pRoot common.Hash, epoch uint32, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
 		_, a := accounts[hash]
 		_, b := destructs[hash]
 		_, c := storage[hash]
@@ -137,6 +148,8 @@ func CheckJournalAccount(db ethdb.KeyValueStore, hash common.Hash) error {
 			fmt.Printf("\taccount.balance: %x\n", account.Balance)
 			fmt.Printf("\taccount.root: %x\n", account.Root)
 			fmt.Printf("\taccount.codehash: %x\n", account.CodeHash)
+			fmt.Printf("\taccount.uihash: %x\n", account.UiHash)
+			fmt.Printf("\taccount.storagecount: %d\n", account.StorageCount)
 		}
 		if _, ok := destructs[hash]; ok {
 			fmt.Printf("\t Destructed!")

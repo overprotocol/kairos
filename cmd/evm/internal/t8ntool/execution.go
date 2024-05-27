@@ -271,7 +271,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 			// If the transaction created a contract, store the creation address in the receipt.
 			if msg.To == nil {
-				receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
+				receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.MsgEpochCoverage(), tx.MsgNonce())
 			}
 
 			// Set the receipt logs and create the bloom filter.
@@ -344,7 +344,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	// Re-create statedb instance with new root upon the updated database
 	// for accessing latest states.
-	statedb, err = state.New(root, statedb.Database(), nil)
+	statedb, err = state.New(root, statedb.GetLastCheckpointRoot(), 0, 0, statedb.Database(), nil)
 	if err != nil {
 		return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not reopen state: %v", err))
 	}
@@ -354,18 +354,20 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 func MakePreState(db ethdb.Database, accounts core.GenesisAlloc) *state.StateDB {
 	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true})
-	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+	statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, sdb, nil)
 	for addr, a := range accounts {
 		statedb.SetCode(addr, a.Code)
+		statedb.SetUiHash(addr, a.UiHash)
 		statedb.SetNonce(addr, a.Nonce)
 		statedb.SetBalance(addr, a.Balance)
 		for k, v := range a.Storage {
 			statedb.SetState(addr, k, v)
 		}
+		statedb.SetStorageCount(addr, a.StorageCount)
 	}
 	// Commit and re-open to start with a clean state.
 	root, _ := statedb.Commit(0, false)
-	statedb, _ = state.New(root, sdb, nil)
+	statedb, _ = state.New(root, types.EmptyRootHash, 0, 0, sdb, nil)
 	return statedb
 }
 

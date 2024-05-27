@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -52,29 +53,70 @@ var (
 	errMissingTrie = errors.New("missing trie")
 )
 
+type generatorMarker struct {
+	marker []byte // Marker for the state that's indexed during initial layer generation
+	lock   sync.RWMutex
+}
+
+func newGeneratorMarker(marker []byte) *generatorMarker {
+	return &generatorMarker{marker: marker}
+}
+
+func (gm *generatorMarker) set(marker []byte) {
+	gm.lock.Lock()
+	defer gm.lock.Unlock()
+	gm.marker = marker
+}
+
+func (gm *generatorMarker) get() []byte {
+	gm.lock.RLock()
+	defer gm.lock.RUnlock()
+	return gm.marker
+}
+
 // generateSnapshot regenerates a brand new snapshot based on an existing state
 // database and head block asynchronously. The snapshot is returned immediately
 // and generation is continued in the background until done.
-func generateSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, cache int, root common.Hash) *diskLayer {
+func generateSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, cache int, epoch uint32, root, ckptRoot common.Hash, deleteEpochData func(uint32)) *diskLayer {
 	// Create a new disk layer with an initialized state marker at zero
 	var (
-		stats     = &generatorStats{start: time.Now()}
-		batch     = diskdb.NewBatch()
-		genMarker = []byte{} // Initialized but empty!
+		stats  = &generatorStats{start: time.Now()}
+		batch  = diskdb.NewBatch()
+		marker = []byte{} // Initialized but empty!
 	)
-	rawdb.WriteSnapshotRoot(batch, root)
-	journalProgress(batch, genMarker, stats)
+	rawdb.WriteSnapshotEpoch(batch, epoch)
+	rawdb.WriteSnapshotRoot(batch, epoch, root)
+	if epoch > 0 {
+		rawdb.WriteSnapshotRoot(batch, epoch-1, ckptRoot)
+	}
+	journalProgress(batch, marker, stats)
 	if err := batch.Write(); err != nil {
 		log.Crit("Failed to write initialized state marker", "err", err)
 	}
+	snapshotCache := fastcache.New(cache * 1024 * 1024)
+	genMarker := newGeneratorMarker(marker)
+	var ckptBase *ckptDiskLayer
+	if epoch > 0 {
+		ckptBase = &ckptDiskLayer{
+			diskdb:    diskdb,
+			triedb:    triedb,
+			epoch:     epoch - 1,
+			root:      ckptRoot,
+			cache:     snapshotCache,
+			genMarker: genMarker,
+		}
+	}
 	base := &diskLayer{
-		diskdb:     diskdb,
-		triedb:     triedb,
-		root:       root,
-		cache:      fastcache.New(cache * 1024 * 1024),
-		genMarker:  genMarker,
-		genPending: make(chan struct{}),
-		genAbort:   make(chan chan *generatorStats),
+		diskdb:          diskdb,
+		triedb:          triedb,
+		epoch:           epoch,
+		root:            root,
+		ckptLayer:       ckptBase,
+		cache:           snapshotCache,
+		genMarker:       genMarker,
+		genPending:      make(chan struct{}),
+		genAbort:        make(chan chan *generatorStats),
+		deleteEpochData: deleteEpochData,
 	}
 	go base.generate(stats)
 	log.Debug("Start snapshot generation", "root", root)
@@ -246,7 +288,7 @@ func (dl *diskLayer) proveRange(ctx *generatorContext, trieId *trie.ID, prefix [
 	// Snap state is chunked, generate edge proofs for verification.
 	tr, err := trie.New(trieId, dl.triedb)
 	if err != nil {
-		ctx.stats.Log("Trie missing, state snapshotting paused", dl.root, dl.genMarker)
+		ctx.stats.Log("Trie missing, state snapshotting paused", dl.root, dl.genMarker.get())
 		return nil, errMissingTrie
 	}
 	// Generate the Merkle proofs for the first and last element
@@ -299,7 +341,7 @@ func (dl *diskLayer) proveRange(ctx *generatorContext, trieId *trie.ID, prefix [
 // However, for accounts, the storage trie of the account needs to be checked. Also,
 // dangling storages(storage exists but the corresponding account is missing) need to
 // be cleaned up.
-type onStateCallback func(key []byte, val []byte, write bool, delete bool) error
+type onStateCallback func(epoch uint32, key []byte, val []byte, write bool, delete bool) error
 
 // generateRange generates the state segment with particular prefix. Generation can
 // either verify the correctness of existing state through range-proof and skip
@@ -327,7 +369,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 		// The verification is passed, process each state with the given
 		// callback function. If this state represents a contract, the
 		// corresponding storage check will be performed in the callback
-		if err := result.forEach(func(key []byte, val []byte) error { return onState(key, val, false, false) }); err != nil {
+		if err := result.forEach(func(key []byte, val []byte) error { return onState(trieId.Epoch, key, val, false, false) }); err != nil {
 			return false, nil, err
 		}
 		// Only abort the iteration when both database and trie are exhausted
@@ -364,11 +406,11 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 			return false, nil, err
 		}
 		if nodes != nil {
-			tdb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+			tdb.Update(root, types.EmptyRootHash, trieId.Epoch, 0, trienode.NewWithNodeSet(nodes), nil)
 			tdb.Commit(root, false)
 		}
 		resolver = func(owner common.Hash, path []byte, hash common.Hash) []byte {
-			return rawdb.ReadTrieNode(mdb, owner, path, hash, tdb.Scheme())
+			return rawdb.ReadTrieNode(mdb, trieId.Epoch, owner, path, hash, tdb.Scheme())
 		}
 	}
 	// Construct the trie for state iteration, reuse the trie
@@ -377,7 +419,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 	if tr == nil {
 		tr, err = trie.New(trieId, dl.triedb)
 		if err != nil {
-			ctx.stats.Log("Trie missing, state snapshotting paused", dl.root, dl.genMarker)
+			ctx.stats.Log("Trie missing, state snapshotting paused", dl.root, dl.genMarker.get())
 			return false, nil, errMissingTrie
 		}
 	}
@@ -415,7 +457,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 			if cmp := bytes.Compare(kvkeys[0], iter.Key); cmp < 0 {
 				// delete the key
 				istart := time.Now()
-				if err := onState(kvkeys[0], nil, false, true); err != nil {
+				if err := onState(trieId.Epoch, kvkeys[0], nil, false, true); err != nil {
 					return false, nil, err
 				}
 				kvkeys = kvkeys[1:]
@@ -437,7 +479,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 			break
 		}
 		istart := time.Now()
-		if err := onState(iter.Key, iter.Value, write, false); err != nil {
+		if err := onState(trieId.Epoch, iter.Key, iter.Value, write, false); err != nil {
 			return false, nil, err
 		}
 		internal += time.Since(istart)
@@ -452,7 +494,7 @@ func (dl *diskLayer) generateRange(ctx *generatorContext, trieId *trie.ID, prefi
 	// Delete all stale snapshot states remaining
 	istart := time.Now()
 	for _, key := range kvkeys {
-		if err := onState(key, nil, false, true); err != nil {
+		if err := onState(trieId.Epoch, key, nil, false, true); err != nil {
 			return false, nil, err
 		}
 		deleted += 1
@@ -482,8 +524,8 @@ func (dl *diskLayer) checkAndFlush(ctx *generatorContext, current []byte) error 
 	default:
 	}
 	if ctx.batch.ValueSize() > ethdb.IdealBatchSize || abort != nil {
-		if bytes.Compare(current, dl.genMarker) < 0 {
-			log.Error("Snapshot generator went backwards", "current", fmt.Sprintf("%x", current), "genMarker", fmt.Sprintf("%x", dl.genMarker))
+		if bytes.Compare(current, dl.genMarker.get()) < 0 {
+			log.Error("Snapshot generator went backwards", "current", fmt.Sprintf("%x", current), "genMarker", fmt.Sprintf("%x", dl.genMarker.get()))
 		}
 		// Flush out the batch anyway no matter it's empty or not.
 		// It's possible that all the states are recovered and the
@@ -495,9 +537,7 @@ func (dl *diskLayer) checkAndFlush(ctx *generatorContext, current []byte) error 
 		}
 		ctx.batch.Reset()
 
-		dl.lock.Lock()
-		dl.genMarker = current
-		dl.lock.Unlock()
+		dl.genMarker.set(current)
 
 		if abort != nil {
 			ctx.stats.Log("Aborting state snapshot generation", dl.root, current)
@@ -505,6 +545,7 @@ func (dl *diskLayer) checkAndFlush(ctx *generatorContext, current []byte) error 
 		}
 		// Don't hold the iterators too long, release them to let compactor works
 		ctx.reopenIterator(snapAccount)
+		ctx.reopenIterator(snapCkptAccount)
 		ctx.reopenIterator(snapStorage)
 	}
 	if time.Since(ctx.logged) > 8*time.Second {
@@ -516,8 +557,8 @@ func (dl *diskLayer) checkAndFlush(ctx *generatorContext, current []byte) error 
 
 // generateStorages generates the missing storage slots of the specific contract.
 // It's supposed to restart the generation from the given origin position.
-func generateStorages(ctx *generatorContext, dl *diskLayer, stateRoot common.Hash, account common.Hash, storageRoot common.Hash, storeMarker []byte) error {
-	onStorage := func(key []byte, val []byte, write bool, delete bool) error {
+func generateStorages(ctx *generatorContext, dl *diskLayer, epoch uint32, stateRoot common.Hash, account common.Hash, storageRoot common.Hash, storeMarker []byte) error {
+	onStorage := func(epoch uint32, key []byte, val []byte, write bool, delete bool) error {
 		defer func(start time.Time) {
 			snapStorageWriteCounter.Inc(time.Since(start).Nanoseconds())
 		}(time.Now())
@@ -545,7 +586,7 @@ func generateStorages(ctx *generatorContext, dl *diskLayer, stateRoot common.Has
 	// Loop for re-generating the missing storage slots.
 	var origin = common.CopyBytes(storeMarker)
 	for {
-		id := trie.StorageTrieID(stateRoot, account, storageRoot)
+		id := trie.StorageTrieID(stateRoot, epoch, account, storageRoot)
 		exhausted, last, err := dl.generateRange(ctx, id, append(rawdb.SnapshotStoragePrefix, account.Bytes()...), snapStorage, origin, storageCheckRange, onStorage, nil)
 		if err != nil {
 			return err // The procedure it aborted, either by external signal or internal error.
@@ -565,14 +606,14 @@ func generateStorages(ctx *generatorContext, dl *diskLayer, stateRoot common.Has
 // storage slots in the main trie. It's supposed to restart the generation
 // from the given origin position.
 func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) error {
-	onAccount := func(key []byte, val []byte, write bool, delete bool) error {
+	onAccount := func(root common.Hash, epoch uint32, key []byte, val []byte, write bool, delete bool, storage bool) error {
 		// Make sure to clear all dangling storages before this account
 		account := common.BytesToHash(key)
 		ctx.removeStorageBefore(account)
 
 		start := time.Now()
 		if delete {
-			rawdb.DeleteAccountSnapshot(ctx.batch, account)
+			rawdb.DeleteAccountSnapshot(ctx.batch, epoch, account)
 			snapWipedAccountMeter.Mark(1)
 			snapAccountWriteCounter.Inc(time.Since(start).Nanoseconds())
 
@@ -591,6 +632,9 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 				if bytes.Equal(acc.CodeHash, types.EmptyCodeHash[:]) {
 					dataLen -= 32
 				}
+				if bytes.Equal(acc.UiHash, types.EmptyCodeHash[:]) {
+					dataLen -= 32
+				}
 				if acc.Root == types.EmptyRootHash {
 					dataLen -= 32
 				}
@@ -598,7 +642,7 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 			} else {
 				data := types.SlimAccountRLP(acc)
 				dataLen = len(data)
-				rawdb.WriteAccountSnapshot(ctx.batch, account, data)
+				rawdb.WriteAccountSnapshot(ctx.batch, epoch, account, data)
 				snapGeneratedAccountMeter.Mark(1)
 			}
 			ctx.stats.storage += common.StorageSize(1 + common.HashLength + dataLen)
@@ -607,8 +651,8 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 		// If the snap generation goes here after interrupted, genMarker may go backward
 		// when last genMarker is consisted of accountHash and storageHash
 		marker := account[:]
-		if accMarker != nil && bytes.Equal(marker, accMarker) && len(dl.genMarker) > common.HashLength {
-			marker = dl.genMarker[:]
+		if accMarker != nil && bytes.Equal(marker, accMarker) && len(dl.genMarker.get()) > common.HashLength {
+			marker = dl.genMarker.get()[:]
 		}
 		// If we've exceeded our batch allowance or termination was requested, flush to disk
 		if err := dl.checkAndFlush(ctx, marker); err != nil {
@@ -620,18 +664,27 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 		// verify or regenerate the contract storage.
 		if acc.Root == types.EmptyRootHash {
 			ctx.removeStorageAt(account)
-		} else {
+		} else if storage {
 			var storeMarker []byte
-			if accMarker != nil && bytes.Equal(account[:], accMarker) && len(dl.genMarker) > common.HashLength {
-				storeMarker = dl.genMarker[common.HashLength:]
+			if accMarker != nil && bytes.Equal(account[:], accMarker) && len(dl.genMarker.get()) > common.HashLength {
+				storeMarker = dl.genMarker.get()[common.HashLength:]
 			}
-			if err := generateStorages(ctx, dl, dl.root, account, acc.Root, storeMarker); err != nil {
+			if err := generateStorages(ctx, dl, epoch, root, account, acc.Root, storeMarker); err != nil {
 				return err
 			}
 		}
 		// Some account processed, unmark the marker
-		accMarker = nil
+		if storage {
+			accMarker = nil
+		}
 		return nil
+	}
+	type onAccountItem struct {
+		epoch  uint32
+		key    []byte
+		val    []byte
+		write  bool
+		delete bool
 	}
 	// Always reset the initial account range as 1 whenever recover from the
 	// interruption. TODO(rjl493456442) can we remove it?
@@ -639,21 +692,94 @@ func generateAccounts(ctx *generatorContext, dl *diskLayer, accMarker []byte) er
 	if len(accMarker) > 0 {
 		accountRange = 1
 	}
-	origin := common.CopyBytes(accMarker)
+	currOrigin := common.CopyBytes(accMarker)
+	ckptOrigin := common.CopyBytes(accMarker)
+
+	currQueue := common.NewQueue[onAccountItem]()
+	ckptQueue := common.NewQueue[onAccountItem]()
+
+	id := trie.StateTrieID(dl.root, dl.epoch)
+	currExhausted := false
+	var ckptId *trie.ID
+	ckptExhausted := true
+	if dl.ckptLayer != nil {
+		// The checkpoint layer is not nil, use it to generate the snapshot
+		ckptId = trie.StateTrieID(dl.ckptLayer.root, dl.ckptLayer.epoch)
+		// Set ckptExhausted to false to generate the snapshot from the checkpoint trie
+		ckptExhausted = false
+	}
 	for {
-		id := trie.StateTrieID(dl.root)
-		exhausted, last, err := dl.generateRange(ctx, id, rawdb.SnapshotAccountPrefix, snapAccount, origin, accountRange, onAccount, types.FullAccountRLP)
-		if err != nil {
-			return err // The procedure it aborted, either by external signal or internal error.
+		var err error
+		var last []byte
+		if !currExhausted && currQueue.IsEmpty() {
+			currExhausted, last, err = dl.generateRange(ctx, id, append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(id.Epoch)...), snapAccount, currOrigin, accountRange, func(epoch uint32, key, val []byte, write, delete bool) error {
+				currQueue.Enqueue(onAccountItem{epoch, key, val, write, delete})
+				return nil
+			}, types.FullAccountRLP)
+			if err != nil {
+				return err // The procedure it aborted, either by external signal or internal error.
+			}
+			currOrigin = increaseKey(last)
+			if currOrigin == nil {
+				currExhausted = true
+			}
 		}
-		origin = increaseKey(last)
+		if !ckptExhausted && ckptQueue.IsEmpty() {
+			ckptExhausted, last, err = dl.generateRange(ctx, ckptId, append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(ckptId.Epoch)...), snapCkptAccount, ckptOrigin, accountRange, func(epoch uint32, key, val []byte, write, delete bool) error {
+				ckptQueue.Enqueue(onAccountItem{epoch, key, val, write, delete})
+				return nil
+			}, types.FullAccountRLP)
+			if err != nil {
+				return err // The procedure it aborted, either by external signal or internal error.
+			}
+			ckptOrigin = increaseKey(last)
+			if ckptOrigin == nil {
+				ckptExhausted = true
+			}
+		}
 
 		// Last step, cleanup the storages after the last account.
 		// All the left storages should be treated as dangling.
-		if origin == nil || exhausted {
+		if currQueue.IsEmpty() && ckptQueue.IsEmpty() {
 			ctx.removeStorageLeft()
 			break
 		}
+
+		if currQueue.IsEmpty() { // currQueue is empty, ckptQueue is not empty
+			account, _ := ckptQueue.Dequeue()
+			if err := onAccount(dl.ckptLayer.root, account.epoch, account.key, account.val, account.write, account.delete, true); err != nil {
+				return err
+			}
+		} else if ckptQueue.IsEmpty() { // ckptQueue is empty, currQueue is not empty
+			account, _ := currQueue.Dequeue()
+			if err := onAccount(dl.root, account.epoch, account.key, account.val, account.write, account.delete, true); err != nil {
+				return err
+			}
+		} else {
+			currAccount, _ := currQueue.Peek()
+			ckptAccount, _ := ckptQueue.Peek()
+			if bytes.Compare(currAccount.key, ckptAccount.key) > 0 {
+				account, _ := ckptQueue.Dequeue()
+				if err := onAccount(dl.ckptLayer.root, account.epoch, account.key, account.val, account.write, account.delete, true); err != nil {
+					return err
+				}
+			} else if bytes.Compare(currAccount.key, ckptAccount.key) < 0 {
+				account, _ := currQueue.Dequeue()
+				if err := onAccount(dl.root, account.epoch, account.key, account.val, account.write, account.delete, true); err != nil {
+					return err
+				}
+			} else {
+				ckptAccount, _ := ckptQueue.Dequeue()
+				currAccount, _ := currQueue.Dequeue()
+				if err := onAccount(dl.ckptLayer.root, ckptAccount.epoch, ckptAccount.key, ckptAccount.val, ckptAccount.write, ckptAccount.delete, false); err != nil {
+					return err
+				}
+				if err := onAccount(dl.root, currAccount.epoch, currAccount.key, currAccount.val, currAccount.write, currAccount.delete, true); err != nil {
+					return err
+				}
+			}
+		}
+
 		accountRange = accountCheckRange
 	}
 	return nil
@@ -668,10 +794,10 @@ func (dl *diskLayer) generate(stats *generatorStats) {
 		accMarker []byte
 		abort     chan *generatorStats
 	)
-	if len(dl.genMarker) > 0 { // []byte{} is the start, use nil for that
-		accMarker = dl.genMarker[:common.HashLength]
+	if len(dl.genMarker.get()) > 0 { // []byte{} is the start, use nil for that
+		accMarker = dl.genMarker.get()[:common.HashLength]
 	}
-	stats.Log("Resuming state snapshot generation", dl.root, dl.genMarker)
+	stats.Log("Resuming state snapshot generation", dl.root, dl.genMarker.get())
 
 	// Initialize the global generator context. The snapshot iterators are
 	// opened at the interrupted position because the assumption is held
@@ -681,7 +807,7 @@ func (dl *diskLayer) generate(stats *generatorStats) {
 	// For the account or storage slot at the interruption, they will be
 	// processed twice by the generator(they are already processed in the
 	// last run) but it's fine.
-	ctx := newGeneratorContext(stats, dl.diskdb, accMarker, dl.genMarker)
+	ctx := newGeneratorContext(stats, dl.diskdb, dl.epoch, accMarker, dl.genMarker.get())
 	defer ctx.close()
 
 	if err := generateAccounts(ctx, dl, accMarker); err != nil {
@@ -712,10 +838,8 @@ func (dl *diskLayer) generate(stats *generatorStats) {
 	log.Info("Generated state snapshot", "accounts", stats.accounts, "slots", stats.slots,
 		"storage", stats.storage, "dangling", stats.dangling, "elapsed", common.PrettyDuration(time.Since(stats.start)))
 
-	dl.lock.Lock()
-	dl.genMarker = nil
+	dl.genMarker.set(nil)
 	close(dl.genPending)
-	dl.lock.Unlock()
 
 	// Someone will be looking for us, wait it out
 	abort = <-dl.genAbort
@@ -725,10 +849,11 @@ func (dl *diskLayer) generate(stats *generatorStats) {
 // increaseKey increase the input key by one bit. Return nil if the entire
 // addition operation overflows.
 func increaseKey(key []byte) []byte {
-	for i := len(key) - 1; i >= 0; i-- {
-		key[i]++
-		if key[i] != 0x0 {
-			return key
+	keyCopy := common.CopyBytes(key)
+	for i := len(keyCopy) - 1; i >= 0; i-- {
+		keyCopy[i]++
+		if keyCopy[i] != 0x0 {
+			return keyCopy
 		}
 	}
 	return nil

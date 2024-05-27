@@ -17,13 +17,18 @@
 package vm
 
 import (
+	"errors"
+	"fmt"
 	"math/big"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 )
 
@@ -35,6 +40,9 @@ type (
 	// GetHashFunc returns the n'th block hash in the blockchain
 	// and is used by the BLOCKHASH EVM op code.
 	GetHashFunc func(uint64) common.Hash
+	// GetHeaderByNumberFunc returns the header of the nth block in the chain
+	// and is used to verify restoration proofs.
+	GetHeaderByNumberFunc func(uint64) *types.Header
 )
 
 func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
@@ -42,6 +50,8 @@ func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
 	switch {
 	case evm.chainRules.IsCancun:
 		precompiles = PrecompiledContractsCancun
+	case evm.chainRules.IsAlpaca:
+		precompiles = PrecompiledContractsAlpaca
 	case evm.chainRules.IsBerlin:
 		precompiles = PrecompiledContractsBerlin
 	case evm.chainRules.IsIstanbul:
@@ -65,6 +75,8 @@ type BlockContext struct {
 	Transfer TransferFunc
 	// GetHash returns the hash corresponding to n
 	GetHash GetHashFunc
+	// GetHeaderByNumber returns the header of the nth block in the chain
+	GetHeaderByNumber GetHeaderByNumberFunc
 
 	// Block information
 	Coinbase    common.Address // Provides information for COINBASE
@@ -205,7 +217,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		}
 		evm.StateDB.CreateAccount(addr)
 	}
-	evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 
 	// Capture the tracer start/end events in debug mode
 	if debug {
@@ -224,8 +235,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 
 	if isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = RunPrecompiledContract(p, input, gas, caller, value, evm)
 	} else {
+		evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
 		code := evm.StateDB.GetCode(addr)
@@ -287,7 +299,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = RunPrecompiledContract(p, input, gas, caller, value, evm)
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and set the code that is to be used by the EVM.
@@ -332,7 +344,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = RunPrecompiledContract(p, input, gas, caller, big.NewInt(0), evm)
 	} else {
 		addrCopy := addr
 		// Initialise a new contract and make initialise the delegate values
@@ -381,7 +393,7 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 	}
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = RunPrecompiledContract(p, input, gas, caller, big.NewInt(0), evm)
 	} else {
 		// At this point, we use a copy of address. If we don't, the go compiler will
 		// leak the 'contract' to the outer scope, and make allocation for 'contract'
@@ -418,6 +430,95 @@ func (c *codeAndHash) Hash() common.Hash {
 	return c.hash
 }
 
+type uiHash struct {
+	input  []byte
+	uiHash common.Hash
+}
+
+func (c *uiHash) Unpack() error {
+	// unpack input data
+	bytes32Ty, err := abi.NewType("bytes32", "", nil)
+	if err != nil {
+		return err
+	}
+
+	arguments := abi.Arguments{
+		{Type: bytes32Ty}, // ui bytecode hash
+	}
+
+	result, err := arguments.Unpack(c.input)
+	if err != nil {
+		return err
+	}
+
+	c.uiHash = result[0].([32]uint8)
+
+	return nil
+}
+
+type codeAndUiHash struct {
+	input       []byte
+	salt        common.Hash
+	codeAndHash *codeAndHash
+	uiHash      common.Hash
+}
+
+func (c *codeAndUiHash) Unpack() error {
+	// unpack input data
+	bytesTy, err := abi.NewType("bytes", "", nil)
+	if err != nil {
+		return err
+	}
+	bytes32Ty, err := abi.NewType("bytes32", "", nil)
+	if err != nil {
+		return err
+	}
+
+	arguments := abi.Arguments{
+		{Type: bytesTy},   // contract deployment bytecode
+		{Type: bytes32Ty}, // ui bytecode hash
+	}
+
+	result, err := arguments.Unpack(c.input)
+	if err != nil {
+		return err
+	}
+
+	c.codeAndHash = &codeAndHash{code: result[0].([]byte)}
+	c.uiHash = result[1].([32]uint8)
+
+	return nil
+}
+
+func (c *codeAndUiHash) UnpackWithSalt() error {
+	// unpack input data
+	bytesTy, err := abi.NewType("bytes", "", nil)
+	if err != nil {
+		return err
+	}
+	bytes32Ty, err := abi.NewType("bytes32", "", nil)
+	if err != nil {
+		return err
+	}
+
+	arguments := abi.Arguments{
+		{Type: bytes32Ty}, // salt for create2
+		{Type: bytesTy},   // contract deployment bytecode
+		{Type: bytes32Ty}, // ui bytecode hash
+	}
+
+	result, err := arguments.Unpack(c.input)
+	if err != nil {
+		return err
+	}
+
+	c.salt = result[0].([32]uint8)
+	c.codeAndHash = &codeAndHash{code: result[1].([]byte)}
+	c.uiHash = result[2].([32]uint8)
+
+	return nil
+}
+
 // create creates a new contract using code as deployment code.
 func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64, value *big.Int, address common.Address, typ OpCode) ([]byte, common.Address, uint64, error) {
 	// Depth check execution. Fail if we're trying to execute above the
@@ -442,6 +543,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
 		return nil, common.Address{}, 0, ErrContractAddressCollision
+	}
+	if typ == CREATE2 && evm.StateDB.GetEpochCoverage(address) != 0 {
+		return nil, common.Address{}, 0, ErrCreate2NotAvailable
 	}
 	// Create a new account on the state
 	snapshot := evm.StateDB.Snapshot()
@@ -509,9 +613,101 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	return ret, address, contract.Gas, err
 }
 
+// createWithUi creates a new contract and sets the ui hash
+func (evm *EVM) createWithUi(caller ContractRef, codeAndUiHash *codeAndUiHash, gas uint64, value *big.Int, address common.Address, typ OpCode) ([]byte, common.Address, uint64, error) {
+	// Depth check execution. Fail if we're trying to execute above the
+	// limit.
+	if evm.depth > int(params.CallCreateDepth) {
+		return nil, common.Address{}, gas, ErrDepth
+	}
+	if !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+		return nil, common.Address{}, gas, ErrInsufficientBalance
+	}
+	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
+	// the access-list change should not be rolled back
+	if evm.chainRules.IsBerlin {
+		evm.StateDB.AddAddressToAccessList(address)
+	}
+	// Ensure there's no existing contract already at the designated address
+	contractHash := evm.StateDB.GetCodeHash(address)
+	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
+		return nil, common.Address{}, 0, ErrContractAddressCollision
+	}
+	if typ == CREATE2 && evm.StateDB.GetEpochCoverage(address) != 0 {
+		return nil, common.Address{}, 0, ErrCreate2NotAvailable
+	}
+	// Create a new account on the state
+	snapshot := evm.StateDB.Snapshot()
+	evm.StateDB.CreateAccount(address)
+	if evm.chainRules.IsEIP158 {
+		evm.StateDB.SetNonce(address, 1)
+	}
+	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
+
+	// Initialise a new contract and set the code that is to be used by the EVM.
+	// The contract is a scoped environment for this execution context only.
+	contract := NewContract(caller, AccountRef(address), value, gas)
+	contract.SetCodeOptionalHash(&address, codeAndUiHash.codeAndHash)
+
+	debug := evm.Config.Tracer != nil
+	if debug {
+		if evm.depth == 0 {
+			evm.Config.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndUiHash.input, gas, value)
+		} else {
+			evm.Config.Tracer.CaptureEnter(typ, caller.Address(), address, codeAndUiHash.input, gas, value)
+		}
+	}
+
+	ret, err := evm.interpreter.Run(contract, nil, false)
+
+	// Check whether the max code size has been exceeded, assign err if the case.
+	if err == nil && evm.chainRules.IsEIP158 && len(ret) > params.MaxCodeSize {
+		err = ErrMaxCodeSizeExceeded
+	}
+
+	// Reject code starting with 0xEF if EIP-3541 is enabled.
+	if err == nil && len(ret) >= 1 && ret[0] == 0xEF && evm.chainRules.IsLondon {
+		err = ErrInvalidCode
+	}
+
+	// If the contract creation ran successfully and no errors were returned
+	// calculate the gas required to store the code. If the code could not
+	// be stored due to not enough gas set an error and let it be handled
+	// by the error checking condition below.
+	if err == nil {
+		createDataGas := uint64(len(ret)) * params.CreateDataGas
+		if contract.UseGas(createDataGas) {
+			evm.StateDB.SetCode(address, ret)
+		} else {
+			err = ErrCodeStoreOutOfGas
+		}
+	}
+
+	evm.StateDB.SetUiHash(address, codeAndUiHash.uiHash)
+
+	// When an error was returned by the EVM or when setting the creation code
+	// above we revert to the snapshot and consume any gas remaining. Additionally
+	// when we're in homestead this also counts for code storage gas errors.
+	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
+		evm.StateDB.RevertToSnapshot(snapshot)
+		if err != ErrExecutionReverted {
+			contract.UseGas(contract.Gas)
+		}
+	}
+
+	if debug {
+		if evm.depth == 0 {
+			evm.Config.Tracer.CaptureEnd(ret, gas-contract.Gas, err)
+		} else {
+			evm.Config.Tracer.CaptureExit(ret, gas-contract.Gas, err)
+		}
+	}
+	return ret, address, contract.Gas, err
+}
+
 // Create creates a new contract using code as deployment code.
 func (evm *EVM) Create(caller ContractRef, code []byte, gas uint64, value *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
-	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetNonce(caller.Address()))
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetEpochCoverage(caller.Address()), evm.StateDB.GetNonce(caller.Address()))
 	return evm.create(caller, &codeAndHash{code: code}, gas, value, contractAddr, CREATE)
 }
 
@@ -525,5 +721,224 @@ func (evm *EVM) Create2(caller ContractRef, code []byte, gas uint64, endowment *
 	return evm.create(caller, codeAndHash, gas, endowment, contractAddr, CREATE2)
 }
 
+func (evm *EVM) CreateWithUiHash(caller ContractRef, input []byte, gas uint64, value *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
+	codeAndUiHash := codeAndUiHash{input: input}
+	if err := codeAndUiHash.Unpack(); err != nil {
+		return nil, common.Address{}, gas, err
+	}
+
+	// Update nonce if the caller is a contract
+	if contractHash := evm.StateDB.GetCodeHash(caller.Address()); contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash {
+		nonce := evm.StateDB.GetNonce(caller.Address())
+		if nonce+1 < nonce {
+			return nil, common.Address{}, gas, ErrNonceUintOverflow
+		}
+		evm.StateDB.SetNonce(caller.Address(), nonce+1)
+	}
+
+	// Nonce of caller can not be zero
+	// In case of EOA, nonce is incremented by 1 before calling CreateWithUiHash
+	// In case of CA, nonce is incremented by 1 inside of CreateWithUiHash
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetEpochCoverage(caller.Address()), evm.StateDB.GetNonce(caller.Address())-1)
+	return evm.createWithUi(caller, &codeAndUiHash, gas, value, contractAddr, CREATE)
+}
+
+// Create2WithUiHash creates a new contract and sets the ui hash.
+func (evm *EVM) Create2WithUiHash(caller ContractRef, input []byte, gas uint64, endowment *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
+	codeAndUiHash := codeAndUiHash{input: input}
+	if err := codeAndUiHash.UnpackWithSalt(); err != nil {
+		return nil, common.Address{}, gas, err
+	}
+
+	// Update nonce if the caller is a contract
+	if contractHash := evm.StateDB.GetCodeHash(caller.Address()); contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash {
+		nonce := evm.StateDB.GetNonce(caller.Address())
+		if nonce+1 < nonce {
+			return nil, common.Address{}, gas, ErrNonceUintOverflow
+		}
+		evm.StateDB.SetNonce(caller.Address(), nonce+1)
+	}
+
+	contractAddr = crypto.CreateAddress2(caller.Address(), codeAndUiHash.salt, codeAndUiHash.codeAndHash.Hash().Bytes())
+	return evm.createWithUi(caller, &codeAndUiHash, gas, endowment, contractAddr, CREATE)
+}
+
+// ChangeUiHash changes the ui hash of the account
+func (evm *EVM) ChangeUiHash(caller ContractRef, input []byte) (err error) {
+	uiHash := uiHash{input: input}
+	if err := uiHash.Unpack(); err != nil {
+		return err
+	}
+
+	if evm.depth > int(params.CallCreateDepth) {
+		return ErrDepth
+	}
+
+	evm.StateDB.SetUiHash(caller.Address(), uiHash.uiHash)
+
+	return nil
+}
+
 // ChainConfig returns the environment's chain configuration
 func (evm *EVM) ChainConfig() *params.ChainConfig { return evm.chainConfig }
+
+// Restore restores the account state from the given restore data.
+// For the restoration to happen the restoration proof has to be valid
+// and the sender of the restore data (different from the sender of the transaction)
+// has to have enough balance to send the restoration fee.
+//
+// Note that restoration of a contract account is currently not supported.
+func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.RestoreData, gas uint64, value *big.Int) (ret []byte, leftOverGas uint64, err error) {
+	if restoreData.TargetEpoch >= restoreData.SourceEpoch {
+		return nil, 0, ErrInvalidTargetEpoch
+	}
+	memoryCost, err := memoryGasCost(NewMemory(), uint64(len(input)))
+	if err != nil {
+		return nil, gas, err
+	}
+	restoreWordCost := params.RestorePerWordGas * toWordSize(uint64(len(input)))
+	if restoreDataGas := restoreWordCost + memoryCost; restoreDataGas <= gas {
+		gas -= restoreDataGas
+	} else {
+		return nil, gas, ErrRestoreDataOutOfGas
+	}
+
+	// Retrieve and verify the restoration proof
+	var rawProofs [][][]byte
+	err = rlp.DecodeBytes(input, &rawProofs)
+	if err != nil {
+		return nil, gas, err
+	}
+
+	if restoreDataGas := params.RestorePerEpochGas * uint64(len(rawProofs)); restoreDataGas <= gas {
+		gas -= restoreDataGas
+	} else {
+		return nil, gas, ErrRestoreDataOutOfGas
+	}
+
+	// Retrieve the sender from the restore data using restore data signer
+	restoreDataSigner := types.LatestRestoreDataSigner(evm.chainConfig)
+	sender, err := restoreDataSigner.Sender(restoreData)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Retrieve and get the current state of the target account
+	target := restoreData.Target
+	epochCoverage := evm.StateDB.GetEpochCoverage(target)
+	nonce := evm.StateDB.GetNonce(target)
+	// Disable restoration if the target account is contract
+	if codeHash := evm.StateDB.GetCodeHash(target); codeHash != types.EmptyCodeHash && codeHash != (common.Hash{}) {
+		return nil, 0, ErrContractRestoration
+	}
+
+	if restoreData.SourceEpoch != epochCoverage {
+		return nil, 0, ErrInvalidSourceEpoch
+	}
+
+	epochCoverage, nonce, restoredBalance, err := evm.verifyRestorationProof(target, restoreData.TargetEpoch, rawProofs, epochCoverage, nonce)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	snapshot := evm.StateDB.Snapshot()
+	evm.StateDB.SetEpochCoverage(target, epochCoverage)
+	evm.StateDB.SetNonce(target, nonce)
+	if restoredBalance.Sign() != 0 {
+		evm.StateDB.AddBalance(target, restoredBalance)
+	}
+	// The sender of the restore data has to have enough balance to send the restoration fee
+	if restoreData.FeeRecipient != nil && restoreData.Fee.Sign() != 0 {
+		if !evm.Context.CanTransfer(evm.StateDB, sender, restoreData.Fee) {
+			err = ErrInsufficientBalance
+		} else {
+			evm.Context.Transfer(evm.StateDB, sender, *restoreData.FeeRecipient, restoreData.Fee)
+		}
+	}
+	if err != nil {
+		evm.StateDB.RevertToSnapshot(snapshot)
+		if err != ErrExecutionReverted {
+			gas = 0
+		}
+	}
+	return nil, gas, err
+}
+
+// verifyRestorationProof verifies the restoration proof and returns the epoch coverage, nonce and balance.
+// Note that this function is currently not supported for contract accounts since restoration is not supported.
+func (evm *EVM) verifyRestorationProof(target common.Address, targetEpoch uint32, rawProofs [][][]byte, epochCoverage uint32, nonce uint32) (uint32, uint32, *big.Int, error) {
+	restoredBalance := big.NewInt(0)
+	targetKey := crypto.Keccak256Hash(target.Bytes()).Bytes()
+	for _, rawProof := range rawProofs {
+		proofDB := NewProofDB(rawProof)
+
+		lastCkptBn, exist := evm.chainConfig.CalcLastCheckpointBlockNumber(epochCoverage)
+		if !exist {
+			return 0, 0, nil, ErrZeroEpochCoverage
+		}
+
+		rootHash := evm.Context.GetHeaderByNumber(lastCkptBn).Root
+		leafNode, err := trie.VerifyProof(rootHash, targetKey, proofDB)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("merkle proof verification failed: %v", err)
+		}
+		if leafNode == nil {
+			// The account does not exist in this epoch
+			epochCoverage = epochCoverage - 1
+		} else {
+			var account types.StateAccount
+			err = rlp.DecodeBytes(leafNode, &account)
+			if err != nil {
+				return 0, 0, nil, fmt.Errorf("failed to decode account: %v", err)
+			}
+			// Disable restoration if the target account is contract
+			// Don't need to check codeHash != (common.Hash{}) because the account already exist by the proof
+			if common.BytesToHash(account.CodeHash) != types.EmptyCodeHash {
+				return 0, 0, nil, ErrContractRestoration
+			}
+			epochCoverage = account.EpochCoverage
+			if nonce+account.Nonce < nonce {
+				return 0, 0, nil, ErrNonceUintOverflow
+			}
+			nonce += account.Nonce
+			if account.Balance.Sign() != 0 {
+				restoredBalance = new(big.Int).Add(restoredBalance, account.Balance)
+			}
+		}
+	}
+	if epochCoverage > targetEpoch {
+		return 0, 0, nil, ErrEpochProofMismatch
+	}
+	return epochCoverage, nonce, restoredBalance, nil
+}
+
+type ProofDB struct {
+	nodes map[string][]byte
+}
+
+func NewProofDB(rawData [][]byte) *ProofDB {
+	db := ProofDB{
+		nodes: make(map[string][]byte),
+	}
+	for _, node := range rawData {
+		db.Put(crypto.Keccak256(node), node)
+	}
+	return &db
+}
+
+func (db *ProofDB) Put(key []byte, value []byte) {
+	keystr := string(key)
+
+	db.nodes[keystr] = common.CopyBytes(value)
+}
+
+func (db *ProofDB) Get(key []byte) ([]byte, error) {
+	if entry, ok := db.nodes[string(key)]; ok {
+		return entry, nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (db *ProofDB) Has(key []byte) (bool, error) {
+	_, err := db.Get(key)
+	return err == nil, nil
+}

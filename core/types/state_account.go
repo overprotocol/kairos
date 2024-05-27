@@ -29,18 +29,23 @@ import (
 // StateAccount is the Ethereum consensus representation of accounts.
 // These objects are stored in the main account trie.
 type StateAccount struct {
-	Nonce    uint64
-	Balance  *big.Int
-	Root     common.Hash // merkle root of the storage trie
-	CodeHash []byte
+	Nonce         uint32
+	EpochCoverage uint32 // is set to previous epoch at default creation
+	Balance       *big.Int
+	Root          common.Hash // merkle root of the storage trie
+	CodeHash      []byte
+	UiHash        []byte
+	StorageCount  uint64
 }
 
 // NewEmptyStateAccount constructs an empty state account.
-func NewEmptyStateAccount() *StateAccount {
+func NewEmptyStateAccount(epochCoverage uint32) *StateAccount {
 	return &StateAccount{
-		Balance:  new(big.Int),
-		Root:     EmptyRootHash,
-		CodeHash: EmptyCodeHash.Bytes(),
+		Balance:       new(big.Int),
+		Root:          EmptyRootHash,
+		CodeHash:      EmptyCodeHash.Bytes(),
+		UiHash:        EmptyCodeHash.Bytes(),
+		EpochCoverage: epochCoverage,
 	}
 }
 
@@ -51,10 +56,13 @@ func (acct *StateAccount) Copy() *StateAccount {
 		balance = new(big.Int).Set(acct.Balance)
 	}
 	return &StateAccount{
-		Nonce:    acct.Nonce,
-		Balance:  balance,
-		Root:     acct.Root,
-		CodeHash: common.CopyBytes(acct.CodeHash),
+		Nonce:         acct.Nonce,
+		EpochCoverage: acct.EpochCoverage,
+		Balance:       balance,
+		Root:          acct.Root,
+		CodeHash:      common.CopyBytes(acct.CodeHash),
+		UiHash:        common.CopyBytes(acct.UiHash),
+		StorageCount:  acct.StorageCount,
 	}
 }
 
@@ -62,23 +70,31 @@ func (acct *StateAccount) Copy() *StateAccount {
 // with a byte slice. This format can be used to represent full-consensus format
 // or slim format which replaces the empty root and code hash as nil byte slice.
 type SlimAccount struct {
-	Nonce    uint64
-	Balance  *big.Int
-	Root     []byte // Nil if root equals to types.EmptyRootHash
-	CodeHash []byte // Nil if hash equals to types.EmptyCodeHash
+	Nonce         uint32
+	EpochCoverage uint32
+	Balance       *big.Int
+	Root          []byte // Nil if root equals to types.EmptyRootHash
+	CodeHash      []byte // Nil if hash equals to types.EmptyCodeHash
+	UiHash        []byte // Nil if hash equals to types.EmptyCodeHash
+	StorageCount  uint64
 }
 
 // SlimAccountRLP encodes the state account in 'slim RLP' format.
 func SlimAccountRLP(account StateAccount) []byte {
 	slim := SlimAccount{
-		Nonce:   account.Nonce,
-		Balance: account.Balance,
+		Nonce:         account.Nonce,
+		EpochCoverage: account.EpochCoverage,
+		Balance:       account.Balance,
+		StorageCount:  account.StorageCount,
 	}
 	if account.Root != EmptyRootHash {
 		slim.Root = account.Root[:]
 	}
 	if !bytes.Equal(account.CodeHash, EmptyCodeHash[:]) {
 		slim.CodeHash = account.CodeHash
+	}
+	if !bytes.Equal(account.UiHash, EmptyCodeHash[:]) {
+		slim.UiHash = account.UiHash
 	}
 	data, err := rlp.EncodeToBytes(slim)
 	if err != nil {
@@ -95,7 +111,7 @@ func FullAccount(data []byte) (*StateAccount, error) {
 		return nil, err
 	}
 	var account StateAccount
-	account.Nonce, account.Balance = slim.Nonce, slim.Balance
+	account.Nonce, account.EpochCoverage, account.Balance, account.StorageCount = slim.Nonce, slim.EpochCoverage, slim.Balance, slim.StorageCount
 
 	// Interpret the storage root and code hash in slim format.
 	if len(slim.Root) == 0 {
@@ -107,6 +123,11 @@ func FullAccount(data []byte) (*StateAccount, error) {
 		account.CodeHash = EmptyCodeHash[:]
 	} else {
 		account.CodeHash = slim.CodeHash
+	}
+	if len(slim.UiHash) == 0 {
+		account.UiHash = EmptyCodeHash[:]
+	} else {
+		account.UiHash = slim.UiHash
 	}
 	return &account, nil
 }

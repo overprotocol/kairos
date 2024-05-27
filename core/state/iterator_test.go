@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -35,7 +36,7 @@ func testNodeIteratorCoverage(t *testing.T, scheme string) {
 	db, sdb, ndb, root, _ := makeTestState(scheme)
 	ndb.Commit(root, false)
 
-	state, err := New(root, sdb, nil)
+	state, err := New(root, types.EmptyRootHash, 0, 0, sdb, nil)
 	if err != nil {
 		t.Fatalf("failed to create state trie at %x: %v", root, err)
 	}
@@ -91,7 +92,12 @@ func testNodeIteratorCoverage(t *testing.T, scheme string) {
 // database entry belongs to a trie node or not.
 func isTrieNode(scheme string, key, val []byte) (bool, common.Hash) {
 	if scheme == rawdb.HashScheme {
-		if rawdb.IsLegacyTrieNode(key, val) {
+		ok := rawdb.IsLegacyAccountTrieNode(key, val)
+		if ok {
+			return true, common.BytesToHash(key)
+		}
+		ok = rawdb.IsLegacyStorageTrieNode(key, val)
+		if ok {
 			return true, common.BytesToHash(key)
 		}
 	} else {

@@ -24,9 +24,9 @@ import (
 )
 
 // syncState starts downloading state with the given root hash.
-func (d *Downloader) syncState(root common.Hash) *stateSync {
+func (d *Downloader) syncState(epoch uint32, root, ckptRoot common.Hash) *stateSync {
 	// Create the state sync
-	s := newStateSync(d, root)
+	s := newStateSync(d, epoch, root, ckptRoot)
 	select {
 	case d.stateSyncStart <- s:
 		// If we tell the statesync to restart with a new root, we also need
@@ -77,8 +77,10 @@ func (d *Downloader) runStateSync(s *stateSync) *stateSync {
 // stateSync schedules requests for downloading a particular state trie defined
 // by a given state root.
 type stateSync struct {
-	d    *Downloader // Downloader instance to access and manage current peerset
-	root common.Hash // State root currently being synced
+	d        *Downloader // Downloader instance to access and manage current peerset
+	epoch    uint32      // Epoch currently being synced
+	root     common.Hash // State root currently being synced
+	ckptRoot common.Hash // Checkpoint root currently being synced
 
 	started    chan struct{} // Started is signalled once the sync loop starts
 	cancel     chan struct{} // Channel to signal a termination request
@@ -89,13 +91,15 @@ type stateSync struct {
 
 // newStateSync creates a new state trie download scheduler. This method does not
 // yet start the sync. The user needs to call run to initiate.
-func newStateSync(d *Downloader, root common.Hash) *stateSync {
+func newStateSync(d *Downloader, epoch uint32, root, ckptRoot common.Hash) *stateSync {
 	return &stateSync{
-		d:       d,
-		root:    root,
-		cancel:  make(chan struct{}),
-		done:    make(chan struct{}),
-		started: make(chan struct{}),
+		d:        d,
+		epoch:    epoch,
+		root:     root,
+		ckptRoot: ckptRoot,
+		cancel:   make(chan struct{}),
+		done:     make(chan struct{}),
+		started:  make(chan struct{}),
 	}
 }
 
@@ -104,8 +108,19 @@ func newStateSync(d *Downloader, root common.Hash) *stateSync {
 // finish.
 func (s *stateSync) run() {
 	close(s.started)
-	s.err = s.d.SnapSyncer.Sync(s.root, s.cancel)
+	// sync current trie first, then sync checkpoint trie
+	s.err = s.d.SnapSyncer.Sync(s.epoch, s.root, false, s.cancel)
+	if s.err == nil && s.epoch > 0 {
+		s.err = s.d.SnapSyncer.Sync(s.epoch-1, s.ckptRoot, true, s.cancel)
+	}
 	close(s.done)
+}
+
+// Check if state sync needs to update the pivot
+// If the root and checkpoint root has not changed, we don't need to update the
+// pivot of the state sync
+func (s *stateSync) needPivotUpdate(root, ckptRoot common.Hash) bool {
+	return s.root != root || s.ckptRoot != ckptRoot
 }
 
 // Wait blocks until the sync is done or canceled.

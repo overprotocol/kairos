@@ -85,6 +85,10 @@ func newFastIterator(tree *Tree, root common.Hash, account common.Hash, seek com
 	current := snap.(snapshot)
 	for depth := 0; current != nil; depth++ {
 		if accountIterator {
+			// If epoch has changed, we should stop iterating.
+			if current.Epoch() != snap.Epoch() {
+				break
+			}
 			fi.iterators = append(fi.iterators, &weightedIterator{
 				it:       current.AccountIterator(seek),
 				priority: depth,

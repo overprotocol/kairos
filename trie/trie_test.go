@@ -95,7 +95,7 @@ func testMissingNode(t *testing.T, memonly bool, scheme string) {
 	updateString(trie, "120000", "qwerqwerqwerqwerqwerqwerqwerqwer")
 	updateString(trie, "123456", "asdfasdfasdfasdfasdfasdfasdfasdf")
 	root, nodes, _ := trie.Commit(false)
-	triedb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	triedb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 
 	if !memonly {
 		triedb.Commit(root, false)
@@ -141,7 +141,7 @@ func testMissingNode(t *testing.T, memonly bool, scheme string) {
 	if memonly {
 		trie.reader.banned = map[string]struct{}{string(path): {}}
 	} else {
-		rawdb.DeleteTrieNode(diskdb, common.Hash{}, path, hash, scheme)
+		rawdb.DeleteTrieNode(diskdb, 0, common.Hash{}, path, hash, scheme)
 	}
 
 	_, err = trie.Get([]byte("120000"))
@@ -209,7 +209,7 @@ func TestGet(t *testing.T) {
 			return
 		}
 		root, nodes, _ := trie.Commit(false)
-		db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 		trie, _ = New(TrieID(root), db)
 	}
 }
@@ -281,7 +281,7 @@ func TestReplication(t *testing.T) {
 		updateString(trie, val.k, val.v)
 	}
 	root, nodes, _ := trie.Commit(false)
-	db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 
 	// create a new trie on top of the database and check that lookups work.
 	trie2, err := New(TrieID(root), db)
@@ -300,7 +300,7 @@ func TestReplication(t *testing.T) {
 
 	// recreate the trie after commit
 	if nodes != nil {
-		db.Update(hash, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		db.Update(hash, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	}
 	trie2, err = New(TrieID(hash), db)
 	if err != nil {
@@ -531,7 +531,7 @@ func runRandTest(rt randTest) error {
 		case opCommit:
 			root, nodes, _ := tr.Commit(true)
 			if nodes != nil {
-				triedb.Update(root, origin, 0, trienode.NewWithNodeSet(nodes), nil)
+				triedb.Update(root, origin, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 			}
 			newtr, err := New(TrieID(root), triedb)
 			if err != nil {
@@ -730,15 +730,15 @@ func TestTinyTrie(t *testing.T) {
 	_, accounts := makeAccounts(5)
 	trie := NewEmpty(NewDatabase(rawdb.NewMemoryDatabase(), nil))
 	trie.MustUpdate(common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000001337"), accounts[3])
-	if exp, root := common.HexToHash("8c6a85a4d9fda98feff88450299e574e5378e32391f75a055d470ac0653f1005"), trie.Hash(); exp != root {
+	if exp, root := common.HexToHash("620157bd4334ee5d1b92abbb2ce916895288f93acd5081587393e94970d6fba4"), trie.Hash(); exp != root {
 		t.Errorf("1: got %x, exp %x", root, exp)
 	}
 	trie.MustUpdate(common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000001338"), accounts[4])
-	if exp, root := common.HexToHash("ec63b967e98a5720e7f720482151963982890d82c9093c0d486b7eb8883a66b1"), trie.Hash(); exp != root {
+	if exp, root := common.HexToHash("fa327a299f449cd1811935c104f140057ae824bad5dcf0514b731ed73e0ddd09"), trie.Hash(); exp != root {
 		t.Errorf("2: got %x, exp %x", root, exp)
 	}
 	trie.MustUpdate(common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000001339"), accounts[4])
-	if exp, root := common.HexToHash("0608c1d1dc3905fa22204c7a0e43644831c3b6d3def0f274be623a948197e64a"), trie.Hash(); exp != root {
+	if exp, root := common.HexToHash("86456c261caf8397c14e89803bb4b2e0fae500d17e7d68d082e7c35832085e45"), trie.Hash(); exp != root {
 		t.Errorf("3: got %x, exp %x", root, exp)
 	}
 	checktr := NewEmpty(NewDatabase(rawdb.NewMemoryDatabase(), nil))
@@ -762,7 +762,7 @@ func TestCommitAfterHash(t *testing.T) {
 	trie.Hash()
 	trie.Commit(false)
 	root := trie.Hash()
-	exp := common.HexToHash("72f9d3f3fe1e1dd7b8936442e7642aef76371472d94319900790053c493f3fe6")
+	exp := common.HexToHash("c7eb5f19fba68b01f9e120fc3192601c617675e780d9dbd7065ab48d93b5f488")
 	if exp != root {
 		t.Errorf("got %x, exp %x", root, exp)
 	}
@@ -785,9 +785,10 @@ func makeAccounts(size int) (addresses [][20]byte, accounts [][]byte) {
 	accounts = make([][]byte, len(addresses))
 	for i := 0; i < len(accounts); i++ {
 		var (
-			nonce = uint64(random.Int63())
-			root  = types.EmptyRootHash
-			code  = crypto.Keccak256(nil)
+			nonce         = random.Uint32()
+			epochCoverage = random.Uint32()
+			root          = types.EmptyRootHash
+			code          = crypto.Keccak256(nil)
 		)
 		// The big.Rand function is not deterministic with regards to 64 vs 32 bit systems,
 		// and will consume different amount of data from the rand source.
@@ -797,7 +798,7 @@ func makeAccounts(size int) (addresses [][20]byte, accounts [][]byte) {
 		balanceBytes := make([]byte, numBytes)
 		random.Read(balanceBytes)
 		balance := new(big.Int).SetBytes(balanceBytes)
-		data, _ := rlp.EncodeToBytes(&types.StateAccount{Nonce: nonce, Balance: balance, Root: root, CodeHash: code})
+		data, _ := rlp.EncodeToBytes(&types.StateAccount{Nonce: nonce, EpochCoverage: epochCoverage, Balance: balance, Root: root, CodeHash: code})
 		accounts[i] = data
 	}
 	return addresses, accounts
@@ -813,6 +814,7 @@ type spongeDb struct {
 func (s *spongeDb) Has(key []byte) (bool, error)             { panic("implement me") }
 func (s *spongeDb) Get(key []byte) ([]byte, error)           { return nil, errors.New("no such elem") }
 func (s *spongeDb) Delete(key []byte) error                  { panic("implement me") }
+func (s *spongeDb) DeleteRange(start, end []byte) error      { panic("implement me") }
 func (s *spongeDb) NewBatch() ethdb.Batch                    { return &spongeBatch{s} }
 func (s *spongeDb) NewBatchWithSize(size int) ethdb.Batch    { return &spongeBatch{s} }
 func (s *spongeDb) NewSnapshot() (ethdb.Snapshot, error)     { panic("implement me") }
@@ -861,9 +863,9 @@ func TestCommitSequence(t *testing.T) {
 		count           int
 		expWriteSeqHash []byte
 	}{
-		{20, common.FromHex("873c78df73d60e59d4a2bcf3716e8bfe14554549fea2fc147cb54129382a8066")},
-		{200, common.FromHex("ba03d891bb15408c940eea5ee3d54d419595102648d02774a0268d892add9c8e")},
-		{2000, common.FromHex("f7a184f20df01c94f09537401d11e68d97ad0c00115233107f51b9c287ce60c7")},
+		{20, common.FromHex("ab48d0480cb1fbd38f2b51abd82d8d036785eb6409f5cad5e0324dba36efb1ac")},
+		{200, common.FromHex("afdf8cbf4ff3ee4b7a1cd7148085b1c0d4c201cb1c26cf984b95d62c42d7fc84")},
+		{2000, common.FromHex("ded612cf6c29b169ad11c5f45f3f6323da3211317491ffa466725ec1533098ea")},
 	} {
 		addresses, accounts := makeAccounts(tc.count)
 		// This spongeDb is used to check the sequence of disk-db-writes
@@ -876,7 +878,7 @@ func TestCommitSequence(t *testing.T) {
 		}
 		// Flush trie -> database
 		root, nodes, _ := trie.Commit(false)
-		db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 		// Flush memdb -> disk (sponge)
 		db.Commit(root, false)
 		if got, exp := s.sponge.Sum(nil), tc.expWriteSeqHash; !bytes.Equal(got, exp) {
@@ -892,9 +894,9 @@ func TestCommitSequenceRandomBlobs(t *testing.T) {
 		count           int
 		expWriteSeqHash []byte
 	}{
-		{20, common.FromHex("8e4a01548551d139fa9e833ebc4e66fc1ba40a4b9b7259d80db32cff7b64ebbc")},
-		{200, common.FromHex("6869b4e7b95f3097a19ddb30ff735f922b915314047e041614df06958fc50554")},
-		{2000, common.FromHex("444200e6f4e2df49f77752f629a96ccf7445d4698c164f962bbd85a0526ef424")},
+		{20, common.FromHex("c9773c957a75fceef2f168ea93ad20f895c8196f69f14d450ffa5af66ff04d05")},
+		{200, common.FromHex("f0e9faa94477654b4e09a9fb38de8f4e757e6cde427585f8b9d100b247d4641e")},
+		{2000, common.FromHex("ea657f1b5878c1a24be98b500a7a2be8823cad392992847f59e6cc70e8905969")},
 	} {
 		prng := rand.New(rand.NewSource(int64(i)))
 		// This spongeDb is used to check the sequence of disk-db-writes
@@ -917,7 +919,7 @@ func TestCommitSequenceRandomBlobs(t *testing.T) {
 		}
 		// Flush trie -> database
 		root, nodes, _ := trie.Commit(false)
-		db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 		// Flush memdb -> disk (sponge)
 		db.Commit(root, false)
 		if got, exp := s.sponge.Sum(nil), tc.expWriteSeqHash; !bytes.Equal(got, exp) {
@@ -938,7 +940,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 
 		options := NewStackTrieOptions()
 		options = options.WithWriter(func(path []byte, hash common.Hash, blob []byte) {
-			rawdb.WriteTrieNode(stackTrieSponge, common.Hash{}, path, hash, blob, db.Scheme())
+			rawdb.WriteTrieNode(stackTrieSponge, 0, common.Hash{}, path, hash, blob, db.Scheme())
 		})
 		stTrie := NewStackTrie(options)
 		// Fill the trie with elements
@@ -960,7 +962,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 		// Flush trie -> database
 		root, nodes, _ := trie.Commit(false)
 		// Flush memdb -> disk (sponge)
-		db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 		db.Commit(root, false)
 		// And flush stacktrie -> disk
 		stRoot := stTrie.Commit()
@@ -997,7 +999,7 @@ func TestCommitSequenceSmallRoot(t *testing.T) {
 
 	options := NewStackTrieOptions()
 	options = options.WithWriter(func(path []byte, hash common.Hash, blob []byte) {
-		rawdb.WriteTrieNode(stackTrieSponge, common.Hash{}, path, hash, blob, db.Scheme())
+		rawdb.WriteTrieNode(stackTrieSponge, 0, common.Hash{}, path, hash, blob, db.Scheme())
 	})
 	stTrie := NewStackTrie(options)
 	// Add a single small-element to the trie(s)
@@ -1008,7 +1010,7 @@ func TestCommitSequenceSmallRoot(t *testing.T) {
 	// Flush trie -> database
 	root, nodes, _ := trie.Commit(false)
 	// Flush memdb -> disk (sponge)
-	db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	db.Commit(root, false)
 	// And flush stacktrie -> disk
 	stRoot := stTrie.Commit()
@@ -1177,9 +1179,9 @@ func benchmarkDerefRootFixedSize(b *testing.B, addresses [][20]byte, accounts []
 	}
 	h := trie.Hash()
 	root, nodes, _ := trie.Commit(false)
-	triedb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	triedb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	b.StartTimer()
-	triedb.Dereference(h)
+	triedb.Dereference(0, h)
 	b.StopTimer()
 }
 

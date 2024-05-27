@@ -289,10 +289,12 @@ func (g Alloc) OnAccount(addr *common.Address, dumpAccount state.DumpAccount) {
 		}
 	}
 	genesisAccount := core.GenesisAccount{
-		Code:    dumpAccount.Code,
-		Storage: storage,
-		Balance: balance,
-		Nonce:   dumpAccount.Nonce,
+		Code:         dumpAccount.Code,
+		UiHash:       common.Hash(dumpAccount.UiHash),
+		Storage:      storage,
+		StorageCount: dumpAccount.StorageCount,
+		Balance:      balance,
+		Nonce:        dumpAccount.Nonce,
 	}
 	g[*addr] = genesisAccount
 }

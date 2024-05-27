@@ -26,6 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers"
@@ -455,7 +456,7 @@ func (t *jsTracer) setBuiltinFunctions() {
 			return nil
 		}
 		addr := common.BytesToAddress(a)
-		b := crypto.CreateAddress(addr, uint64(nonce)).Bytes()
+		b := crypto.CreateAddress(addr, types.TxNonceToMsgEpochCoverage(uint64(nonce)), types.TxNonceToMsgNonce(uint64(nonce))).Bytes()
 		res, err := t.toBuf(vm, b)
 		if err != nil {
 			vm.Interrupt(err)
@@ -710,7 +711,7 @@ func (do *dbObj) GetBalance(addrSlice goja.Value) goja.Value {
 	return res
 }
 
-func (do *dbObj) GetNonce(addrSlice goja.Value) uint64 {
+func (do *dbObj) GetNonce(addrSlice goja.Value) uint32 {
 	a, err := do.fromBuf(do.vm, addrSlice, false)
 	if err != nil {
 		do.vm.Interrupt(err)

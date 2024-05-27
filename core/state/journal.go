@@ -89,6 +89,9 @@ type (
 	createObjectChange struct {
 		account *common.Address
 	}
+	loadFromCkptChange struct {
+		account *common.Address
+	}
 	resetObjectChange struct {
 		account      *common.Address
 		prev         *stateObject
@@ -113,15 +116,27 @@ type (
 	}
 	nonceChange struct {
 		account *common.Address
-		prev    uint64
+		prev    uint32
+	}
+	epochCoverageChange struct {
+		account *common.Address
+		prev    uint32
 	}
 	storageChange struct {
 		account       *common.Address
 		key, prevalue common.Hash
 	}
+	storageCountChange struct {
+		account *common.Address
+		prev    uint64
+	}
 	codeChange struct {
 		account            *common.Address
 		prevcode, prevhash []byte
+	}
+	uiHashChange struct {
+		account    *common.Address
+		prevuihash []byte
 	}
 
 	// Changes to other state values.
@@ -158,6 +173,15 @@ func (ch createObjectChange) revert(s *StateDB) {
 }
 
 func (ch createObjectChange) dirtied() *common.Address {
+	return ch.account
+}
+
+func (ch loadFromCkptChange) revert(s *StateDB) {
+	delete(s.stateObjects, *ch.account)
+	delete(s.stateObjectsDirty, *ch.account)
+}
+
+func (ch loadFromCkptChange) dirtied() *common.Address {
 	return ch.account
 }
 
@@ -221,11 +245,27 @@ func (ch nonceChange) dirtied() *common.Address {
 	return ch.account
 }
 
+func (ch epochCoverageChange) revert(s *StateDB) {
+	s.getStateObject(*ch.account).setEpochCoverage(ch.prev)
+}
+
+func (ch epochCoverageChange) dirtied() *common.Address {
+	return ch.account
+}
+
 func (ch codeChange) revert(s *StateDB) {
 	s.getStateObject(*ch.account).setCode(common.BytesToHash(ch.prevhash), ch.prevcode)
 }
 
 func (ch codeChange) dirtied() *common.Address {
+	return ch.account
+}
+
+func (ch uiHashChange) revert(s *StateDB) {
+	s.getStateObject(*ch.account).setUiHash(common.BytesToHash(ch.prevuihash))
+}
+
+func (ch uiHashChange) dirtied() *common.Address {
 	return ch.account
 }
 
@@ -243,6 +283,14 @@ func (ch transientStorageChange) revert(s *StateDB) {
 
 func (ch transientStorageChange) dirtied() *common.Address {
 	return nil
+}
+
+func (ch storageCountChange) revert(s *StateDB) {
+	s.getStateObject(*ch.account).setStorageCount(ch.prev)
+}
+
+func (ch storageCountChange) dirtied() *common.Address {
+	return ch.account
 }
 
 func (ch refundChange) revert(s *StateDB) {

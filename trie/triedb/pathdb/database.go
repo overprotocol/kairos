@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -69,6 +70,9 @@ type layer interface {
 	// stateID returns the associated state id of layer.
 	stateID() uint64
 
+	// epochNumber returns the epoch of the layer.
+	epochNumber() uint32
+
 	// parentLayer returns the subsequent layer of it, or nil if the disk was reached.
 	parentLayer() layer
 
@@ -76,7 +80,7 @@ type layer interface {
 	// the provided dirty trie nodes along with the state change set.
 	//
 	// Note, the maps are retained by the method to avoid copying everything.
-	update(root common.Hash, id uint64, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer
+	update(root common.Hash, id uint64, epoch uint32, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer
 
 	// journal commits an entire diff hierarchy to disk into a single journal entry.
 	// This is meant to be used during shutdown to persist the layer without
@@ -87,8 +91,10 @@ type layer interface {
 // Config contains the settings for database.
 type Config struct {
 	StateHistory   uint64 // Number of recent blocks to maintain state history for
+	DisableHistory bool   // Flag whether to disable state history
 	CleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
 	DirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
+	EpochLimit     uint32 // Maximum number of epochs to keep in the database
 	ReadOnly       bool   // Flag whether the database is opened in read only mode.
 }
 
@@ -103,9 +109,18 @@ func (c *Config) sanitize() *Config {
 	return &conf
 }
 
+func (c *Config) newCleanCache() *fastcache.Cache {
+	var cleans *fastcache.Cache
+	if c.CleanCacheSize != 0 {
+		cleans = fastcache.New(c.CleanCacheSize)
+	}
+	return cleans
+}
+
 // Defaults contains default settings for Ethereum mainnet.
 var Defaults = &Config{
 	StateHistory:   params.FullImmutabilityThreshold,
+	DisableHistory: false,
 	CleanCacheSize: defaultCleanSize,
 	DirtyCacheSize: DefaultBufferSize,
 }
@@ -134,6 +149,7 @@ type Database struct {
 	config     *Config                  // Configuration for database
 	diskdb     ethdb.Database           // Persistent storage for matured trie nodes
 	tree       *layerTree               // The group for all known layers
+	cleans     *fastcache.Cache         // Cache for clean nodes
 	freezer    *rawdb.ResettableFreezer // Freezer for storing trie histories, nil possible in tests
 	lock       sync.RWMutex             // Lock to prevent mutations from happening at the same time
 }
@@ -152,6 +168,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 		bufferSize: config.DirtyCacheSize,
 		config:     config,
 		diskdb:     diskdb,
+		cleans:     config.newCleanCache(),
 	}
 	// Construct the layer tree by resolving the in-disk singleton state
 	// and in-memory layer journal.
@@ -163,7 +180,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 	// Because the freezer can only be opened once at the same time, this
 	// mechanism also ensures that at most one **non-readOnly** database
 	// is opened at the same time to prevent accidental mutation.
-	if ancient, err := diskdb.AncientDatadir(); err == nil && ancient != "" && !db.readOnly {
+	if ancient, err := diskdb.AncientDatadir(); err == nil && ancient != "" && !db.readOnly && !config.DisableHistory {
 		freezer, err := rawdb.NewStateFreezer(ancient, false)
 		if err != nil {
 			log.Crit("Failed to open state history freezer", "err", err)
@@ -208,12 +225,27 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 }
 
 // Reader retrieves a layer belonging to the given state root.
-func (db *Database) Reader(root common.Hash) (layer, error) {
+func (db *Database) Reader(root common.Hash, epoch uint32) (layer, error) {
 	l := db.tree.get(root)
 	if l == nil {
-		return nil, fmt.Errorf("state %#x is not available", root)
+		return db.CkptDiskReader(root, epoch)
 	}
 	return l, nil
+}
+
+// CkptDiskReader retrieves a checkpoint disk layer belonging to the given state root and epoch.
+// In case the requested epoch is same with the disk epoch, it should be opened though the layer tree
+// to be opened as a disk layer.
+func (db *Database) CkptDiskReader(root common.Hash, epoch uint32) (layer, error) {
+	diskEpoch := db.tree.bottom().epochNumber()
+	if epoch >= diskEpoch {
+		return nil, fmt.Errorf("state %#x is not available", root)
+	}
+	_, diskRoot := rawdb.ReadAccountTrieNode(db.diskdb, epoch, nil)
+	if diskRoot == (common.Hash{}) || diskRoot != root {
+		return nil, fmt.Errorf("state %#x is not available", root)
+	}
+	return newCkptDiskLayer(root, epoch, db, nil), nil
 }
 
 // Update adds a new layer into the tree, if that can be linked to an existing
@@ -223,7 +255,7 @@ func (db *Database) Reader(root common.Hash) (layer, error) {
 //
 // The passed in maps(nodes, states) will be retained to avoid copying everything.
 // Therefore, these maps must not be changed afterwards.
-func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
+func (db *Database) Update(root common.Hash, parentRoot common.Hash, epoch uint32, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
 	// Hold the lock to prevent concurrent mutations.
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -232,7 +264,7 @@ func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint6
 	if err := db.modifyAllowed(); err != nil {
 		return err
 	}
-	if err := db.tree.add(root, parentRoot, block, nodes, states); err != nil {
+	if err := db.tree.add(root, parentRoot, epoch, block, nodes, states); err != nil {
 		return err
 	}
 	// Keep 128 diff layers in the memory, persistent layer is 129th.
@@ -256,6 +288,18 @@ func (db *Database) Commit(root common.Hash, report bool) error {
 		return err
 	}
 	return db.tree.cap(root, 0)
+}
+
+func (db *Database) AddNewEpoch(epoch uint32, root common.Hash) error {
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	// Short circuit if the mutation is not allowed.
+	if err := db.modifyAllowed(); err != nil {
+		return err
+	}
+	// Add a new epoch to the database.
+	return db.tree.addNewEpoch(epoch, root)
 }
 
 // Disable deactivates the database and invalidates all available state layers
@@ -287,7 +331,7 @@ func (db *Database) Disable() error {
 
 // Enable activates database and resets the state tree with the provided persistent
 // state root once the state sync is finished.
-func (db *Database) Enable(root common.Hash) error {
+func (db *Database) Enable(root, ckptRoot common.Hash, epoch uint32) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -297,15 +341,24 @@ func (db *Database) Enable(root common.Hash) error {
 	}
 	// Ensure the provided state root matches the stored one.
 	root = types.TrieRootHash(root)
-	_, stored := rawdb.ReadAccountTrieNode(db.diskdb, nil)
+	_, stored := rawdb.ReadAccountTrieNode(db.diskdb, epoch, nil)
 	if stored != root {
 		return fmt.Errorf("state root mismatch: stored %x, synced %x", stored, root)
+	}
+	// Ensure the provided state checkpoint root matches the stored one.
+	if epoch > 0 {
+		ckptRoot = types.TrieRootHash(ckptRoot)
+		_, stored := rawdb.ReadAccountTrieNode(db.diskdb, epoch-1, nil)
+		if stored != ckptRoot {
+			return fmt.Errorf("state checkpoint root mismatch: stored %x, synced %x", stored, ckptRoot)
+		}
 	}
 	// Drop the stale state journal in persistent database and
 	// reset the persistent state id back to zero.
 	batch := db.diskdb.NewBatch()
 	rawdb.DeleteTrieJournal(batch)
 	rawdb.WritePersistentStateID(batch, 0)
+	rawdb.WritePersistentEpoch(batch, epoch)
 	if err := batch.Write(); err != nil {
 		return err
 	}
@@ -320,7 +373,14 @@ func (db *Database) Enable(root common.Hash) error {
 	}
 	// Re-construct a new disk layer backed by persistent state
 	// with **empty clean cache and node buffer**.
-	db.tree.reset(newDiskLayer(root, 0, db, nil, newNodeBuffer(db.bufferSize, nil, 0)))
+	var prevEpoch uint32
+	if epoch > 0 {
+		prevEpoch = epoch - 1
+	}
+	db.cleans = db.config.newCleanCache()
+	ckptDiskLayer := newCkptDiskLayer(ckptRoot, prevEpoch, db, db.cleans)
+	diskLayer := newDiskLayer(root, 0, epoch, db, ckptDiskLayer, db.cleans, newNodeBuffer(epoch, db.bufferSize, nil, 0))
+	db.tree.reset(diskLayer)
 
 	// Re-enable the database as the final step.
 	db.waitSync = false
@@ -332,7 +392,7 @@ func (db *Database) Enable(root common.Hash) error {
 // Recover rollbacks the database to a specified historical point.
 // The state is supported as the rollback destination only if it's
 // canonical state and the corresponding trie histories are existent.
-func (db *Database) Recover(root common.Hash, loader triestate.TrieLoader) error {
+func (db *Database) Recover(epoch uint32, root, ckptRoot common.Hash, loader triestate.TrieLoader) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -345,14 +405,17 @@ func (db *Database) Recover(root common.Hash, loader triestate.TrieLoader) error
 	}
 	// Short circuit if the target state is not recoverable.
 	root = types.TrieRootHash(root)
-	if !db.Recoverable(root) {
+	ckptRoot = types.TrieRootHash(ckptRoot)
+	if !db.Recoverable(epoch, root, ckptRoot) {
 		return errStateUnrecoverable
 	}
 	// Apply the state histories upon the disk layer in order.
 	var (
 		start = time.Now()
 		dl    = db.tree.bottom()
+		err   error
 	)
+	// Revert the disk layer to the target state.
 	for dl.rootHash() != root {
 		h, err := readHistory(db.freezer, dl.stateID())
 		if err != nil {
@@ -368,7 +431,7 @@ func (db *Database) Recover(root common.Hash, loader triestate.TrieLoader) error
 		db.tree.reset(dl)
 	}
 	rawdb.DeleteTrieJournal(db.diskdb)
-	_, err := truncateFromHead(db.diskdb, db.freezer, dl.stateID())
+	_, err = truncateFromHead(db.diskdb, db.freezer, dl.stateID())
 	if err != nil {
 		return err
 	}
@@ -377,24 +440,31 @@ func (db *Database) Recover(root common.Hash, loader triestate.TrieLoader) error
 }
 
 // Recoverable returns the indicator if the specified state is recoverable.
-func (db *Database) Recoverable(root common.Hash) bool {
+func (db *Database) Recoverable(epoch uint32, root, ckptRoot common.Hash) bool {
 	// Ensure the requested state is a known state.
 	root = types.TrieRootHash(root)
 	id := rawdb.ReadStateID(db.diskdb, root)
 	if id == nil {
 		return false
 	}
-	// Recoverable state must below the disk layer. The recoverable
-	// state only refers the state that is currently not available,
-	// but can be restored by applying state history.
+
+	// If epoch to recover is same as the epoch of the disk layer,
+	// Recovery is started from the disk layer.
+	// Else if epoch to recover is less than the epoch of the disk layer,
+	// Recovery is started from last state of the epoch to recover.
 	dl := db.tree.bottom()
-	if *id >= dl.stateID() {
+	restoreStateId := dl.stateID()
+	if *id >= restoreStateId {
 		return false
 	}
+	if dl.epochNumber() != epoch {
+		return false
+	}
+
 	// Ensure the requested state is a canonical state and all state
 	// histories in range [id+1, disklayer.ID] are present and complete.
 	parent := root
-	return checkHistories(db.freezer, *id+1, dl.stateID()-*id, func(m *meta) error {
+	return checkHistories(db.freezer, *id+1, restoreStateId-*id, func(m *meta) error {
 		if m.parent != parent {
 			return errors.New("unexpected state history")
 		}
@@ -482,4 +552,49 @@ func (db *Database) modifyAllowed() error {
 		return errDatabaseWaitSync
 	}
 	return nil
+}
+
+// HasState returns the indicator if the state with the given root, ckptRoot
+// and epoch is available in the database.
+// State with the given root should be fully available in the database, which
+// means it should be disk layer or diff layer.
+// State with the given ckptRoot doesn't need to be fully available.
+func (db *Database) HasState(root, ckptRoot common.Hash, epoch uint32) bool {
+	if root != (common.Hash{}) && root != types.EmptyRootHash {
+		currLayer := db.tree.get(root)
+		if currLayer == nil {
+			return false
+		}
+		if currLayer.epochNumber() != epoch {
+			return false
+		}
+		// checkpoint disk layer doesn't have full state, so it's not available.
+		if _, ok := currLayer.(*ckptDiskLayer); ok {
+			return false
+		}
+	}
+	if epoch > 0 && ckptRoot != (common.Hash{}) && ckptRoot != types.EmptyRootHash {
+		ckptLayer := db.tree.get(ckptRoot)
+		if ckptLayer == nil {
+			return false
+		}
+		if ckptLayer.epochNumber() != epoch-1 {
+			return false
+		}
+	}
+	return true
+}
+
+func (db *Database) DeleteEpochData(newEpoch uint32) {
+	if db.config.EpochLimit == 0 {
+		// Epoch limit is disabled, no need to delete epoch data.
+		return
+	}
+	if newEpoch < db.config.EpochLimit {
+		// The new epoch is within the epoch limit, no need to delete epoch data.
+		return
+	}
+	untilEpoch := newEpoch - db.config.EpochLimit
+	log.Info("Deleting epoch data in pathdb", "epoch", untilEpoch)
+	rawdb.DeleteRangeAccountTrieNode(db.diskdb, untilEpoch)
 }

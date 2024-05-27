@@ -33,7 +33,7 @@ func TestStrictListAdd(t *testing.T) {
 
 	txs := make(types.Transactions, 1024)
 	for i := 0; i < len(txs); i++ {
-		txs[i] = transaction(uint64(i), 0, key)
+		txs[i] = transaction(0, uint32(i), 0, key)
 	}
 	// Insert the transactions in a random order
 	list := newList(true)
@@ -45,9 +45,39 @@ func TestStrictListAdd(t *testing.T) {
 		t.Errorf("transaction count mismatch: have %d, want %d", len(list.txs.items), len(txs))
 	}
 	for i, tx := range txs {
-		if list.txs.items[tx.Nonce()] != tx {
-			t.Errorf("item %d: transaction mismatch: have %v, want %v", i, list.txs.items[tx.Nonce()], tx)
+		if list.txs.items[tx.MsgNonce()] != tx {
+			t.Errorf("item %d: transaction mismatch: have %v, want %v", i, list.txs.items[tx.MsgNonce()], tx)
 		}
+	}
+}
+
+// Tests that transactions is filtered by epochCoverage correctly
+func TestFilteringEpochCoverage(t *testing.T) {
+	// Generate a list of transactions to insert
+	numTransactions := uint32(1024)
+	numEpochCoverage := uint32(32)
+	targetEpochCoverage := rand.Uint32() % numEpochCoverage
+	key, _ := crypto.GenerateKey()
+
+	txs := make(types.Transactions, numTransactions)
+	for i := 0; i < len(txs); i++ {
+		txs[i] = transaction(uint32(i)/numEpochCoverage, uint32(i), 0, key)
+	}
+	// Insert the transactions in a random order
+	list := newList(true)
+	for _, v := range rand.Perm(len(txs)) {
+		list.Add(txs[v], DefaultConfig.PriceBump)
+	}
+	// Verify internal state
+	if len(list.txs.items) != len(txs) {
+		t.Errorf("transaction count mismatch: have %d, want %d", len(list.txs.items), len(txs))
+	}
+	removed, invalid := list.Filter(targetEpochCoverage, big.NewInt(10000), DefaultConfig.PriceBump)
+	if uint32(len(removed)) != numTransactions-numEpochCoverage {
+		t.Errorf("removed count mismatch: have %d, want %d", len(removed), numTransactions-numEpochCoverage)
+	}
+	if len(invalid) != 0 {
+		t.Errorf("invalid count mismatch: have %d, want %d", len(invalid), 0)
 	}
 }
 
@@ -57,7 +87,7 @@ func BenchmarkListAdd(b *testing.B) {
 
 	txs := make(types.Transactions, 100000)
 	for i := 0; i < len(txs); i++ {
-		txs[i] = transaction(uint64(i), 0, key)
+		txs[i] = transaction(0, uint32(i), 0, key)
 	}
 	// Insert the transactions in a random order
 	priceLimit := big.NewInt(int64(DefaultConfig.PriceLimit))
@@ -66,7 +96,7 @@ func BenchmarkListAdd(b *testing.B) {
 		list := newList(true)
 		for _, v := range rand.Perm(len(txs)) {
 			list.Add(txs[v], DefaultConfig.PriceBump)
-			list.Filter(priceLimit, DefaultConfig.PriceBump)
+			list.Filter(0, priceLimit, DefaultConfig.PriceBump)
 		}
 	}
 }

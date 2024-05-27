@@ -136,7 +136,7 @@ func (ga *GenesisAlloc) hash(isVerkle bool) (common.Hash, error) {
 	// Create an ephemeral in-memory database for computing hash,
 	// all the derived states will be discarded to not pollute disk.
 	db := state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), config)
-	statedb, err := state.New(types.EmptyRootHash, db, nil)
+	statedb, err := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, nil)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -145,7 +145,11 @@ func (ga *GenesisAlloc) hash(isVerkle bool) (common.Hash, error) {
 			statedb.AddBalance(addr, account.Balance)
 		}
 		statedb.SetCode(addr, account.Code)
+		if account.UiHash != (common.Hash{}) {
+			statedb.SetUiHash(addr, account.UiHash)
+		}
 		statedb.SetNonce(addr, account.Nonce)
+		statedb.SetEpochCoverage(addr, account.EpochCoverage)
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
@@ -157,7 +161,7 @@ func (ga *GenesisAlloc) hash(isVerkle bool) (common.Hash, error) {
 // states will be persisted into the given database. Also, the genesis state
 // specification will be flushed as well.
 func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhash common.Hash) error {
-	statedb, err := state.New(types.EmptyRootHash, state.NewDatabaseWithNodeDB(db, triedb), nil)
+	statedb, err := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabaseWithNodeDB(db, triedb), nil)
 	if err != nil {
 		return err
 	}
@@ -166,7 +170,11 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 			statedb.AddBalance(addr, account.Balance)
 		}
 		statedb.SetCode(addr, account.Code)
+		if account.UiHash != (common.Hash{}) {
+			statedb.SetUiHash(addr, account.UiHash)
+		}
 		statedb.SetNonce(addr, account.Nonce)
+		statedb.SetEpochCoverage(addr, account.EpochCoverage)
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
@@ -192,11 +200,14 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 
 // GenesisAccount is an account in the state of the genesis block.
 type GenesisAccount struct {
-	Code       []byte                      `json:"code,omitempty"`
-	Storage    map[common.Hash]common.Hash `json:"storage,omitempty"`
-	Balance    *big.Int                    `json:"balance" gencodec:"required"`
-	Nonce      uint64                      `json:"nonce,omitempty"`
-	PrivateKey []byte                      `json:"secretKey,omitempty"` // for tests
+	Code          []byte                      `json:"code,omitempty"`
+	UiHash        common.Hash                 `json:"uiHash,omitempty"`
+	Storage       map[common.Hash]common.Hash `json:"storage,omitempty"`
+	StorageCount  uint64                      `json:"storageCount,omitempty"`
+	Balance       *big.Int                    `json:"balance" gencodec:"required"`
+	Nonce         uint32                      `json:"nonce,omitempty"`
+	EpochCoverage uint32                      `json:"epochCoverage,omitempty"`
+	PrivateKey    []byte                      `json:"secretKey,omitempty"` // for tests
 }
 
 // field type overrides for gencodec
@@ -215,11 +226,12 @@ type genesisSpecMarshaling struct {
 }
 
 type genesisAccountMarshaling struct {
-	Code       hexutil.Bytes
-	Balance    *math.HexOrDecimal256
-	Nonce      math.HexOrDecimal64
-	Storage    map[storageJSON]storageJSON
-	PrivateKey hexutil.Bytes
+	Code          hexutil.Bytes
+	Balance       *math.HexOrDecimal256
+	Nonce         math.HexOrDecimal32
+	EpochCoverage math.HexOrDecimal32
+	Storage       map[storageJSON]storageJSON
+	PrivateKey    hexutil.Bytes
 }
 
 // storageJSON represents a 256 bit byte array, but allows less than 256 bits when
@@ -320,7 +332,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 		if hash != stored {
 			return genesis.Config, hash, &GenesisMismatchError{stored, hash}
 		}
-		block, err := genesis.Commit(db, triedb)
+		block, err := genesis.CommitWithoutSetHead(db, triedb)
 		if err != nil {
 			return genesis.Config, hash, err
 		}
@@ -412,10 +424,6 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
-	case ghash == params.SepoliaGenesisHash:
-		return params.SepoliaChainConfig
-	case ghash == params.GoerliGenesisHash:
-		return params.GoerliChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -434,18 +442,19 @@ func (g *Genesis) ToBlock() *types.Block {
 		panic(err)
 	}
 	head := &types.Header{
-		Number:     new(big.Int).SetUint64(g.Number),
-		Nonce:      types.EncodeNonce(g.Nonce),
-		Time:       g.Timestamp,
-		ParentHash: g.ParentHash,
-		Extra:      g.ExtraData,
-		GasLimit:   g.GasLimit,
-		GasUsed:    g.GasUsed,
-		BaseFee:    g.BaseFee,
-		Difficulty: g.Difficulty,
-		MixDigest:  g.Mixhash,
-		Coinbase:   g.Coinbase,
-		Root:       root,
+		Number:         new(big.Int).SetUint64(g.Number),
+		Nonce:          types.EncodeNonce(g.Nonce),
+		Time:           g.Timestamp,
+		ParentHash:     g.ParentHash,
+		Extra:          g.ExtraData,
+		GasLimit:       g.GasLimit,
+		GasUsed:        g.GasUsed,
+		BaseFee:        g.BaseFee,
+		Difficulty:     g.Difficulty,
+		MixDigest:      g.Mixhash,
+		Coinbase:       g.Coinbase,
+		Root:           root,
+		CheckpointRoot: types.EmptyRootHash,
 	}
 	if g.GasLimit == 0 {
 		head.GasLimit = params.GenesisGasLimit
@@ -489,6 +498,19 @@ func (g *Genesis) ToBlock() *types.Block {
 // Commit writes the block and state of a genesis specification to the database.
 // The block is committed as the canonical head block.
 func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block, error) {
+	block, err := g.CommitWithoutSetHead(db, triedb)
+	if err != nil {
+		return nil, err
+	}
+	rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+	rawdb.WriteHeadBlockHash(db, block.Hash())
+	rawdb.WriteHeadFastBlockHash(db, block.Hash())
+	rawdb.WriteHeadHeaderHash(db, block.Hash())
+	return block, nil
+}
+
+// Commit writes the block and state of a genesis specification to the database.
+func (g *Genesis) CommitWithoutSetHead(db ethdb.Database, triedb *trie.Database) (*types.Block, error) {
 	block := g.ToBlock()
 	if block.Number().Sign() != 0 {
 		return nil, errors.New("can't commit genesis block with number > 0")
@@ -512,10 +534,6 @@ func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block
 	rawdb.WriteTd(db, block.Hash(), block.NumberU64(), block.Difficulty())
 	rawdb.WriteBlock(db, block)
 	rawdb.WriteReceipts(db, block.Hash(), block.NumberU64(), nil)
-	rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
-	rawdb.WriteHeadBlockHash(db, block.Hash())
-	rawdb.WriteHeadFastBlockHash(db, block.Hash())
-	rawdb.WriteHeadHeaderHash(db, block.Hash())
 	rawdb.WriteChainConfig(db, block.Hash(), config)
 	return block, nil
 }
@@ -534,48 +552,22 @@ func (g *Genesis) MustCommit(db ethdb.Database, triedb *trie.Database) *types.Bl
 func DefaultGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
-		Nonce:      66,
-		ExtraData:  hexutil.MustDecode("0x11bbe8db4e347b4e8c937c1c8370e4b5ed33adb3db69cbdb7a38e1e50b1b82fa"),
-		GasLimit:   5000,
-		Difficulty: big.NewInt(17179869184),
+		Timestamp:  1548854791,
+		ExtraData:  hexutil.MustDecode("0x00000000000000000000000000000000000000000000000000000000000000003f44c14e26a12884da7ff545ed4328de6f50f5a4d9b6fa15e8ae1374333015bff6ed41f62977234c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   30000000,
+		Difficulty: big.NewInt(1),
 		Alloc:      decodePrealloc(mainnetAllocData),
 	}
 }
 
-// DefaultGoerliGenesisBlock returns the Görli network genesis block.
-func DefaultGoerliGenesisBlock() *Genesis {
+func DefaultCreeperGenesisBlock() *Genesis {
 	return &Genesis{
-		Config:     params.GoerliChainConfig,
-		Timestamp:  1548854791,
-		ExtraData:  hexutil.MustDecode("0x22466c6578692069732061207468696e6722202d204166726900000000000000e0a2bd4258d2768837baa26a28fe71dc079f84c70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
-		GasLimit:   10485760,
+		Config:     params.CreeperChainConfig,
+		Timestamp:  0,
+		ExtraData:  hexutil.MustDecode("0x000000000000000000000000000000000000000000000000000000000000000088e28592b5fa91c1769717814fcf3180e6efdf1609cae4751408dd48bf1d3f818aa82b61bbbc65018642d2f9fdb3f8213d1da7cd54de89e06e2c6f117ed0474d8c457dee280e171db40c7b8e5a7810c80000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   8000000,
 		Difficulty: big.NewInt(1),
-		Alloc:      decodePrealloc(goerliAllocData),
-	}
-}
-
-// DefaultSepoliaGenesisBlock returns the Sepolia network genesis block.
-func DefaultSepoliaGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.SepoliaChainConfig,
-		Nonce:      0,
-		ExtraData:  []byte("Sepolia, Athens, Attica, Greece!"),
-		GasLimit:   0x1c9c380,
-		Difficulty: big.NewInt(0x20000),
-		Timestamp:  1633267481,
-		Alloc:      decodePrealloc(sepoliaAllocData),
-	}
-}
-
-// DefaultHoleskyGenesisBlock returns the Holesky network genesis block.
-func DefaultHoleskyGenesisBlock() *Genesis {
-	return &Genesis{
-		Config:     params.HoleskyChainConfig,
-		Nonce:      0x1234,
-		GasLimit:   0x17d7840,
-		Difficulty: big.NewInt(0x01),
-		Timestamp:  1695902100,
-		Alloc:      decodePrealloc(holeskyAllocData),
+		Alloc:      decodePrealloc(creeperAllocData),
 	}
 }
 
@@ -613,9 +605,10 @@ func decodePrealloc(data string) GenesisAlloc {
 		Addr    *big.Int
 		Balance *big.Int
 		Misc    *struct {
-			Nonce uint64
-			Code  []byte
-			Slots []struct {
+			Nonce         uint32
+			EpochCoverage uint32
+			Code          []byte
+			Slots         []struct {
 				Key common.Hash
 				Val common.Hash
 			}
@@ -629,6 +622,7 @@ func decodePrealloc(data string) GenesisAlloc {
 		acc := GenesisAccount{Balance: account.Balance}
 		if account.Misc != nil {
 			acc.Nonce = account.Misc.Nonce
+			acc.EpochCoverage = account.Misc.EpochCoverage
 			acc.Code = account.Misc.Code
 
 			acc.Storage = make(map[common.Hash]common.Hash)

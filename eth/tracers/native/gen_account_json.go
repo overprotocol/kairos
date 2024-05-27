@@ -17,13 +17,15 @@ func (a account) MarshalJSON() ([]byte, error) {
 	type account struct {
 		Balance *hexutil.Big                `json:"balance,omitempty"`
 		Code    hexutil.Bytes               `json:"code,omitempty"`
-		Nonce   uint64                      `json:"nonce,omitempty"`
+		Nonce   uint32                      `json:"nonce,omitempty"`
+		EpochCoverage uint32                `json:"epochCoverage,omitempty"`
 		Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
 	}
 	var enc account
 	enc.Balance = (*hexutil.Big)(a.Balance)
 	enc.Code = a.Code
 	enc.Nonce = a.Nonce
+	enc.EpochCoverage = a.EpochCoverage
 	enc.Storage = a.Storage
 	return json.Marshal(&enc)
 }
@@ -33,7 +35,8 @@ func (a *account) UnmarshalJSON(input []byte) error {
 	type account struct {
 		Balance *hexutil.Big                `json:"balance,omitempty"`
 		Code    *hexutil.Bytes              `json:"code,omitempty"`
-		Nonce   *uint64                     `json:"nonce,omitempty"`
+		Nonce   *uint32                     `json:"nonce,omitempty"`
+		EpochCoverage *uint32               `json:"epochCoverage,omitempty"`
 		Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
 	}
 	var dec account
@@ -48,6 +51,9 @@ func (a *account) UnmarshalJSON(input []byte) error {
 	}
 	if dec.Nonce != nil {
 		a.Nonce = *dec.Nonce
+	}
+	if dec.EpochCoverage != nil {
+		a.EpochCoverage = *dec.EpochCoverage
 	}
 	if dec.Storage != nil {
 		a.Storage = dec.Storage

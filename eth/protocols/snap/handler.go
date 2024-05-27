@@ -284,7 +284,7 @@ func ServiceGetAccountRangeQuery(chain *core.BlockChain, req *GetAccountRangePac
 		req.Bytes = softResponseLimit
 	}
 	// Retrieve the requested state and bail out if non existent
-	tr, err := trie.New(trie.StateTrieID(req.Root), chain.TrieDB())
+	tr, err := trie.New(trie.StateTrieID(req.Root, req.Epoch), chain.TrieDB())
 	if err != nil {
 		return nil, nil
 	}
@@ -414,7 +414,7 @@ func ServiceGetStorageRangesQuery(chain *core.BlockChain, req *GetStorageRangesP
 		if origin != (common.Hash{}) || (abort && len(storage) > 0) {
 			// Request started at a non-zero hash or was capped prematurely, add
 			// the endpoint Merkle proofs
-			accTrie, err := trie.NewStateTrie(trie.StateTrieID(req.Root), chain.TrieDB())
+			accTrie, err := trie.NewStateTrie(trie.StateTrieID(req.Root, req.Epoch), chain.TrieDB())
 			if err != nil {
 				return nil, nil
 			}
@@ -422,7 +422,7 @@ func ServiceGetStorageRangesQuery(chain *core.BlockChain, req *GetStorageRangesP
 			if err != nil || acc == nil {
 				return nil, nil
 			}
-			id := trie.StorageTrieID(req.Root, account, acc.Root)
+			id := trie.StorageTrieID(req.Root, req.Epoch, account, acc.Root)
 			stTrie, err := trie.NewStateTrie(id, chain.TrieDB())
 			if err != nil {
 				return nil, nil
@@ -489,7 +489,7 @@ func ServiceGetTrieNodesQuery(chain *core.BlockChain, req *GetTrieNodesPacket, s
 	// Make sure we have the state associated with the request
 	triedb := chain.TrieDB()
 
-	accTrie, err := trie.NewStateTrie(trie.StateTrieID(req.Root), triedb)
+	accTrie, err := trie.NewStateTrie(trie.StateTrieID(req.Root, req.Epoch), triedb)
 	if err != nil {
 		// We don't have the requested state available, bail out
 		return nil, nil
@@ -538,7 +538,7 @@ func ServiceGetTrieNodesQuery(chain *core.BlockChain, req *GetTrieNodesPacket, s
 				}
 				stRoot = common.BytesToHash(account.Root)
 			}
-			id := trie.StorageTrieID(req.Root, common.BytesToHash(pathset[0]), stRoot)
+			id := trie.StorageTrieID(req.Root, req.Epoch, common.BytesToHash(pathset[0]), stRoot)
 			stTrie, err := trie.NewStateTrie(id, triedb)
 			loads++ // always account database reads, even for failures
 			if err != nil {

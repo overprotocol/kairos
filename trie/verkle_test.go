@@ -63,7 +63,7 @@ func TestVerkleTreeReadWrite(t *testing.T) {
 	})
 	defer db.Close()
 
-	tr, _ := NewVerkleTrie(types.EmptyVerkleHash, db, utils.NewPointCache(100))
+	tr, _ := NewVerkleTrie(types.EmptyVerkleHash, 0, db, utils.NewPointCache(100))
 
 	for addr, acct := range accounts {
 		if err := tr.UpdateAccount(addr, acct); err != nil {

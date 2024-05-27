@@ -25,6 +25,7 @@ import (
 var (
 	ErrOutOfGas                 = errors.New("out of gas")
 	ErrCodeStoreOutOfGas        = errors.New("contract creation code storage out of gas")
+	ErrRestoreDataOutOfGas      = errors.New("restoration out of gas")
 	ErrDepth                    = errors.New("max call depth exceeded")
 	ErrInsufficientBalance      = errors.New("insufficient balance for transfer")
 	ErrContractAddressCollision = errors.New("contract address collision")
@@ -37,6 +38,15 @@ var (
 	ErrGasUintOverflow          = errors.New("gas uint64 overflow")
 	ErrInvalidCode              = errors.New("invalid code: must not begin with 0xef")
 	ErrNonceUintOverflow        = errors.New("nonce uint64 overflow")
+	ErrCreate2NotAvailable      = errors.New("create2 is not available")
+	ErrCreate2EOA               = errors.New("EOA can not create contract with create2")
+
+	ErrInsufficientFee     = errors.New("insufficient balance for restoration fee")
+	ErrZeroEpochCoverage   = errors.New("epochCoverage of account is already zero")
+	ErrEpochProofMismatch  = errors.New("mismatch between the epoch to restore and proofs")
+	ErrInvalidSourceEpoch  = errors.New("invalid source epoch")
+	ErrInvalidTargetEpoch  = errors.New("invalid target epoch")
+	ErrContractRestoration = errors.New("restoration of contract account")
 
 	// errStopToken is an internal token indicating interpreter loop termination,
 	// never returned to outside callers.

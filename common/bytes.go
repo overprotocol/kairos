@@ -18,6 +18,7 @@
 package common
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 
@@ -102,6 +103,13 @@ func ParseHexOrString(str string) ([]byte, error) {
 		return []byte(str), nil
 	}
 	return b, err
+}
+
+// Uint32ToBytes converts a uint32 to a big-endian byte slice.
+func Uint32ToBytes(ui32 uint32) []byte {
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, ui32)
+	return buf
 }
 
 // RightPadBytes zero-pads slice to the right up to length l.

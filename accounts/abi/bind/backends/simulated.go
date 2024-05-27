@@ -146,10 +146,11 @@ func (b *SimulatedBackend) Rollback() {
 }
 
 func (b *SimulatedBackend) rollback(parent *types.Block) {
-	blocks, _ := core.GenerateChain(b.config, parent, ethash.NewFaker(), b.database, 1, func(int, *core.BlockGen) {})
+	blocks, _ := core.GenerateChain(b.config, parent, ethash.NewFaker(), b.database, 1, func(int, *core.BlockGen) {}, b.blockchain.GetHeaderByNumber)
 
 	b.pendingBlock = blocks[0]
-	b.pendingState, _ = state.New(b.pendingBlock.Root(), b.blockchain.StateCache(), nil)
+	epoch, index := b.config.CalcEpochWithIndex(b.pendingBlock.Number().Uint64())
+	b.pendingState, _ = state.New(b.pendingBlock.Root(), b.pendingBlock.CheckpointRoot(), epoch, index, b.blockchain.StateCache(), nil)
 }
 
 // Fork creates a side-chain that can be used to simulate reorgs.
@@ -188,7 +189,7 @@ func (b *SimulatedBackend) stateByBlockNumber(ctx context.Context, blockNumber *
 	if err != nil {
 		return nil, err
 	}
-	return b.blockchain.StateAt(block.Root())
+	return b.blockchain.StateAt(block.Header())
 }
 
 // CodeAt returns the code associated with a certain account in the blockchain.
@@ -213,7 +214,7 @@ func (b *SimulatedBackend) CodeAtHash(ctx context.Context, contract common.Addre
 		return nil, err
 	}
 
-	stateDB, err := b.blockchain.StateAt(header.Root)
+	stateDB, err := b.blockchain.StateAt(header)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +243,7 @@ func (b *SimulatedBackend) NonceAt(ctx context.Context, contract common.Address,
 	if err != nil {
 		return 0, err
 	}
-	return stateDB.GetNonce(contract), nil
+	return stateDB.GetTxNonce(contract), nil
 }
 
 // StorageAt returns the value of key in the storage of an account in the blockchain.
@@ -513,7 +514,7 @@ func (b *SimulatedBackend) PendingNonceAt(ctx context.Context, account common.Ad
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.pendingState.GetOrNewStateObject(account).Nonce(), nil
+	return b.pendingState.GetOrNewStateObject(account).TxNonce(), nil
 }
 
 // SuggestGasPrice implements ContractTransactor.SuggestGasPrice. Since the simulated
@@ -694,6 +695,7 @@ func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallM
 		GasTipCap:         call.GasTipCap,
 		Data:              call.Data,
 		AccessList:        call.AccessList,
+		RestoreData:       call.RestoreData,
 		SkipAccountChecks: true,
 	}
 
@@ -723,23 +725,24 @@ func (b *SimulatedBackend) SendTransaction(ctx context.Context, tx *types.Transa
 	if err != nil {
 		return fmt.Errorf("invalid transaction: %v", err)
 	}
-	nonce := b.pendingState.GetNonce(sender)
+	nonce := b.pendingState.GetTxNonce(sender)
 	if tx.Nonce() != nonce {
 		return fmt.Errorf("invalid transaction nonce: got %d, want %d", tx.Nonce(), nonce)
 	}
 	// Include tx in chain
 	blocks, receipts := core.GenerateChain(b.config, block, ethash.NewFaker(), b.database, 1, func(number int, block *core.BlockGen) {
 		for _, tx := range b.pendingBlock.Transactions() {
-			block.AddTxWithChain(b.blockchain, tx)
+			block.AddTx(tx)
 		}
-		block.AddTxWithChain(b.blockchain, tx)
-	})
+		block.AddTx(tx)
+	}, b.blockchain.GetHeaderByNumber)
 	stateDB, err := b.blockchain.State()
 	if err != nil {
 		return err
 	}
 	b.pendingBlock = blocks[0]
-	b.pendingState, _ = state.New(b.pendingBlock.Root(), stateDB.Database(), nil)
+	epoch, index := b.config.CalcEpochWithIndex(b.pendingBlock.Number().Uint64())
+	b.pendingState, _ = state.New(b.pendingBlock.Root(), b.pendingBlock.CheckpointRoot(), epoch, index, stateDB.Database(), nil)
 	b.pendingReceipts = receipts[0]
 	return nil
 }
@@ -856,13 +859,14 @@ func (b *SimulatedBackend) AdjustTime(adjustment time.Duration) error {
 
 	blocks, _ := core.GenerateChain(b.config, block, ethash.NewFaker(), b.database, 1, func(number int, block *core.BlockGen) {
 		block.OffsetTime(int64(adjustment.Seconds()))
-	})
+	}, b.blockchain.GetHeaderByNumber)
 	stateDB, err := b.blockchain.State()
 	if err != nil {
 		return err
 	}
 	b.pendingBlock = blocks[0]
-	b.pendingState, _ = state.New(b.pendingBlock.Root(), stateDB.Database(), nil)
+	epoch, index := b.config.CalcEpochWithIndex(b.pendingBlock.Number().Uint64())
+	b.pendingState, _ = state.New(b.pendingBlock.Root(), b.pendingBlock.CheckpointRoot(), epoch, index, stateDB.Database(), nil)
 	return nil
 }
 

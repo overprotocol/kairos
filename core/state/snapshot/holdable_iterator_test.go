@@ -107,18 +107,22 @@ func TestReopenIterator(t *testing.T) {
 		db = rawdb.NewMemoryDatabase()
 	)
 	for key, val := range content {
-		rawdb.WriteAccountSnapshot(db, key, []byte(val))
+		rawdb.WriteAccountSnapshot(db, 0, key, []byte(val))
 	}
 	checkVal := func(it *holdableIterator, index int) {
-		if !bytes.Equal(it.Key(), append(rawdb.SnapshotAccountPrefix, order[index].Bytes()...)) {
-			t.Fatalf("Unexpected data entry key, want %v got %v", order[index], it.Key())
+		accountKey := make([]byte, len(rawdb.SnapshotAccountPrefix)+rawdb.EpochBytes+common.HashLength)
+		n := copy(accountKey, rawdb.SnapshotAccountPrefix)
+		n += copy(accountKey[n:], common.Uint32ToBytes(0))
+		copy(accountKey[n:], order[index].Bytes())
+		if !bytes.Equal(it.Key(), accountKey) {
+			t.Fatalf("Unexpected data entry key, want %v got %v", accountKey, it.Key())
 		}
 		if !bytes.Equal(it.Value(), []byte(content[order[index]])) {
 			t.Fatalf("Unexpected data entry key, want %v got %v", []byte(content[order[index]]), it.Value())
 		}
 	}
 	// Iterate over the database with the given configs and verify the results
-	ctx, idx := newGeneratorContext(&generatorStats{}, db, nil, nil), -1
+	ctx, idx := newGeneratorContext(&generatorStats{}, db, 0, nil, nil), -1
 
 	idx++
 	ctx.account.Next()

@@ -27,6 +27,8 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		TxLookupLimit           uint64                 `toml:",omitempty"`
 		TransactionHistory      uint64                 `toml:",omitempty"`
 		StateHistory            uint64                 `toml:",omitempty"`
+		DisableHistory          bool 								   `toml:",omitempty"`
+		EpochLimit              uint32                 `toml:",omitempty"`
 		StateScheme             string                 `toml:",omitempty"`
 		RequiredBlocks          map[uint64]common.Hash `toml:"-"`
 		LightServ               int                    `toml:",omitempty"`
@@ -68,6 +70,8 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.TxLookupLimit = c.TxLookupLimit
 	enc.TransactionHistory = c.TransactionHistory
 	enc.StateHistory = c.StateHistory
+	enc.DisableHistory = c.DisableHistory
+	enc.EpochLimit = c.EpochLimit
 	enc.StateScheme = c.StateScheme
 	enc.RequiredBlocks = c.RequiredBlocks
 	enc.LightServ = c.LightServ
@@ -113,6 +117,8 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		TxLookupLimit           *uint64                `toml:",omitempty"`
 		TransactionHistory      *uint64                `toml:",omitempty"`
 		StateHistory            *uint64                `toml:",omitempty"`
+		DisableHistory 				  *bool                  `toml:",omitempty"`
+		EpochLimit              *uint32                `toml:",omitempty"`
 		StateScheme             *string                `toml:",omitempty"`
 		RequiredBlocks          map[uint64]common.Hash `toml:"-"`
 		LightServ               *int                   `toml:",omitempty"`
@@ -176,6 +182,12 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.StateHistory != nil {
 		c.StateHistory = *dec.StateHistory
+	}
+	if dec.DisableHistory != nil {
+		c.DisableHistory = *dec.DisableHistory
+	}
+	if dec.EpochLimit != nil {
+		c.EpochLimit = *dec.EpochLimit
 	}
 	if dec.StateScheme != nil {
 		c.StateScheme = *dec.StateScheme

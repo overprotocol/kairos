@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"time"
@@ -41,6 +42,19 @@ type precompiledFailureTest struct {
 	Input         string
 	ExpectedError string
 	Name          string
+}
+
+var vmBlockCtx = BlockContext{}
+
+var vmTxCtx = TxContext{
+	GasPrice: common.Big1,
+	Origin:   common.HexToAddress("a11ce"),
+}
+
+// Create a global mock EVM for use in the following tests.
+var mockEVM = &EVM{
+	Context:   vmBlockCtx,
+	TxContext: vmTxCtx,
 }
 
 // allPrecompiles does not map to the actual set of precompiles, as it also contains
@@ -98,7 +112,7 @@ func testPrecompiled(addr string, test precompiledTest, t *testing.T) {
 	in := common.Hex2Bytes(test.Input)
 	gas := p.RequiredGas(in)
 	t.Run(fmt.Sprintf("%s-Gas=%d", test.Name, gas), func(t *testing.T) {
-		if res, _, err := RunPrecompiledContract(p, in, gas); err != nil {
+		if res, _, err := RunPrecompiledContract(p, in, gas, AccountRef(common.HexToAddress("1337")), big.NewInt(0), mockEVM); err != nil {
 			t.Error(err)
 		} else if common.Bytes2Hex(res) != test.Expected {
 			t.Errorf("Expected %v, got %v", test.Expected, common.Bytes2Hex(res))
@@ -120,7 +134,7 @@ func testPrecompiledOOG(addr string, test precompiledTest, t *testing.T) {
 	gas := p.RequiredGas(in) - 1
 
 	t.Run(fmt.Sprintf("%s-Gas=%d", test.Name, gas), func(t *testing.T) {
-		_, _, err := RunPrecompiledContract(p, in, gas)
+		_, _, err := RunPrecompiledContract(p, in, gas, AccountRef(common.HexToAddress("1337")), big.NewInt(0), mockEVM)
 		if err.Error() != "out of gas" {
 			t.Errorf("Expected error [out of gas], got [%v]", err)
 		}
@@ -137,7 +151,7 @@ func testPrecompiledFailure(addr string, test precompiledFailureTest, t *testing
 	in := common.Hex2Bytes(test.Input)
 	gas := p.RequiredGas(in)
 	t.Run(test.Name, func(t *testing.T) {
-		_, _, err := RunPrecompiledContract(p, in, gas)
+		_, _, err := RunPrecompiledContract(p, in, gas, AccountRef(common.HexToAddress("1337")), big.NewInt(0), mockEVM)
 		if err.Error() != test.ExpectedError {
 			t.Errorf("Expected error [%v], got [%v]", test.ExpectedError, err)
 		}
@@ -169,7 +183,7 @@ func benchmarkPrecompiled(addr string, test precompiledTest, bench *testing.B) {
 		bench.ResetTimer()
 		for i := 0; i < bench.N; i++ {
 			copy(data, in)
-			res, _, err = RunPrecompiledContract(p, data, reqGas)
+			res, _, err = RunPrecompiledContract(p, data, reqGas, AccountRef(common.HexToAddress("1337")), big.NewInt(0), mockEVM)
 		}
 		bench.StopTimer()
 		elapsed := uint64(time.Since(start))

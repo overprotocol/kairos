@@ -85,7 +85,6 @@ func TestGeneratePOSChain(t *testing.T) {
 
 	genchain, genreceipts := GenerateChain(gspec.Config, genesis, beacon.NewFaker(), gendb, 4, func(i int, gen *BlockGen) {
 		gen.SetParentBeaconRoot(common.Hash{byte(i + 1)})
-
 		// Add value transfer tx.
 		tx := types.MustSignNewTx(key, gen.Signer(), &types.LegacyTx{
 			Nonce:    gen.TxNonce(address),
@@ -121,7 +120,7 @@ func TestGeneratePOSChain(t *testing.T) {
 				Amount:    1,
 			})
 		}
-	})
+	}, nil)
 
 	// Import the chain. This runs all block validation rules.
 	blockchain, _ := NewBlockChain(db, nil, gspec, nil, beacon.NewFaker(), vm.Config{}, nil, nil)
@@ -201,7 +200,7 @@ func ExampleGenerateChain() {
 
 	// Ensure that key1 has some funds in the genesis block.
 	gspec := &Genesis{
-		Config: &params.ChainConfig{HomesteadBlock: new(big.Int)},
+		Config: &params.ChainConfig{HomesteadBlock: new(big.Int), SweepEpoch: 3600},
 		Alloc:  GenesisAlloc{addr1: {Balance: big.NewInt(1000000)}},
 	}
 	genesis := gspec.MustCommit(genDb, trie.NewDatabase(genDb, trie.HashDefaults))
@@ -236,7 +235,7 @@ func ExampleGenerateChain() {
 			b3.Extra = []byte("foo")
 			gen.AddUncle(b3)
 		}
-	})
+	}, nil)
 
 	// Import the chain. This runs all block validation rules.
 	blockchain, _ := NewBlockChain(db, DefaultCacheConfigWithScheme(rawdb.HashScheme), gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil)

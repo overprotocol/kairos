@@ -22,10 +22,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
@@ -154,7 +156,7 @@ block is used.
 				Action:    snapshotExportPreimages,
 				Name:      "export-preimages",
 				Usage:     "Export the preimage in snapshot enumeration order",
-				ArgsUsage: "<dumpfile> [<root>]",
+				ArgsUsage: "<dumpfile> [<epoch>, root>, <checkpointroot>]",
 				Flags:     utils.DatabaseFlags,
 				Description: `
 The export-preimages command exports hash preimages to a flat file, in exactly
@@ -206,7 +208,7 @@ func pruneState(ctx *cli.Context) error {
 }
 
 func verifyState(ctx *cli.Context) error {
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
 	chaindb := utils.MakeChainDatabase(ctx, stack, true)
@@ -226,7 +228,10 @@ func verifyState(ctx *cli.Context) error {
 		NoBuild:    true,
 		AsyncBuild: false,
 	}
-	snaptree, err := snapshot.New(snapConfig, chaindb, triedb, headBlock.Root())
+
+	chainConfig, _, _ := core.SetupGenesisBlock(chaindb, triedb, cfg.Eth.Genesis)
+	epoch := chainConfig.CalcEpoch(headBlock.Number().Uint64())
+	snaptree, err := snapshot.New(snapConfig, chaindb, triedb, epoch, headBlock.Root(), headBlock.CheckpointRoot())
 	if err != nil {
 		log.Error("Failed to open snapshot tree", "err", err)
 		return err
@@ -266,7 +271,7 @@ func checkDanglingStorage(ctx *cli.Context) error {
 // Basically it just iterates the trie, ensure all nodes and associated
 // contract codes are present.
 func traverseState(ctx *cli.Context) error {
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
 	chaindb := utils.MakeChainDatabase(ctx, stack, true)
@@ -299,7 +304,8 @@ func traverseState(ctx *cli.Context) error {
 		root = headBlock.Root()
 		log.Info("Start traversing the state", "root", root, "number", headBlock.NumberU64())
 	}
-	t, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
+	epoch := cfg.Eth.Genesis.Config.CalcEpoch(headBlock.Number().Uint64())
+	t, err := trie.NewStateTrie(trie.StateTrieID(root, epoch), triedb)
 	if err != nil {
 		log.Error("Failed to open trie", "root", root, "err", err)
 		return err
@@ -325,7 +331,7 @@ func traverseState(ctx *cli.Context) error {
 			return err
 		}
 		if acc.Root != types.EmptyRootHash {
-			id := trie.StorageTrieID(root, common.BytesToHash(accIter.Key), acc.Root)
+			id := trie.StorageTrieID(root, epoch, common.BytesToHash(accIter.Key), acc.Root)
 			storageTrie, err := trie.NewStateTrie(id, triedb)
 			if err != nil {
 				log.Error("Failed to open storage trie", "root", acc.Root, "err", err)
@@ -375,7 +381,7 @@ func traverseState(ctx *cli.Context) error {
 // contract codes are present. It's basically identical to traverseState
 // but it will check each trie node.
 func traverseRawState(ctx *cli.Context) error {
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
 	chaindb := utils.MakeChainDatabase(ctx, stack, true)
@@ -408,7 +414,8 @@ func traverseRawState(ctx *cli.Context) error {
 		root = headBlock.Root()
 		log.Info("Start traversing the state", "root", root, "number", headBlock.NumberU64())
 	}
-	t, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
+	epoch := cfg.Eth.Genesis.Config.CalcEpoch(headBlock.Number().Uint64())
+	t, err := trie.NewStateTrie(trie.StateTrieID(root, epoch), triedb)
 	if err != nil {
 		log.Error("Failed to open trie", "root", root, "err", err)
 		return err
@@ -428,7 +435,7 @@ func traverseRawState(ctx *cli.Context) error {
 		log.Error("Failed to open iterator", "root", root, "err", err)
 		return err
 	}
-	reader, err := triedb.Reader(root)
+	reader, err := triedb.Reader(root, epoch)
 	if err != nil {
 		log.Error("State is non-existent", "root", root)
 		return nil
@@ -463,7 +470,7 @@ func traverseRawState(ctx *cli.Context) error {
 				return errors.New("invalid account")
 			}
 			if acc.Root != types.EmptyRootHash {
-				id := trie.StorageTrieID(root, common.BytesToHash(accIter.LeafKey()), acc.Root)
+				id := trie.StorageTrieID(root, epoch, common.BytesToHash(accIter.LeafKey()), acc.Root)
 				storageTrie, err := trie.NewStateTrie(id, triedb)
 				if err != nil {
 					log.Error("Failed to open storage trie", "root", acc.Root, "err", err)
@@ -538,10 +545,10 @@ func parseRoot(input string) (common.Hash, error) {
 }
 
 func dumpState(ctx *cli.Context) error {
-	stack, _ := makeConfigNode(ctx)
+	stack, cfg := makeConfigNode(ctx)
 	defer stack.Close()
 
-	conf, db, root, err := parseDumpConfig(ctx, stack)
+	conf, db, header, err := parseDumpConfig(ctx, stack)
 	if err != nil {
 		return err
 	}
@@ -554,17 +561,18 @@ func dumpState(ctx *cli.Context) error {
 		NoBuild:    true,
 		AsyncBuild: false,
 	}
-	snaptree, err := snapshot.New(snapConfig, db, triedb, root)
+	epoch := cfg.Eth.Genesis.Config.CalcEpoch(header.Number.Uint64())
+	snaptree, err := snapshot.New(snapConfig, db, triedb, epoch, header.Root, header.CheckpointRoot)
 	if err != nil {
 		return err
 	}
-	accIt, err := snaptree.AccountIterator(root, common.BytesToHash(conf.Start))
+	accIt, err := snaptree.AccountIterator(header.Root, common.BytesToHash(conf.Start))
 	if err != nil {
 		return err
 	}
 	defer accIt.Release()
 
-	log.Info("Snapshot dumping started", "root", root)
+	log.Info("Snapshot dumping started", "root", header.Root)
 	var (
 		start    = time.Now()
 		logged   = time.Now()
@@ -573,18 +581,20 @@ func dumpState(ctx *cli.Context) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.Encode(struct {
 		Root common.Hash `json:"root"`
-	}{root})
+	}{header.Root})
 	for accIt.Next() {
 		account, err := types.FullAccount(accIt.Account())
 		if err != nil {
 			return err
 		}
 		da := &state.DumpAccount{
-			Balance:     account.Balance.String(),
-			Nonce:       account.Nonce,
-			Root:        account.Root.Bytes(),
-			CodeHash:    account.CodeHash,
-			AddressHash: accIt.Hash().Bytes(),
+			Balance:      account.Balance.String(),
+			Nonce:        account.Nonce,
+			Root:         account.Root.Bytes(),
+			CodeHash:     account.CodeHash,
+			UiHash:       account.UiHash,
+			StorageCount: account.StorageCount,
+			AddressHash:  accIt.Hash().Bytes(),
 		}
 		if !conf.SkipCode && !bytes.Equal(account.CodeHash, types.EmptyCodeHash.Bytes()) {
 			da.Code = rawdb.ReadCode(db, common.BytesToHash(account.CodeHash))
@@ -592,7 +602,7 @@ func dumpState(ctx *cli.Context) error {
 		if !conf.SkipStorage {
 			da.Storage = make(map[common.Hash]string)
 
-			stIt, err := snaptree.StorageIterator(root, accIt.Hash(), common.Hash{})
+			stIt, err := snaptree.StorageIterator(header.Root, accIt.Hash(), common.Hash{})
 			if err != nil {
 				return err
 			}
@@ -618,7 +628,7 @@ func dumpState(ctx *cli.Context) error {
 
 // snapshotExportPreimages dumps the preimage data to a flat file.
 func snapshotExportPreimages(ctx *cli.Context) error {
-	if ctx.NArg() < 1 {
+	if ctx.NArg() < 3 {
 		utils.Fatalf("This command requires an argument.")
 	}
 	stack, _ := makeConfigNode(ctx)
@@ -630,13 +640,25 @@ func snapshotExportPreimages(ctx *cli.Context) error {
 	triedb := utils.MakeTrieDatabase(ctx, chaindb, false, true, false)
 	defer triedb.Close()
 
-	var root common.Hash
-	if ctx.NArg() > 1 {
-		rootBytes := common.FromHex(ctx.Args().Get(1))
+	var epoch uint32
+	var root, ckptRoot common.Hash
+	if ctx.NArg() > 3 {
+		epochU64, err := strconv.ParseUint(ctx.Args().Get(1), 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid epoch: %s", ctx.Args().Get(1))
+		}
+		epoch = uint32(epochU64)
+
+		rootBytes := common.FromHex(ctx.Args().Get(2))
 		if len(rootBytes) != common.HashLength {
 			return fmt.Errorf("invalid hash: %s", ctx.Args().Get(1))
 		}
 		root = common.BytesToHash(rootBytes)
+		ckptBytes := common.FromHex(ctx.Args().Get(3))
+		if len(ckptBytes) != common.HashLength {
+			return fmt.Errorf("invalid hash: %s", ctx.Args().Get(2))
+		}
+		ckptRoot = common.BytesToHash(ckptBytes)
 	} else {
 		headBlock := rawdb.ReadHeadBlock(chaindb)
 		if headBlock == nil {
@@ -651,7 +673,7 @@ func snapshotExportPreimages(ctx *cli.Context) error {
 		NoBuild:    true,
 		AsyncBuild: false,
 	}
-	snaptree, err := snapshot.New(snapConfig, chaindb, triedb, root)
+	snaptree, err := snapshot.New(snapConfig, chaindb, triedb, epoch, root, ckptRoot)
 	if err != nil {
 		return err
 	}

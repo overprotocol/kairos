@@ -10,7 +10,7 @@ INFO [03-09|10:43:57.070] Trie dumping complete                    accounts=2 el
 INFO [03-09|10:43:57.071] Wrote file                               file=alloc.json
 {
   "result": {
-    "stateRoot": "0x6f058887ca01549716789c380ede95aecc510e6d1fdc4dbf67d053c7c07f4bdc",
+    "stateRoot": "0x38070dc11f96697a16f6420485f9362cc2ba3489b7ad5878ac4a05b2fa826398",
     "txRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
     "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
     "logsHash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
@@ -30,7 +30,7 @@ INFO [03-09|10:44:20.511] Trie dumping complete                    accounts=2 el
 INFO [03-09|10:44:20.512] Wrote file                               file=alloc.json
 {
   "result": {
-    "stateRoot": "0x6f058887ca01549716789c380ede95aecc510e6d1fdc4dbf67d053c7c07f4bdc",
+    "stateRoot": "0x38070dc11f96697a16f6420485f9362cc2ba3489b7ad5878ac4a05b2fa826398",
     "txRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
     "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
     "logsHash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",

@@ -378,7 +378,17 @@ func TestInternals(t *testing.T) {
 				}, false, rawdb.HashScheme)
 			defer triedb.Close()
 
-			evm := vm.NewEVM(context, txContext, statedb, params.MainnetChainConfig, vm.Config{Tracer: tc.tracer})
+			chainConfig := &params.ChainConfig{
+				ChainID:             big.NewInt(1337),
+				HomesteadBlock:      big.NewInt(0),
+				EIP150Block:         big.NewInt(0),
+				EIP155Block:         big.NewInt(0),
+				EIP158Block:         big.NewInt(0),
+				ByzantiumBlock:      big.NewInt(0),
+				ConstantinopleBlock: big.NewInt(0),
+				PetersburgBlock:     big.NewInt(0),
+			}
+			evm := vm.NewEVM(context, txContext, statedb, chainConfig, vm.Config{Tracer: tc.tracer})
 			msg := &core.Message{
 				To:                &to,
 				From:              origin,

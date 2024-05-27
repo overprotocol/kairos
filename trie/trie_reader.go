@@ -45,18 +45,18 @@ type trieReader struct {
 }
 
 // newTrieReader initializes the trie reader with the given node reader.
-func newTrieReader(stateRoot, owner common.Hash, db *Database) (*trieReader, error) {
+func newTrieReader(epoch uint32, stateRoot, owner common.Hash, db *Database) (*trieReader, error) {
+	reader, err := db.Reader(stateRoot, epoch)
+	if err == nil {
+		return &trieReader{owner: owner, reader: reader}, nil
+	}
 	if stateRoot == (common.Hash{}) || stateRoot == types.EmptyRootHash {
 		if stateRoot == (common.Hash{}) {
 			log.Error("Zero state root hash!")
 		}
 		return &trieReader{owner: owner}, nil
 	}
-	reader, err := db.Reader(stateRoot)
-	if err != nil {
-		return nil, &MissingNodeError{Owner: owner, NodeHash: stateRoot, err: err}
-	}
-	return &trieReader{owner: owner, reader: reader}, nil
+	return nil, &MissingNodeError{Owner: owner, NodeHash: stateRoot, err: err}
 }
 
 // newEmptyReader initializes the pure in-memory reader. All read operations
@@ -87,15 +87,16 @@ func (r *trieReader) node(path []byte, hash common.Hash) ([]byte, error) {
 
 // trieLoader implements triestate.TrieLoader for constructing tries.
 type trieLoader struct {
-	db *Database
+	db    *Database
+	epoch uint32
 }
 
 // OpenTrie opens the main account trie.
 func (l *trieLoader) OpenTrie(root common.Hash) (triestate.Trie, error) {
-	return New(TrieID(root), l.db)
+	return New(StateTrieID(root, l.epoch), l.db)
 }
 
 // OpenStorageTrie opens the storage trie of an account.
 func (l *trieLoader) OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash) (triestate.Trie, error) {
-	return New(StorageTrieID(stateRoot, addrHash, root), l.db)
+	return New(StorageTrieID(stateRoot, l.epoch, addrHash, root), l.db)
 }

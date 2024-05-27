@@ -137,6 +137,22 @@ func WritePersistentStateID(db ethdb.KeyValueWriter, number uint64) {
 	}
 }
 
+// ReadPersistentEpoch retrieves the epoch of the persistent state from the database.
+func ReadPersistentEpoch(db ethdb.KeyValueReader) uint32 {
+	data, _ := db.Get(persistentEpochKey)
+	if len(data) != 4 {
+		return 0
+	}
+	return binary.BigEndian.Uint32(data)
+}
+
+// WritePersistentEpoch stores the epoch of the persistent state into database.
+func WritePersistentEpoch(db ethdb.KeyValueWriter, epoch uint32) {
+	if err := db.Put(persistentEpochKey, encodeEpochNumber(epoch)); err != nil {
+		log.Crit("Failed to store the persistent epoch", "err", err)
+	}
+}
+
 // ReadTrieJournal retrieves the serialized in-memory trie nodes of layers saved at
 // the last shutdown.
 func ReadTrieJournal(db ethdb.KeyValueReader) []byte {

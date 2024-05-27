@@ -137,21 +137,24 @@ func (s *EthereumAPI) Syncing() (interface{}, error) {
 	}
 	// Otherwise gather the block sync stats
 	return map[string]interface{}{
-		"startingBlock":       hexutil.Uint64(progress.StartingBlock),
-		"currentBlock":        hexutil.Uint64(progress.CurrentBlock),
-		"highestBlock":        hexutil.Uint64(progress.HighestBlock),
-		"syncedAccounts":      hexutil.Uint64(progress.SyncedAccounts),
-		"syncedAccountBytes":  hexutil.Uint64(progress.SyncedAccountBytes),
-		"syncedBytecodes":     hexutil.Uint64(progress.SyncedBytecodes),
-		"syncedBytecodeBytes": hexutil.Uint64(progress.SyncedBytecodeBytes),
-		"syncedStorage":       hexutil.Uint64(progress.SyncedStorage),
-		"syncedStorageBytes":  hexutil.Uint64(progress.SyncedStorageBytes),
-		"healedTrienodes":     hexutil.Uint64(progress.HealedTrienodes),
-		"healedTrienodeBytes": hexutil.Uint64(progress.HealedTrienodeBytes),
-		"healedBytecodes":     hexutil.Uint64(progress.HealedBytecodes),
-		"healedBytecodeBytes": hexutil.Uint64(progress.HealedBytecodeBytes),
-		"healingTrienodes":    hexutil.Uint64(progress.HealingTrienodes),
-		"healingBytecode":     hexutil.Uint64(progress.HealingBytecode),
+		"startingBlock":          hexutil.Uint64(progress.StartingBlock),
+		"currentBlock":           hexutil.Uint64(progress.CurrentBlock),
+		"highestBlock":           hexutil.Uint64(progress.HighestBlock),
+		"syncedAccounts":         hexutil.Uint64(progress.SyncedAccounts),
+		"syncedAccountBytes":     hexutil.Uint64(progress.SyncedAccountBytes),
+		"syncedBytecodes":        hexutil.Uint64(progress.SyncedBytecodes),
+		"syncedBytecodeBytes":    hexutil.Uint64(progress.SyncedBytecodeBytes),
+		"syncedStorage":          hexutil.Uint64(progress.SyncedStorage),
+		"syncedStorageBytes":     hexutil.Uint64(progress.SyncedStorageBytes),
+		"estimatedStateProgress": progress.EstimatedStateProgress,
+		"healedTrienodes":        hexutil.Uint64(progress.HealedTrienodes),
+		"healedTrienodeBytes":    hexutil.Uint64(progress.HealedTrienodeBytes),
+		"healedBytecodes":        hexutil.Uint64(progress.HealedBytecodes),
+		"healedBytecodeBytes":    hexutil.Uint64(progress.HealedBytecodeBytes),
+		"healingTrienodes":       hexutil.Uint64(progress.HealingTrienodes),
+		"healingBytecode":        hexutil.Uint64(progress.HealingBytecode),
+		"syncMode":               progress.SyncMode,
+		"committed":              progress.Committed,
 	}, nil
 }
 
@@ -235,8 +238,10 @@ func (s *TxPoolAPI) Inspect() map[string]map[string]map[string]string {
 
 	// Define a formatter to flatten a transaction into a string
 	var format = func(tx *types.Transaction) string {
-		if to := tx.To(); to != nil {
+		if !tx.IsContractCreation() {
 			return fmt.Sprintf("%s: %v wei + %v gas × %v wei", tx.To().Hex(), tx.Value(), tx.Gas(), tx.GasPrice())
+		} else if tx.IsRestoration() {
+			return fmt.Sprintf("restoration: %v gas × %v wei", tx.Gas(), tx.GasPrice())
 		}
 		return fmt.Sprintf("contract creation: %v wei + %v gas × %v wei", tx.Value(), tx.Gas(), tx.GasPrice())
 	}
@@ -627,6 +632,10 @@ func (api *BlockChainAPI) ChainId() *hexutil.Big {
 	return (*hexutil.Big)(api.b.ChainConfig().ChainID)
 }
 
+func (api *BlockChainAPI) SweepEpoch() hexutil.Uint64 {
+	return hexutil.Uint64(api.b.ChainConfig().SweepEpoch)
+}
+
 // BlockNumber returns the block number of the chain head.
 func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
@@ -637,22 +646,36 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 // given block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
 // block numbers are also allowed.
 func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return nil, err
 	}
 	return (*hexutil.Big)(state.GetBalance(address)), state.Error()
 }
 
+// ExistWithoutCkpt returns the existence of the given address in the state of the
+// given block number without checkpoint state. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
+// block numbers are also allowed.
+func (s *BlockChainAPI) ExistWithoutCkpt(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, true)
+	if state == nil || err != nil {
+		return false, err
+	}
+	return state.Exist(address), state.Error()
+}
+
 // Result structs for GetProof
 type AccountResult struct {
-	Address      common.Address  `json:"address"`
-	AccountProof []string        `json:"accountProof"`
-	Balance      *hexutil.Big    `json:"balance"`
-	CodeHash     common.Hash     `json:"codeHash"`
-	Nonce        hexutil.Uint64  `json:"nonce"`
-	StorageHash  common.Hash     `json:"storageHash"`
-	StorageProof []StorageResult `json:"storageProof"`
+	Address       common.Address  `json:"address"`
+	AccountProof  []string        `json:"accountProof"`
+	Balance       *hexutil.Big    `json:"balance"`
+	CodeHash      common.Hash     `json:"codeHash"`
+	UiHash        common.Hash     `json:"uiHash"`
+	EpochCoverage hexutil.Uint64  `json:"epochCoverage"`
+	Nonce         hexutil.Uint64  `json:"nonce"`
+	StorageCount  hexutil.Uint64  `json:"storageCount"`
+	StorageHash   common.Hash     `json:"storageHash"`
+	StorageProof  []StorageResult `json:"storageProof"`
 }
 
 type StorageResult struct {
@@ -689,8 +712,12 @@ func (s *BlockChainAPI) GetProof(ctx context.Context, address common.Address, st
 			return nil, err
 		}
 	}
-	statedb, header, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	statedb, header, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, true)
 	if statedb == nil || err != nil {
+		return nil, err
+	}
+	epoch, err := s.b.CalcEpoch(header.Number.Uint64())
+	if err != nil {
 		return nil, err
 	}
 	codeHash := statedb.GetCodeHash(address)
@@ -699,7 +726,7 @@ func (s *BlockChainAPI) GetProof(ctx context.Context, address common.Address, st
 	if len(keys) > 0 {
 		var storageTrie state.Trie
 		if storageRoot != types.EmptyRootHash && storageRoot != (common.Hash{}) {
-			id := trie.StorageTrieID(header.Root, crypto.Keccak256Hash(address.Bytes()), storageRoot)
+			id := trie.StorageTrieID(header.Root, epoch, crypto.Keccak256Hash(address.Bytes()), storageRoot)
 			st, err := trie.NewStateTrie(id, statedb.Database().TrieDB())
 			if err != nil {
 				return nil, err
@@ -731,7 +758,7 @@ func (s *BlockChainAPI) GetProof(ctx context.Context, address common.Address, st
 		}
 	}
 	// Create the accountProof.
-	tr, err := trie.NewStateTrie(trie.StateTrieID(header.Root), statedb.Database().TrieDB())
+	tr, err := trie.NewStateTrie(trie.StateTrieID(header.Root, epoch), statedb.Database().TrieDB())
 	if err != nil {
 		return nil, err
 	}
@@ -740,13 +767,16 @@ func (s *BlockChainAPI) GetProof(ctx context.Context, address common.Address, st
 		return nil, err
 	}
 	return &AccountResult{
-		Address:      address,
-		AccountProof: accountProof,
-		Balance:      (*hexutil.Big)(statedb.GetBalance(address)),
-		CodeHash:     codeHash,
-		Nonce:        hexutil.Uint64(statedb.GetNonce(address)),
-		StorageHash:  storageRoot,
-		StorageProof: storageProof,
+		Address:       address,
+		AccountProof:  accountProof,
+		Balance:       (*hexutil.Big)(statedb.GetBalance(address)),
+		CodeHash:      codeHash,
+		UiHash:        statedb.GetUiHash(address),
+		Nonce:         hexutil.Uint64(statedb.GetNonce(address)),
+		EpochCoverage: hexutil.Uint64(statedb.GetEpochCoverage(address)),
+		StorageCount:  hexutil.Uint64(statedb.GetStorageCount(address)),
+		StorageHash:   storageRoot,
+		StorageProof:  storageProof,
 	}, statedb.Error()
 }
 
@@ -796,6 +826,17 @@ func (s *BlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.Hash) m
 		return s.rpcMarshalHeader(ctx, header)
 	}
 	return nil
+}
+
+// GetHeaderByNumber returns the requested canonical block header.
+// * When blockNr is -1 the chain head is returned.
+// * When blockNr is -2 the pending chain head is returned.
+func (s *BlockChainAPI) GetEpochByNumber(ctx context.Context, number rpc.BlockNumber) (uint32, error) {
+	header, err := s.b.HeaderByNumber(ctx, number)
+	if header != nil && err == nil {
+		return s.b.CalcEpoch(header.Number.Uint64())
+	}
+	return 0, err
 }
 
 // GetBlockByNumber returns the requested canonical block.
@@ -880,7 +921,7 @@ func (s *BlockChainAPI) GetUncleCountByBlockHash(ctx context.Context, blockHash 
 
 // GetCode returns the code stored at the given address in the state for the given block number.
 func (s *BlockChainAPI) GetCode(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -892,7 +933,7 @@ func (s *BlockChainAPI) GetCode(ctx context.Context, address common.Address, blo
 // block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta block
 // numbers are also allowed.
 func (s *BlockChainAPI) GetStorageAt(ctx context.Context, address common.Address, hexKey string, blockNrOrHash rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -939,11 +980,14 @@ func (s *BlockChainAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rpc.
 // if statDiff is set, all diff will be applied first and then execute the call
 // message.
 type OverrideAccount struct {
-	Nonce     *hexutil.Uint64              `json:"nonce"`
-	Code      *hexutil.Bytes               `json:"code"`
-	Balance   **hexutil.Big                `json:"balance"`
-	State     *map[common.Hash]common.Hash `json:"state"`
-	StateDiff *map[common.Hash]common.Hash `json:"stateDiff"`
+	EpochCoverage *hexutil.Uint64              `json:"epochCoverage"`
+	Nonce         *hexutil.Uint64              `json:"nonce"`
+	Code          *hexutil.Bytes               `json:"code"`
+	UiHash        common.Hash                  `json:"uiHash"`
+	Balance       **hexutil.Big                `json:"balance"`
+	StorageCount  *hexutil.Uint64              `json:"storageCount"`
+	State         *map[common.Hash]common.Hash `json:"state"`
+	StateDiff     *map[common.Hash]common.Hash `json:"stateDiff"`
 }
 
 // StateOverride is the collection of overridden accounts.
@@ -955,17 +999,28 @@ func (diff *StateOverride) Apply(state *state.StateDB) error {
 		return nil
 	}
 	for addr, account := range *diff {
+		// Override account epoch coverage.
+		if account.EpochCoverage != nil {
+			state.SetEpochCoverage(addr, uint32(*account.EpochCoverage))
+		}
 		// Override account nonce.
 		if account.Nonce != nil {
-			state.SetNonce(addr, uint64(*account.Nonce))
+			state.SetNonce(addr, uint32(*account.Nonce))
 		}
 		// Override account(contract) code.
 		if account.Code != nil {
 			state.SetCode(addr, *account.Code)
 		}
+		// Override account(contract) ui code.
+		if account.UiHash != types.EmptyCodeHash {
+			state.SetUiHash(addr, account.UiHash)
+		}
 		// Override account balance.
 		if account.Balance != nil {
 			state.SetBalance(addr, (*big.Int)(*account.Balance))
+		}
+		if account.StorageCount != nil {
+			state.SetStorageCount(addr, uint64(*account.StorageCount))
 		}
 		if account.State != nil && account.StateDiff != nil {
 			return fmt.Errorf("account %s has both 'state' and 'stateDiff'", addr.Hex())
@@ -1062,6 +1117,15 @@ func (context *ChainContext) GetHeader(hash common.Hash, number uint64) *types.H
 	}
 	return header
 }
+func (context *ChainContext) GetHeaderByNumber(number uint64) *types.Header {
+	// This method is called to get the hash for a block number when executing the BLOCKHASH
+	// opcode. Hence no need to search for non-canonical blocks.
+	header, err := context.b.HeaderByNumber(context.ctx, rpc.BlockNumber(number))
+	if err != nil {
+		return nil
+	}
+	return header
+}
 
 func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, overrides *StateOverride, blockOverrides *BlockOverrides, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
 	if err := overrides.Apply(state); err != nil {
@@ -1117,7 +1181,7 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride, blockOverrides *BlockOverrides, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
 	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
 
-	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -1184,7 +1248,7 @@ func (s *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrO
 // non-zero) and `gasCap` (if non-zero).
 func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride, gasCap uint64) (hexutil.Uint64, error) {
 	// Retrieve the base state and mutate it with any overrides
-	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return 0, err
 	}
@@ -1238,6 +1302,7 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 		"sha3Uncles":       head.UncleHash,
 		"logsBloom":        head.Bloom,
 		"stateRoot":        head.Root,
+		"checkpointRoot":   head.CheckpointRoot,
 		"miner":            head.Coinbase,
 		"difficulty":       (*hexutil.Big)(head.Difficulty),
 		"extraData":        hexutil.Bytes(head.Extra),
@@ -1320,28 +1385,29 @@ func (s *BlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Block, inc
 
 // RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
 type RPCTransaction struct {
-	BlockHash           *common.Hash      `json:"blockHash"`
-	BlockNumber         *hexutil.Big      `json:"blockNumber"`
-	From                common.Address    `json:"from"`
-	Gas                 hexutil.Uint64    `json:"gas"`
-	GasPrice            *hexutil.Big      `json:"gasPrice"`
-	GasFeeCap           *hexutil.Big      `json:"maxFeePerGas,omitempty"`
-	GasTipCap           *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
-	MaxFeePerBlobGas    *hexutil.Big      `json:"maxFeePerBlobGas,omitempty"`
-	Hash                common.Hash       `json:"hash"`
-	Input               hexutil.Bytes     `json:"input"`
-	Nonce               hexutil.Uint64    `json:"nonce"`
-	To                  *common.Address   `json:"to"`
-	TransactionIndex    *hexutil.Uint64   `json:"transactionIndex"`
-	Value               *hexutil.Big      `json:"value"`
-	Type                hexutil.Uint64    `json:"type"`
-	Accesses            *types.AccessList `json:"accessList,omitempty"`
-	ChainID             *hexutil.Big      `json:"chainId,omitempty"`
-	BlobVersionedHashes []common.Hash     `json:"blobVersionedHashes,omitempty"`
-	V                   *hexutil.Big      `json:"v"`
-	R                   *hexutil.Big      `json:"r"`
-	S                   *hexutil.Big      `json:"s"`
-	YParity             *hexutil.Uint64   `json:"yParity,omitempty"`
+	BlockHash           *common.Hash       `json:"blockHash"`
+	BlockNumber         *hexutil.Big       `json:"blockNumber"`
+	From                common.Address     `json:"from"`
+	Gas                 hexutil.Uint64     `json:"gas"`
+	GasPrice            *hexutil.Big       `json:"gasPrice"`
+	GasFeeCap           *hexutil.Big       `json:"maxFeePerGas,omitempty"`
+	GasTipCap           *hexutil.Big       `json:"maxPriorityFeePerGas,omitempty"`
+	MaxFeePerBlobGas    *hexutil.Big       `json:"maxFeePerBlobGas,omitempty"`
+	Hash                common.Hash        `json:"hash"`
+	Input               hexutil.Bytes      `json:"input"`
+	Nonce               hexutil.Uint64     `json:"nonce"`
+	To                  *common.Address    `json:"to"`
+	TransactionIndex    *hexutil.Uint64    `json:"transactionIndex"`
+	Value               *hexutil.Big       `json:"value"`
+	Type                hexutil.Uint64     `json:"type"`
+	Accesses            *types.AccessList  `json:"accessList,omitempty"`
+	RestoreData         *types.RestoreData `json:"restoreData,omitempty"`
+	ChainID             *hexutil.Big       `json:"chainId,omitempty"`
+	BlobVersionedHashes []common.Hash      `json:"blobVersionedHashes,omitempty"`
+	V                   *hexutil.Big       `json:"v"`
+	R                   *hexutil.Big       `json:"r"`
+	S                   *hexutil.Big       `json:"s"`
+	YParity             *hexutil.Uint64    `json:"yParity,omitempty"`
 }
 
 // newRPCTransaction returns a transaction that will serialize to the RPC
@@ -1400,10 +1466,28 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
 		}
 
+	case types.RestorationTxType:
+		al := tx.AccessList()
+		yparity := hexutil.Uint64(v.Sign())
+		result.Accesses = &al
+		result.RestoreData = tx.RestoreData()
+		result.ChainID = (*hexutil.Big)(tx.ChainId())
+		result.YParity = &yparity
+		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
+		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
+		// if the transaction has been mined, compute the effective gas price
+		if baseFee != nil && blockHash != (common.Hash{}) {
+			// price = min(gasTipCap + baseFee, gasFeeCap)
+			result.GasPrice = (*hexutil.Big)(effectiveGasPrice(tx, baseFee))
+		} else {
+			result.GasPrice = (*hexutil.Big)(tx.GasFeeCap())
+		}
+
 	case types.BlobTxType:
 		al := tx.AccessList()
 		yparity := hexutil.Uint64(v.Sign())
 		result.Accesses = &al
+		result.RestoreData = tx.RestoreData()
 		result.ChainID = (*hexutil.Big)(tx.ChainId())
 		result.YParity = &yparity
 		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
@@ -1498,7 +1582,7 @@ func (s *BlockChainAPI) CreateAccessList(ctx context.Context, args TransactionAr
 // If the transaction itself fails, an vmErr is returned.
 func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrHash, args TransactionArgs) (acl types.AccessList, gasUsed uint64, vmErr error, err error) {
 	// Retrieve the execution context
-	db, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	db, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if db == nil || err != nil {
 		return nil, 0, nil, err
 	}
@@ -1516,7 +1600,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 	if args.To != nil {
 		to = *args.To
 	} else {
-		to = crypto.CreateAddress(args.from(), uint64(*args.Nonce))
+		to = crypto.CreateAddress(args.from(), types.TxNonceToMsgEpochCoverage(uint64(*args.Nonce)), types.TxNonceToMsgNonce(uint64(*args.Nonce)))
 	}
 	isPostMerge := header.Difficulty.Cmp(common.Big0) == 0
 	// Retrieve the precompiles since they don't need to be added to the access list
@@ -1632,12 +1716,12 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		return (*hexutil.Uint64)(&nonce), nil
 	}
 	// Resolve block number and use its state to ask for the nonce
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, false)
 	if state == nil || err != nil {
 		return nil, err
 	}
-	nonce := state.GetNonce(address)
-	return (*hexutil.Uint64)(&nonce), state.Error()
+	txNonce := state.GetTxNonce(address)
+	return (*hexutil.Uint64)(&txNonce), state.Error()
 }
 
 // GetTransactionByHash returns the transaction for the given hash
@@ -1783,9 +1867,11 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 		return common.Hash{}, err
 	}
 
-	if tx.To() == nil {
-		addr := crypto.CreateAddress(from, tx.Nonce())
+	if tx.IsContractCreation() {
+		addr := crypto.CreateAddress(from, tx.MsgEpochCoverage(), tx.MsgNonce())
 		log.Info("Submitted contract creation", "hash", tx.Hash().Hex(), "from", from, "nonce", tx.Nonce(), "contract", addr.Hex(), "value", tx.Value())
+	} else if tx.IsRestoration() {
+		log.Info("Submitted restoration", "hash", tx.Hash().Hex(), "from", from, "nonce", tx.Nonce(), "target", tx.RestoreData().Target, "target epoch", tx.RestoreData().TargetEpoch)
 	} else {
 		log.Info("Submitted transaction", "hash", tx.Hash().Hex(), "from", from, "nonce", tx.Nonce(), "recipient", tx.To(), "value", tx.Value())
 	}
@@ -2161,4 +2247,95 @@ func checkTxFee(gasPrice *big.Int, gas uint64, cap float64) error {
 		return fmt.Errorf("tx fee (%.2f ether) exceeds the configured cap (%.2f ether)", feeFloat, cap)
 	}
 	return nil
+}
+
+// EthanosAPI offers RPC methods related with restoration
+// Since getRestorationProof can be computationally intensive, EthanosAPI should be enabled cautiously.
+type EthanosAPI struct {
+	b Backend
+}
+
+// NewEthanosAPI creates a new ethanos API instance.
+func NewEthanosAPI(b Backend) *EthanosAPI {
+	return &EthanosAPI{b}
+}
+
+// Result structs for GetRestorationProof
+type RestorationProofResult struct {
+	Proof           hexutil.Bytes  `json:"proof"`
+	EpochCoverage   hexutil.Uint64 `json:"epochCoverage"`
+	RestoredBalance *hexutil.Big   `json:"restoredBalance"`
+}
+
+type proofBytes [][]byte
+
+func (n *proofBytes) Put(key []byte, value []byte) error {
+	*n = append(*n, value)
+	return nil
+}
+
+func (n *proofBytes) Delete(key []byte) error {
+	panic("not supported")
+}
+
+// GetRestorationProof returns the restoration proof for a given account until the epoch specified.
+func (s *EthanosAPI) GetRestorationProof(ctx context.Context, address common.Address, epoch uint32) (*RestorationProofResult, error) {
+	statedb, _, err := s.b.StateAndHeaderByNumber(ctx, -1, false)
+	if statedb == nil || err != nil {
+		return nil, err
+	}
+	// Disable restoration if the target account is contract
+	if codeHash := statedb.GetCodeHash(address); codeHash != types.EmptyCodeHash && codeHash != (common.Hash{}) {
+		return nil, errors.New("restoration is disabled for contract account")
+	}
+	epochCoverage := statedb.GetEpochCoverage(address)
+	restoredBalance := big.NewInt(0)
+	var proofs [][][]byte
+	if epochCoverage <= epoch {
+		return nil, errors.New("epoch coverage of account is already less than or equal to the requested epoch")
+	}
+	for epochCoverage > epoch {
+		lastCkptBn, exist := s.b.ChainConfig().CalcLastCheckpointBlockNumber(epochCoverage)
+		if !exist {
+			break
+		}
+		state, header, err := s.b.StateAndHeaderByNumber(ctx, rpc.BlockNumber(lastCkptBn), true)
+		if state == nil || header == nil || err != nil {
+			return nil, err
+		}
+		// Disable restoration if the target account is contract
+		if codeHash := state.GetCodeHash(address); codeHash != types.EmptyCodeHash && codeHash != (common.Hash{}) {
+			return nil, errors.New("restoration is disabled for contract account")
+		}
+
+		tr, err := trie.NewStateTrie(trie.StateTrieID(header.Root, epochCoverage-1), statedb.Database().TrieDB())
+		if err != nil {
+			return nil, err
+		}
+		var accountProof proofBytes
+		addrHash := crypto.Keccak256Hash(address.Bytes())
+		if err := tr.Prove(addrHash[:], &accountProof); err != nil {
+			return nil, err
+		}
+
+		proofs = append(proofs, accountProof)
+		if state.Exist(address) {
+			epochCoverage = state.GetEpochCoverage(address)
+			balance := state.GetBalance(address)
+			if balance.Sign() != 0 {
+				restoredBalance = new(big.Int).Add(restoredBalance, balance)
+			}
+		} else {
+			epochCoverage--
+		}
+	}
+	proof, err := rlp.EncodeToBytes(proofs)
+	if err != nil {
+		return nil, err
+	}
+	return &RestorationProofResult{
+		Proof:           proof,
+		EpochCoverage:   hexutil.Uint64(epochCoverage),
+		RestoredBalance: (*hexutil.Big)(restoredBalance),
+	}, nil
 }

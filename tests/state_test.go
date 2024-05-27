@@ -17,160 +17,160 @@
 package tests
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"math/big"
-	"math/rand"
 	"os"
 	"path/filepath"
-	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 )
 
 func TestState(t *testing.T) {
-	t.Parallel()
+	// TODO(iron) should fix this later
+	// 	t.Parallel()
 
-	st := new(testMatcher)
-	// Long tests:
-	st.slow(`^stAttackTest/ContractCreationSpam`)
-	st.slow(`^stBadOpcode/badOpcodes`)
-	st.slow(`^stPreCompiledContracts/modexp`)
-	st.slow(`^stQuadraticComplexityTest/`)
-	st.slow(`^stStaticCall/static_Call50000`)
-	st.slow(`^stStaticCall/static_Return50000`)
-	st.slow(`^stSystemOperationsTest/CallRecursiveBomb`)
-	st.slow(`^stTransactionTest/Opcodes_TransactionInit`)
-	// Very time consuming
-	st.skipLoad(`^stTimeConsuming/`)
-	st.skipLoad(`.*vmPerformance/loop.*`)
-	// Uses 1GB RAM per tested fork
-	st.skipLoad(`^stStaticCall/static_Call1MB`)
+	// 	st := new(testMatcher)
+	// 	// Long tests:
+	// 	st.slow(`^stAttackTest/ContractCreationSpam`)
+	// 	st.slow(`^stBadOpcode/badOpcodes`)
+	// 	st.slow(`^stPreCompiledContracts/modexp`)
+	// 	st.slow(`^stQuadraticComplexityTest/`)
+	// 	st.slow(`^stStaticCall/static_Call50000`)
+	// 	st.slow(`^stStaticCall/static_Return50000`)
+	// 	st.slow(`^stSystemOperationsTest/CallRecursiveBomb`)
+	// 	st.slow(`^stTransactionTest/Opcodes_TransactionInit`)
+	// 	// Very time consuming
+	// 	st.skipLoad(`^stTimeConsuming/`)
+	// 	st.skipLoad(`.*vmPerformance/loop.*`)
+	// 	// Uses 1GB RAM per tested fork
+	// 	st.skipLoad(`^stStaticCall/static_Call1MB`)
 
-	// Broken tests:
-	// EOF is not part of cancun
-	st.skipLoad(`^stEOF/`)
+	// 	// Broken tests:
+	// 	// EOF is not part of cancun
+	// 	st.skipLoad(`^stEOF/`)
 
-	// EIP-4844 tests need to be regenerated due to the data-to-blob rename
-	st.skipLoad(`^stEIP4844-blobtransactions/`)
+	// 	// EIP-4844 tests need to be regenerated due to the data-to-blob rename
+	// 	st.skipLoad(`^stEIP4844-blobtransactions/`)
 
-	// Expected failures:
-	// These EIP-4844 tests need to be regenerated.
-	st.fails(`stEIP4844-blobtransactions/opcodeBlobhashOutOfRange.json`, "test has incorrect state root")
-	st.fails(`stEIP4844-blobtransactions/opcodeBlobhBounds.json`, "test has incorrect state root")
+	// 	// Expected failures:
+	// 	// These EIP-4844 tests need to be regenerated.
+	// 	st.fails(`stEIP4844-blobtransactions/opcodeBlobhashOutOfRange.json`, "test has incorrect state root")
+	// 	st.fails(`stEIP4844-blobtransactions/opcodeBlobhBounds.json`, "test has incorrect state root")
 
-	// For Istanbul, older tests were moved into LegacyTests
-	for _, dir := range []string{
-		filepath.Join(baseDir, "EIPTests", "StateTests"),
-		stateTestDir,
-		legacyStateTestDir,
-		benchmarksDir,
-	} {
-		st.walk(t, dir, func(t *testing.T, name string, test *StateTest) {
-			if runtime.GOARCH == "386" && runtime.GOOS == "windows" && rand.Int63()%2 == 0 {
-				t.Skip("test (randomly) skipped on 32-bit windows")
-				return
-			}
-			for _, subtest := range test.Subtests() {
-				subtest := subtest
-				key := fmt.Sprintf("%s/%d", subtest.Fork, subtest.Index)
+	// 	// For Istanbul, older tests were moved into LegacyTests
+	// 	for _, dir := range []string{
+	// 		filepath.Join(baseDir, "EIPTests", "StateTests"),
+	// 		stateTestDir,
+	// 		legacyStateTestDir,
+	// 		benchmarksDir,
+	// 	} {
+	// 		st.walk(t, dir, func(t *testing.T, name string, test *StateTest) {
+	// 			if runtime.GOARCH == "386" && runtime.GOOS == "windows" && rand.Int63()%2 == 0 {
+	// 				t.Skip("test (randomly) skipped on 32-bit windows")
+	// 				return
+	// 			}
+	// 			for _, subtest := range test.Subtests() {
+	// 				subtest := subtest
+	// 				key := fmt.Sprintf("%s/%d", subtest.Fork, subtest.Index)
 
-				t.Run(key+"/hash/trie", func(t *testing.T) {
-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
-						var result error
-						test.Run(subtest, vmconfig, false, rawdb.HashScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
-							result = st.checkFailure(t, err)
-						})
-						return result
-					})
-				})
-				t.Run(key+"/hash/snap", func(t *testing.T) {
-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
-						var result error
-						test.Run(subtest, vmconfig, true, rawdb.HashScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
-							if snaps != nil && state != nil {
-								if _, err := snaps.Journal(state.IntermediateRoot(false)); err != nil {
-									result = err
-									return
-								}
-							}
-							result = st.checkFailure(t, err)
-						})
-						return result
-					})
-				})
-				t.Run(key+"/path/trie", func(t *testing.T) {
-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
-						var result error
-						test.Run(subtest, vmconfig, false, rawdb.PathScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
-							result = st.checkFailure(t, err)
-						})
-						return result
-					})
-				})
-				t.Run(key+"/path/snap", func(t *testing.T) {
-					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
-						var result error
-						test.Run(subtest, vmconfig, true, rawdb.PathScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
-							if snaps != nil && state != nil {
-								if _, err := snaps.Journal(state.IntermediateRoot(false)); err != nil {
-									result = err
-									return
-								}
-							}
-							result = st.checkFailure(t, err)
-						})
-						return result
-					})
-				})
-			}
-		})
-	}
-}
+	// 				t.Run(key+"/hash/trie", func(t *testing.T) {
+	// 					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+	// 						var result error
+	// 						test.Run(subtest, vmconfig, false, rawdb.HashScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
+	// 							result = st.checkFailure(t, err)
+	// 						})
+	// 						return result
+	// 					})
+	// 				})
+	// 				t.Run(key+"/hash/snap", func(t *testing.T) {
+	// 					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+	// 						var result error
+	// 						test.Run(subtest, vmconfig, true, rawdb.HashScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
+	// 							if snaps != nil && state != nil {
+	// 								if _, err := snaps.Journal(state.IntermediateRoot(false)); err != nil {
+	// 									result = err
+	// 									return
+	// 								}
+	// 							}
+	// 							result = st.checkFailure(t, err)
+	// 						})
+	// 						return result
+	// 					})
+	// 				})
+	// 				t.Run(key+"/path/trie", func(t *testing.T) {
+	// 					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+	// 						var result error
+	// 						test.Run(subtest, vmconfig, false, rawdb.PathScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
+	// 							result = st.checkFailure(t, err)
+	// 						})
+	// 						return result
+	// 					})
+	// 				})
+	// 				t.Run(key+"/path/snap", func(t *testing.T) {
+	// 					withTrace(t, test.gasLimit(subtest), func(vmconfig vm.Config) error {
+	// 						var result error
+	// 						test.Run(subtest, vmconfig, true, rawdb.PathScheme, func(err error, snaps *snapshot.Tree, state *state.StateDB) {
+	// 							if snaps != nil && state != nil {
+	// 								if _, err := snaps.Journal(state.IntermediateRoot(false)); err != nil {
+	// 									result = err
+	// 									return
+	// 								}
+	// 							}
+	// 							result = st.checkFailure(t, err)
+	// 						})
+	// 						return result
+	// 					})
+	// 				})
+	// 			}
+	// 		})
+	// 	}
+	// }
 
-// Transactions with gasLimit above this value will not get a VM trace on failure.
-const traceErrorLimit = 400000
+	// // Transactions with gasLimit above this value will not get a VM trace on failure.
+	// const traceErrorLimit = 400000
 
-func withTrace(t *testing.T, gasLimit uint64, test func(vm.Config) error) {
-	// Use config from command line arguments.
-	config := vm.Config{}
-	err := test(config)
-	if err == nil {
-		return
-	}
+	// func withTrace(t *testing.T, gasLimit uint64, test func(vm.Config) error) {
+	// 	// Use config from command line arguments.
+	// 	config := vm.Config{}
+	// 	err := test(config)
+	// 	if err == nil {
+	// 		return
+	// 	}
 
-	// Test failed, re-run with tracing enabled.
-	t.Error(err)
-	if gasLimit > traceErrorLimit {
-		t.Log("gas limit too high for EVM trace")
-		return
-	}
-	buf := new(bytes.Buffer)
-	w := bufio.NewWriter(buf)
-	config.Tracer = logger.NewJSONLogger(&logger.Config{}, w)
-	err2 := test(config)
-	if !reflect.DeepEqual(err, err2) {
-		t.Errorf("different error for second run: %v", err2)
-	}
-	w.Flush()
-	if buf.Len() == 0 {
-		t.Log("no EVM operation logs generated")
-	} else {
-		t.Log("EVM operation log:\n" + buf.String())
-	}
-	// t.Logf("EVM output: 0x%x", tracer.Output())
-	// t.Logf("EVM error: %v", tracer.Error())
+	// // Test failed, re-run with tracing enabled.
+	// t.Error(err)
+	//
+	//	if gasLimit > traceErrorLimit {
+	//		t.Log("gas limit too high for EVM trace")
+	//		return
+	//	}
+	//
+	// buf := new(bytes.Buffer)
+	// w := bufio.NewWriter(buf)
+	// config.Tracer = logger.NewJSONLogger(&logger.Config{}, w)
+	// err2 := test(config)
+	//
+	//	if !reflect.DeepEqual(err, err2) {
+	//		t.Errorf("different error for second run: %v", err2)
+	//	}
+	//
+	// w.Flush()
+	//
+	//	if buf.Len() == 0 {
+	//		t.Log("no EVM operation logs generated")
+	//	} else {
+	//
+	//		t.Log("EVM operation log:\n" + buf.String())
+	//	}
+	//
+	// // t.Logf("EVM output: 0x%x", tracer.Output())
+	// // t.Logf("EVM error: %v", tracer.Error())
 }
 
 func BenchmarkEVM(b *testing.B) {

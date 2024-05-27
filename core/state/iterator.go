@@ -39,6 +39,7 @@ type nodeIterator struct {
 	accountHash common.Hash // Hash of the node containing the account
 	codeHash    common.Hash // Hash of the contract source code
 	code        []byte      // Source code associated with a contract
+	uiHash      common.Hash // Hash of the ui code
 
 	Hash   common.Hash // Hash of the current entry being iterated (nil if not standalone)
 	Parent common.Hash // Hash of the first full ancestor node (nil if current is the root)
@@ -123,7 +124,7 @@ func (it *nodeIterator) step() error {
 	address := common.BytesToAddress(preimage)
 
 	// Traverse the storage slots belong to the account
-	dataTrie, err := it.state.db.OpenStorageTrie(it.state.originalRoot, address, account.Root, it.state.trie)
+	dataTrie, err := it.state.db.OpenStorageTrie(it.state.originalRoot, it.state.currentEpoch, address, account.Root, it.state.trie)
 	if err != nil {
 		return err
 	}
@@ -140,6 +141,9 @@ func (it *nodeIterator) step() error {
 		if err != nil {
 			return fmt.Errorf("code %x: %v", account.CodeHash, err)
 		}
+	}
+	if !bytes.Equal(account.UiHash, types.EmptyCodeHash.Bytes()) {
+		it.uiHash = common.BytesToHash(account.UiHash)
 	}
 	it.accountHash = it.stateIt.Parent()
 	return nil

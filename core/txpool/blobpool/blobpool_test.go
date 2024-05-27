@@ -158,7 +158,7 @@ func (bt *testBlockChain) GetBlock(hash common.Hash, number uint64) *types.Block
 	return nil
 }
 
-func (bc *testBlockChain) StateAt(common.Hash) (*state.StateDB, error) {
+func (bc *testBlockChain) StateAt(*types.Header) (*state.StateDB, error) {
 	return bc.statedb, nil
 }
 
@@ -511,7 +511,7 @@ func TestOpenDrops(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
 	statedb.AddBalance(crypto.PubkeyToAddress(gapper.PublicKey), big.NewInt(1000000))
 	statedb.AddBalance(crypto.PubkeyToAddress(dangler.PublicKey), big.NewInt(1000000))
 	statedb.AddBalance(crypto.PubkeyToAddress(filler.PublicKey), big.NewInt(1000000))
@@ -636,7 +636,7 @@ func TestOpenIndex(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
 	statedb.AddBalance(addr, big.NewInt(1_000_000_000))
 	statedb.Commit(0, true)
 
@@ -654,7 +654,7 @@ func TestOpenIndex(t *testing.T) {
 
 	// Verify that the transactions have been sorted by nonce (case 1)
 	for i := 0; i < len(pool.index[addr]); i++ {
-		if pool.index[addr][i].nonce != uint64(i) {
+		if pool.index[addr][i].nonce != uint32(i) {
 			t.Errorf("tx %d nonce mismatch: have %d, want %d", i, pool.index[addr][i].nonce, uint64(i))
 		}
 	}
@@ -736,7 +736,7 @@ func TestOpenHeap(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
 	statedb.AddBalance(addr1, big.NewInt(1_000_000_000))
 	statedb.AddBalance(addr2, big.NewInt(1_000_000_000))
 	statedb.AddBalance(addr3, big.NewInt(1_000_000_000))
@@ -816,7 +816,7 @@ func TestOpenCap(t *testing.T) {
 	// with a high cap to ensure everything was persisted previously
 	for _, datacap := range []uint64{2 * (txAvgSize + blobSize), 100 * (txAvgSize + blobSize)} {
 		// Create a blob pool out of the pre-seeded data, but cap it to 2 blob transaction
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+		statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
 		statedb.AddBalance(addr1, big.NewInt(1_000_000_000))
 		statedb.AddBalance(addr2, big.NewInt(1_000_000_000))
 		statedb.AddBalance(addr3, big.NewInt(1_000_000_000))
@@ -873,7 +873,7 @@ func TestAdd(t *testing.T) {
 	// seed is a helper tumpe to seed an initial state db and pool
 	type seed struct {
 		balance uint64
-		nonce   uint64
+		nonce   uint32
 		txs     []*types.BlobTx
 	}
 
@@ -1203,7 +1203,7 @@ func TestAdd(t *testing.T) {
 			keys  = make(map[string]*ecdsa.PrivateKey)
 			addrs = make(map[string]common.Address)
 		)
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+		statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
 		for acc, seed := range tt.seeds {
 			// Generate a new random key/address for the seed account
 			keys[acc], _ = crypto.GenerateKey()

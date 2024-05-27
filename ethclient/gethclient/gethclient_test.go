@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
@@ -35,7 +36,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 var (
@@ -46,18 +49,19 @@ var (
 	testSlot     = common.HexToHash("0xdeadbeef")
 	testValue    = crypto.Keccak256Hash(testSlot[:])
 	testBalance  = big.NewInt(2e15)
+	SweepEpoch   = uint64(10)
 )
 
-func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {
+func newTestBackend(t *testing.T, numBlocks int) (*node.Node, []*types.Block) {
 	// Generate test chain.
-	genesis, blocks := generateTestChain()
+	genesis, blocks := generateTestChain(numBlocks)
 	// Create node
 	n, err := node.New(&node.Config{})
 	if err != nil {
 		t.Fatalf("can't create new node: %v", err)
 	}
 	// Create Ethereum Service
-	config := &ethconfig.Config{Genesis: genesis}
+	config := &ethconfig.Config{Genesis: genesis, EpochLimit: 0}
 	ethservice, err := eth.New(n, config)
 	if err != nil {
 		t.Fatalf("can't create new ethereum service: %v", err)
@@ -78,9 +82,9 @@ func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {
 	return n, blocks
 }
 
-func generateTestChain() (*core.Genesis, []*types.Block) {
+func generateTestChain(numBlocks int) (*core.Genesis, []*types.Block) {
 	genesis := &core.Genesis{
-		Config: params.AllEthashProtocolChanges,
+		Config: params.NewTestChainConfig().SetTestSweepEpoch(SweepEpoch),
 		Alloc: core.GenesisAlloc{
 			testAddr:     {Balance: testBalance, Storage: map[common.Hash]common.Hash{testSlot: testValue}},
 			testContract: {Nonce: 1, Code: []byte{0x13, 0x37}},
@@ -93,13 +97,13 @@ func generateTestChain() (*core.Genesis, []*types.Block) {
 		g.OffsetTime(5)
 		g.SetExtra([]byte("test"))
 	}
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 1, generate)
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), numBlocks, generate)
 	blocks = append([]*types.Block{genesis.ToBlock()}, blocks...)
 	return genesis, blocks
 }
 
 func TestGethClient(t *testing.T) {
-	backend, _ := newTestBackend(t)
+	backend, _ := newTestBackend(t, 1)
 	client := backend.Attach()
 	defer backend.Close()
 	defer client.Close()
@@ -160,6 +164,14 @@ func TestGethClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, tt.test)
 	}
+}
+
+func TestGethClientForEthanos(t *testing.T) {
+	backend, _ := newTestBackend(t, 50)
+	client := backend.Attach()
+	defer backend.Close()
+	defer client.Close()
+	testGetRestorationProof(t, client)
 }
 
 func testAccessList(t *testing.T, client *rpc.Client) {
@@ -227,8 +239,9 @@ func testGetProof(t *testing.T, client *rpc.Client, addr common.Address) {
 		t.Fatalf("unexpected address, have: %v want: %v", result.Address, addr)
 	}
 	// test nonce
-	if nonce, _ := ethcl.NonceAt(context.Background(), addr, nil); result.Nonce != nonce {
-		t.Fatalf("invalid nonce, want: %v got: %v", nonce, result.Nonce)
+	nonce, _ := ethcl.NonceAt(context.Background(), result.Address, nil)
+	if msgNonce := types.MsgToTxNonce(result.EpochCoverage, result.Nonce); msgNonce != nonce {
+		t.Fatalf("invalid nonce, want: %v got: %v", nonce, msgNonce)
 	}
 	// test balance
 	if balance, _ := ethcl.BalanceAt(context.Background(), addr, nil); result.Balance.Cmp(balance) != 0 {
@@ -251,6 +264,65 @@ func testGetProof(t *testing.T, client *rpc.Client, addr common.Address) {
 	code, _ := ethcl.CodeAt(context.Background(), addr, nil)
 	if have, want := result.CodeHash, crypto.Keccak256Hash(code); have != want {
 		t.Fatalf("codehash wrong, have %v want %v ", have, want)
+	}
+}
+
+func testGetRestorationProof(t *testing.T, client *rpc.Client) {
+	ec := New(client)
+	ethcl := ethclient.NewClient(client)
+	currentEpoch, err := ethcl.EpochByNumber(context.Background(), nil)
+	epochCoverage := currentEpoch - 2
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ec.GetRestorationProof(context.Background(), testAddr, 0)
+	if err != nil {
+		_, err := ec.GetRestorationProof(context.Background(), testAddr, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Fatal(err)
+	}
+	if result.RestoredBalance.Cmp(testBalance) != 0 {
+		t.Fatalf("unexpected restored balance, want: %v got: %v", testBalance, result.RestoredBalance)
+	}
+
+	if result.EpochCoverage != 0 {
+		t.Fatalf("unexpected epoch coverage, want: %v got: %v", 0, result.EpochCoverage)
+	}
+	var proofs [][][]byte
+	rlp.DecodeBytes(result.Proof, &proofs)
+	if len(proofs) != int(epochCoverage+1) {
+		t.Fatalf("unexpected number of proofs, want: %v (for epoch 0 and 1) got: %v", epochCoverage+1, len(proofs))
+	}
+	for _, rawProof := range proofs {
+		proofDB := vm.NewProofDB(rawProof)
+
+		lastCkptBlockNumber := (epochCoverage+1)*uint32(SweepEpoch) - 1
+		lastCkptHeader, err := ethcl.HeaderByNumber(context.Background(), big.NewInt(int64(lastCkptBlockNumber)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rootHash := lastCkptHeader.Root
+		leafNode, err := trie.VerifyProof(rootHash, crypto.Keccak256Hash(testAddr.Bytes()).Bytes(), proofDB)
+		if err != nil {
+			t.Fatalf("merkle proof verification failed: %v", err)
+		}
+		if epochCoverage != 0 {
+			if leafNode != nil {
+				t.Fatalf("account should not exist in epoch %v", epochCoverage)
+			}
+			epochCoverage--
+		} else {
+			var account types.StateAccount
+			rlp.DecodeBytes(leafNode, &account)
+			if account.EpochCoverage != 0 {
+				t.Fatalf("unexpected epoch coverage, want: %v got: %v", 0, account.EpochCoverage)
+			}
+			if account.Balance.Cmp(testBalance) != 0 {
+				t.Fatalf("unexpected restored balance, want: %v got: %v", testBalance, account.Balance)
+			}
+		}
 	}
 }
 

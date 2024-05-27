@@ -44,10 +44,39 @@ func DeleteSnapshotDisabled(db ethdb.KeyValueWriter) {
 	}
 }
 
+// ReadSnapshotEpoch retrieves the epoch of the block whose state is contained in
+// the persisted snapshot.
+func ReadSnapshotEpoch(db ethdb.KeyValueReader) *uint32 {
+	data, _ := db.Get(SnapshotEpochKey)
+	if len(data) != EpochBytes {
+		return nil
+	}
+	epoch := binary.BigEndian.Uint32(data)
+	return &epoch
+}
+
+// WriteSnapshotEpoch stores the epoch of the block whose state is contained in
+// the persisted snapshot.
+func WriteSnapshotEpoch(db ethdb.KeyValueWriter, epoch uint32) {
+	if err := db.Put(SnapshotEpochKey, common.Uint32ToBytes(epoch)); err != nil {
+		log.Crit("Failed to store snapshot epoch", "err", err)
+	}
+}
+
+// DeleteSnapshotEpoch deletes the epoch of the block whose state is contained in
+// the persisted snapshot. Since snapshots are not immutable, this  method can
+// be used during updates, so a crash or failure will mark the entire snapshot
+// invalid.
+func DeleteSnapshotEpoch(db ethdb.KeyValueWriter) {
+	if err := db.Delete(SnapshotEpochKey); err != nil {
+		log.Crit("Failed to remove snapshot epoch", "err", err)
+	}
+}
+
 // ReadSnapshotRoot retrieves the root of the block whose state is contained in
 // the persisted snapshot.
-func ReadSnapshotRoot(db ethdb.KeyValueReader) common.Hash {
-	data, _ := db.Get(SnapshotRootKey)
+func ReadSnapshotRoot(db ethdb.KeyValueReader, epoch uint32) common.Hash {
+	data, _ := db.Get(snapshotRootKey(epoch))
 	if len(data) != common.HashLength {
 		return common.Hash{}
 	}
@@ -56,8 +85,8 @@ func ReadSnapshotRoot(db ethdb.KeyValueReader) common.Hash {
 
 // WriteSnapshotRoot stores the root of the block whose state is contained in
 // the persisted snapshot.
-func WriteSnapshotRoot(db ethdb.KeyValueWriter, root common.Hash) {
-	if err := db.Put(SnapshotRootKey, root[:]); err != nil {
+func WriteSnapshotRoot(db ethdb.KeyValueWriter, epoch uint32, root common.Hash) {
+	if err := db.Put(snapshotRootKey(epoch), root[:]); err != nil {
 		log.Crit("Failed to store snapshot root", "err", err)
 	}
 }
@@ -66,28 +95,42 @@ func WriteSnapshotRoot(db ethdb.KeyValueWriter, root common.Hash) {
 // the persisted snapshot. Since snapshots are not immutable, this  method can
 // be used during updates, so a crash or failure will mark the entire snapshot
 // invalid.
-func DeleteSnapshotRoot(db ethdb.KeyValueWriter) {
-	if err := db.Delete(SnapshotRootKey); err != nil {
+func DeleteSnapshotRoot(db ethdb.KeyValueWriter, epoch uint32) {
+	if err := db.Delete(snapshotRootKey(epoch)); err != nil {
 		log.Crit("Failed to remove snapshot root", "err", err)
 	}
 }
 
+// DeleteRangeSnapshotRoot deletes snapshot root until epoch
+func DeleteRangeSnapshotRoot(db ethdb.RangeDeleter, epoch uint32) {
+	if err := db.DeleteRange(snapshotRootKey(0), snapshotRootKey(epoch+1)); err != nil {
+		log.Crit("Failed to remove range snapshot root", "err", err)
+	}
+}
+
 // ReadAccountSnapshot retrieves the snapshot entry of an account trie leaf.
-func ReadAccountSnapshot(db ethdb.KeyValueReader, hash common.Hash) []byte {
-	data, _ := db.Get(accountSnapshotKey(hash))
+func ReadAccountSnapshot(db ethdb.KeyValueReader, epoch uint32, hash common.Hash) []byte {
+	data, _ := db.Get(accountSnapshotKey(epoch, hash))
 	return data
 }
 
 // WriteAccountSnapshot stores the snapshot entry of an account trie leaf.
-func WriteAccountSnapshot(db ethdb.KeyValueWriter, hash common.Hash, entry []byte) {
-	if err := db.Put(accountSnapshotKey(hash), entry); err != nil {
+func WriteAccountSnapshot(db ethdb.KeyValueWriter, epoch uint32, hash common.Hash, entry []byte) {
+	if err := db.Put(accountSnapshotKey(epoch, hash), entry); err != nil {
 		log.Crit("Failed to store account snapshot", "err", err)
 	}
 }
 
 // DeleteAccountSnapshot removes the snapshot entry of an account trie leaf.
-func DeleteAccountSnapshot(db ethdb.KeyValueWriter, hash common.Hash) {
-	if err := db.Delete(accountSnapshotKey(hash)); err != nil {
+func DeleteAccountSnapshot(db ethdb.KeyValueWriter, epoch uint32, hash common.Hash) {
+	if err := db.Delete(accountSnapshotKey(epoch, hash)); err != nil {
+		log.Crit("Failed to delete account snapshot", "err", err)
+	}
+}
+
+// DeleteRangeAccountSnapshot removes the snapshot entries of an account trie leaf until epoch.
+func DeleteRangeAccountSnapshot(db ethdb.RangeDeleter, epoch uint32) {
+	if err := db.DeleteRange(accountSnapshotKey(0, common.Hash{}), accountSnapshotKey(epoch+1, common.Hash{})); err != nil {
 		log.Crit("Failed to delete account snapshot", "err", err)
 	}
 }
@@ -197,14 +240,14 @@ func DeleteSnapshotRecoveryNumber(db ethdb.KeyValueWriter) {
 }
 
 // ReadSnapshotSyncStatus retrieves the serialized sync status saved at shutdown.
-func ReadSnapshotSyncStatus(db ethdb.KeyValueReader) []byte {
-	data, _ := db.Get(snapshotSyncStatusKey)
+func ReadSnapshotSyncStatus(db ethdb.KeyValueReader, epoch uint32) []byte {
+	data, _ := db.Get(snapshotSyncStatusKey(epoch))
 	return data
 }
 
 // WriteSnapshotSyncStatus stores the serialized sync status to save at shutdown.
-func WriteSnapshotSyncStatus(db ethdb.KeyValueWriter, status []byte) {
-	if err := db.Put(snapshotSyncStatusKey, status); err != nil {
+func WriteSnapshotSyncStatus(db ethdb.KeyValueWriter, epoch uint32, status []byte) {
+	if err := db.Put(snapshotSyncStatusKey(epoch), status); err != nil {
 		log.Crit("Failed to store snapshot sync status", "err", err)
 	}
 }

@@ -48,7 +48,7 @@ func fuzz(data []byte, debugging bool) {
 		dbB     = NewDatabase(rawdb.NewDatabase(spongeB), nil)
 
 		options = NewStackTrieOptions().WithWriter(func(path []byte, hash common.Hash, blob []byte) {
-			rawdb.WriteTrieNode(spongeB, common.Hash{}, path, hash, blob, dbB.Scheme())
+			rawdb.WriteTrieNode(spongeB, 0, common.Hash{}, path, hash, blob, dbB.Scheme())
 		})
 		trieB       = NewStackTrie(options)
 		vals        []*kv
@@ -87,7 +87,7 @@ func fuzz(data []byte, debugging bool) {
 		panic(err)
 	}
 	if nodes != nil {
-		dbA.Update(rootA, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+		dbA.Update(rootA, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	}
 	// Flush memdb -> disk (sponge)
 	dbA.Commit(rootA, false)

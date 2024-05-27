@@ -66,10 +66,12 @@ func (result *ExecutionResult) Revert() []byte {
 }
 
 // IntrinsicGas computes the 'intrinsic gas' for a message with the given data.
-func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation bool, isHomestead, isEIP2028 bool, isEIP3860 bool) (uint64, error) {
+func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation bool, isRestoration bool, isHomestead, isEIP2028 bool, isEIP3860 bool) (uint64, error) {
 	// Set the starting gas for the raw transaction
 	var gas uint64
-	if isContractCreation && isHomestead {
+	if isRestoration {
+		gas = params.TxGasRestoration
+	} else if isContractCreation && isHomestead {
 		gas = params.TxGasContractCreation
 	} else {
 		gas = params.TxGas
@@ -129,7 +131,8 @@ func toWordSize(size uint64) uint64 {
 type Message struct {
 	To            *common.Address
 	From          common.Address
-	Nonce         uint64
+	EpochCoverage uint32
+	Nonce         uint32
 	Value         *big.Int
 	GasLimit      uint64
 	GasPrice      *big.Int
@@ -137,6 +140,7 @@ type Message struct {
 	GasTipCap     *big.Int
 	Data          []byte
 	AccessList    types.AccessList
+	RestoreData   *types.RestoreData
 	BlobGasFeeCap *big.Int
 	BlobHashes    []common.Hash
 
@@ -146,10 +150,25 @@ type Message struct {
 	SkipAccountChecks bool
 }
 
+// IsContractCreation returns true if the message is a contract creation message.
+func (m *Message) IsContractCreation() bool {
+	return m.RestoreData == nil && m.To == nil
+}
+
+func (m *Message) IsPrecompiledContractCreation() bool {
+	return m.To != nil && common.IsCreationPrecompiled(*m.To)
+}
+
+// IsRestoration returns true if the message is a restoration message.
+func (m *Message) IsRestoration() bool {
+	return m.RestoreData != nil
+}
+
 // TransactionToMessage converts a transaction into a Message.
 func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.Int) (*Message, error) {
 	msg := &Message{
-		Nonce:             tx.Nonce(),
+		EpochCoverage:     tx.MsgEpochCoverage(),
+		Nonce:             tx.MsgNonce(),
 		GasLimit:          tx.Gas(),
 		GasPrice:          new(big.Int).Set(tx.GasPrice()),
 		GasFeeCap:         new(big.Int).Set(tx.GasFeeCap()),
@@ -158,6 +177,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		Value:             tx.Value(),
 		Data:              tx.Data(),
 		AccessList:        tx.AccessList(),
+		RestoreData:       tx.RestoreData(),
 		SkipAccountChecks: false,
 		BlobHashes:        tx.BlobHashes(),
 		BlobGasFeeCap:     tx.BlobGasFeeCap(),
@@ -269,7 +289,7 @@ func (st *StateTransition) preCheck() error {
 	// Only check transactions that are not fake
 	msg := st.msg
 	if !msg.SkipAccountChecks {
-		// Make sure this transaction's nonce is correct.
+		// Make sure this transaction's nonce is correct - both the epoch coverage and message nonce part.
 		stNonce := st.state.GetNonce(msg.From)
 		if msgNonce := msg.Nonce; stNonce < msgNonce {
 			return fmt.Errorf("%w: address %v, tx: %d state: %d", ErrNonceTooHigh,
@@ -280,6 +300,11 @@ func (st *StateTransition) preCheck() error {
 		} else if stNonce+1 < stNonce {
 			return fmt.Errorf("%w: address %v, nonce: %d", ErrNonceMax,
 				msg.From.Hex(), stNonce)
+		}
+		stEpochCoverage := st.state.GetEpochCoverage(st.msg.From)
+		if epochCoverage := st.msg.EpochCoverage; epochCoverage != stEpochCoverage {
+			return fmt.Errorf("%w: address %v, tx: %d state: %d", ErrInvalidEpochCoverage,
+				st.msg.From.Hex(), epochCoverage, stEpochCoverage)
 		}
 		// Make sure the sender is an EOA
 		codeHash := st.state.GetCodeHash(msg.From)
@@ -380,11 +405,12 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		msg              = st.msg
 		sender           = vm.AccountRef(msg.From)
 		rules            = st.evm.ChainConfig().Rules(st.evm.Context.BlockNumber, st.evm.Context.Random != nil, st.evm.Context.Time)
-		contractCreation = msg.To == nil
+		restoration      = msg.IsRestoration()
+		contractCreation = msg.IsContractCreation()
 	)
 
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
-	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
+	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, restoration, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
 	if err != nil {
 		return nil, err
 	}
@@ -403,6 +429,15 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
 	}
 
+	if restoration {
+		if msg.To != nil || msg.Value.Sign() != 0 {
+			return nil, ErrInvalidRestoration
+		}
+		if msg.Data == nil {
+			return nil, ErrEmptyRestorationProof
+		}
+	}
+
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
@@ -412,7 +447,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret   []byte
 		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
 	)
-	if contractCreation {
+	if restoration {
+		// Increment the nonce for the next transaction
+		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
+		ret, st.gasRemaining, vmerr = st.evm.Restore(sender, msg.Data, msg.RestoreData, st.gasRemaining, msg.Value)
+	} else if contractCreation {
 		ret, _, st.gasRemaining, vmerr = st.evm.Create(sender, msg.Data, st.gasRemaining, msg.Value)
 	} else {
 		// Increment the nonce for the next transaction
@@ -439,6 +478,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// the coinbase when simulating calls.
 	} else {
 		fee := new(big.Int).SetUint64(st.gasUsed())
+		if rules.IsLondon {
+			// BaseFee is burned and sent to the foundation's treasury
+			burn := new(big.Int).Mul(fee, st.evm.Context.BaseFee)
+			st.state.AddBalance(params.FoundationTreasuryAddress, burn)
+		}
 		fee.Mul(fee, effectiveTip)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee)
 	}

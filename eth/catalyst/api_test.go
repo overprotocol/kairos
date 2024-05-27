@@ -309,8 +309,8 @@ func TestEth2NewBlock(t *testing.T) {
 	ethservice.BlockChain().SubscribeRemovedLogsEvent(rmLogsCh)
 
 	for i := 0; i < 10; i++ {
-		statedb, _ := ethservice.BlockChain().StateAt(parent.Root())
-		nonce := statedb.GetNonce(testAddr)
+		statedb, _ := ethservice.BlockChain().StateAt(parent.Header())
+		nonce := statedb.GetTxNonce(testAddr)
 		tx, _ := types.SignTx(types.NewContractCreation(nonce, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 		ethservice.TxPool().Add([]*types.Transaction{tx}, true, false)
 
@@ -478,8 +478,8 @@ func TestFullAPI(t *testing.T) {
 	)
 
 	callback := func(parent *types.Header) {
-		statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
-		nonce := statedb.GetNonce(testAddr)
+		statedb, _ := ethservice.BlockChain().StateAt(parent)
+		nonce := statedb.GetTxNonce(testAddr)
 		tx, _ := types.SignTx(types.NewContractCreation(nonce, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 		ethservice.TxPool().Add([]*types.Transaction{tx}, true, false)
 	}
@@ -599,9 +599,9 @@ func TestNewPayloadOnInvalidChain(t *testing.T) {
 		logCode = common.Hex2Bytes("60606040525b7f24ec1d3ff24c2f6ff210738839dbc339cd45a5294d85c79361016243157aae7b60405180905060405180910390a15b600a8060416000396000f360606040526008565b00")
 	)
 	for i := 0; i < 10; i++ {
-		statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
+		statedb, _ := ethservice.BlockChain().StateAt(parent)
 		tx := types.MustSignNewTx(testKey, signer, &types.LegacyTx{
-			Nonce:    statedb.GetNonce(testAddr),
+			Nonce:    statedb.GetTxNonce(testAddr),
 			Value:    new(big.Int),
 			Gas:      1000000,
 			GasPrice: big.NewInt(2 * params.InitialBaseFee),
@@ -764,21 +764,22 @@ func setBlockhash(data *engine.ExecutableData) *engine.ExecutableData {
 	number := big.NewInt(0)
 	number.SetUint64(data.Number)
 	header := &types.Header{
-		ParentHash:  data.ParentHash,
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    data.FeeRecipient,
-		Root:        data.StateRoot,
-		TxHash:      types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
-		ReceiptHash: data.ReceiptsRoot,
-		Bloom:       types.BytesToBloom(data.LogsBloom),
-		Difficulty:  common.Big0,
-		Number:      number,
-		GasLimit:    data.GasLimit,
-		GasUsed:     data.GasUsed,
-		Time:        data.Timestamp,
-		BaseFee:     data.BaseFeePerGas,
-		Extra:       data.ExtraData,
-		MixDigest:   data.Random,
+		ParentHash:     data.ParentHash,
+		UncleHash:      types.EmptyUncleHash,
+		Coinbase:       data.FeeRecipient,
+		Root:           data.StateRoot,
+		CheckpointRoot: data.CheckpointRoot,
+		TxHash:         types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
+		ReceiptHash:    data.ReceiptsRoot,
+		Bloom:          types.BytesToBloom(data.LogsBloom),
+		Difficulty:     common.Big0,
+		Number:         number,
+		GasLimit:       data.GasLimit,
+		GasUsed:        data.GasUsed,
+		Time:           data.Timestamp,
+		BaseFee:        data.BaseFeePerGas,
+		Extra:          data.ExtraData,
+		MixDigest:      data.Random,
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */)
 	data.BlockHash = block.Hash()
@@ -921,21 +922,22 @@ func TestNewPayloadOnInvalidTerminalBlock(t *testing.T) {
 	// We need to recompute the blockhash, since the miner computes a wrong (correct) blockhash
 	txs, _ := decodeTransactions(data.Transactions)
 	header := &types.Header{
-		ParentHash:  data.ParentHash,
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    data.FeeRecipient,
-		Root:        data.StateRoot,
-		TxHash:      types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
-		ReceiptHash: data.ReceiptsRoot,
-		Bloom:       types.BytesToBloom(data.LogsBloom),
-		Difficulty:  common.Big0,
-		Number:      new(big.Int).SetUint64(data.Number),
-		GasLimit:    data.GasLimit,
-		GasUsed:     data.GasUsed,
-		Time:        data.Timestamp,
-		BaseFee:     data.BaseFeePerGas,
-		Extra:       data.ExtraData,
-		MixDigest:   data.Random,
+		ParentHash:     data.ParentHash,
+		UncleHash:      types.EmptyUncleHash,
+		Coinbase:       data.FeeRecipient,
+		Root:           data.StateRoot,
+		CheckpointRoot: data.CheckpointRoot,
+		TxHash:         types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
+		ReceiptHash:    data.ReceiptsRoot,
+		Bloom:          types.BytesToBloom(data.LogsBloom),
+		Difficulty:     common.Big0,
+		Number:         new(big.Int).SetUint64(data.Number),
+		GasLimit:       data.GasLimit,
+		GasUsed:        data.GasUsed,
+		Time:           data.Timestamp,
+		BaseFee:        data.BaseFeePerGas,
+		Extra:          data.ExtraData,
+		MixDigest:      data.Random,
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */)
 	data.BlockHash = block.Hash()
@@ -1143,7 +1145,7 @@ func TestWithdrawals(t *testing.T) {
 	}
 
 	// 11: verify withdrawals were processed.
-	db, _, err := ethservice.APIBackend.StateAndHeaderByNumber(context.Background(), rpc.BlockNumber(execData.ExecutionPayload.Number))
+	db, _, err := ethservice.APIBackend.StateAndHeaderByNumber(context.Background(), rpc.BlockNumber(execData.ExecutionPayload.Number), false)
 	if err != nil {
 		t.Fatalf("unable to load db: %v", err)
 	}
@@ -1282,8 +1284,8 @@ func setupBodies(t *testing.T) (*node.Node, *eth.Ethereum, []*types.Block) {
 	)
 
 	callback := func(parent *types.Header) {
-		statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
-		nonce := statedb.GetNonce(testAddr)
+		statedb, _ := ethservice.BlockChain().StateAt(parent)
+		nonce := statedb.GetTxNonce(testAddr)
 		tx, _ := types.SignTx(types.NewContractCreation(nonce, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 		ethservice.TxPool().Add([]*types.Transaction{tx}, false, false)
 	}
@@ -1626,7 +1628,7 @@ func TestParentBeaconBlockRoot(t *testing.T) {
 	}
 
 	// 11: verify beacon root was processed.
-	db, _, err := ethservice.APIBackend.StateAndHeaderByNumber(context.Background(), rpc.BlockNumber(execData.ExecutionPayload.Number))
+	db, _, err := ethservice.APIBackend.StateAndHeaderByNumber(context.Background(), rpc.BlockNumber(execData.ExecutionPayload.Number), false)
 	if err != nil {
 		t.Fatalf("unable to load db: %v", err)
 	}

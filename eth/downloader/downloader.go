@@ -213,6 +213,8 @@ type BlockChain interface {
 	// TrieDB retrieves the low level trie database used for interacting
 	// with trie nodes.
 	TrieDB() *trie.Database
+
+	Config() *params.ChainConfig
 }
 
 // New creates a new downloader to fetch hashes and blocks from remote peers.
@@ -268,21 +270,24 @@ func (d *Downloader) Progress() ethereum.SyncProgress {
 	progress, pending := d.SnapSyncer.Progress()
 
 	return ethereum.SyncProgress{
-		StartingBlock:       d.syncStatsChainOrigin,
-		CurrentBlock:        current,
-		HighestBlock:        d.syncStatsChainHeight,
-		SyncedAccounts:      progress.AccountSynced,
-		SyncedAccountBytes:  uint64(progress.AccountBytes),
-		SyncedBytecodes:     progress.BytecodeSynced,
-		SyncedBytecodeBytes: uint64(progress.BytecodeBytes),
-		SyncedStorage:       progress.StorageSynced,
-		SyncedStorageBytes:  uint64(progress.StorageBytes),
-		HealedTrienodes:     progress.TrienodeHealSynced,
-		HealedTrienodeBytes: uint64(progress.TrienodeHealBytes),
-		HealedBytecodes:     progress.BytecodeHealSynced,
-		HealedBytecodeBytes: uint64(progress.BytecodeHealBytes),
-		HealingTrienodes:    pending.TrienodeHeal,
-		HealingBytecode:     pending.BytecodeHeal,
+		StartingBlock:          d.syncStatsChainOrigin,
+		CurrentBlock:           current,
+		HighestBlock:           d.syncStatsChainHeight,
+		SyncedAccounts:         progress.AccountSynced,
+		SyncedAccountBytes:     uint64(progress.AccountBytes),
+		SyncedBytecodes:        progress.BytecodeSynced,
+		SyncedBytecodeBytes:    uint64(progress.BytecodeBytes),
+		SyncedStorage:          progress.StorageSynced,
+		SyncedStorageBytes:     uint64(progress.StorageBytes),
+		EstimatedStateProgress: progress.EstimatedStateProgress,
+		HealedTrienodes:        progress.TrienodeHealSynced,
+		HealedTrienodeBytes:    uint64(progress.TrienodeHealBytes),
+		HealedBytecodes:        progress.BytecodeHealSynced,
+		HealedBytecodeBytes:    uint64(progress.BytecodeHealBytes),
+		HealingTrienodes:       pending.TrienodeHeal,
+		HealingBytecode:        pending.BytecodeHeal,
+		SyncMode:               d.getMode().String(),
+		Committed:              d.committed.Load(),
 	}
 }
 
@@ -1535,7 +1540,8 @@ func (d *Downloader) processSnapSyncContent() error {
 	// Start syncing state of the reported head block. This should get us most of
 	// the state of the pivot block.
 	d.pivotLock.RLock()
-	sync := d.syncState(d.pivotHeader.Root)
+	epoch := d.blockchain.Config().CalcEpoch(d.pivotHeader.Number.Uint64())
+	sync := d.syncState(epoch, d.pivotHeader.Root, d.pivotHeader.CheckpointRoot)
 	d.pivotLock.RUnlock()
 
 	defer func() {
@@ -1602,9 +1608,10 @@ func (d *Downloader) processSnapSyncContent() error {
 
 		if oldPivot == nil { // no results piling up, we can move the pivot
 			if !d.committed.Load() { // not yet passed the pivot, we can move the pivot
-				if pivot.Root != sync.root { // pivot position changed, we can move the pivot
+				if sync.needPivotUpdate(pivot.Root, pivot.CheckpointRoot) { // pivot position changed, we can move the pivot
 					sync.Cancel()
-					sync = d.syncState(pivot.Root)
+					epoch = d.blockchain.Config().CalcEpoch(pivot.Number.Uint64())
+					sync = d.syncState(epoch, pivot.Root, pivot.CheckpointRoot)
 
 					go closeOnErr(sync)
 				}
@@ -1643,7 +1650,8 @@ func (d *Downloader) processSnapSyncContent() error {
 			// If new pivot block found, cancel old state retrieval and restart
 			if oldPivot != P {
 				sync.Cancel()
-				sync = d.syncState(P.Header.Root)
+				epoch = d.blockchain.Config().CalcEpoch(P.Header.Number.Uint64())
+				sync = d.syncState(epoch, P.Header.Root, P.Header.CheckpointRoot)
 
 				go closeOnErr(sync)
 				oldPivot = P

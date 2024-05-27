@@ -35,9 +35,9 @@ import (
 type ValidationOptions struct {
 	Config *params.ChainConfig // Chain configuration to selectively validate based on current fork rules
 
-	Accept  uint8    // Bitmap of transaction types that should be accepted for the calling pool
-	MaxSize uint64   // Maximum size of a transaction that the caller can meaningfully handle
-	MinTip  *big.Int // Minimum gas tip needed to allow a transaction into the caller pool
+	Accept  map[uint8]bool // map of transaction types that should be accepted for the calling pool
+	MaxSize uint64         // Maximum size of a transaction that the caller can meaningfully handle
+	MinTip  *big.Int       // Minimum gas tip needed to allow a transaction into the caller pool
 }
 
 // ValidateTransaction is a helper method to check whether a transaction is valid
@@ -48,7 +48,7 @@ type ValidationOptions struct {
 // rules without duplicating code and running the risk of missed updates.
 func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types.Signer, opts *ValidationOptions) error {
 	// Ensure transactions not implemented by the calling pool are rejected
-	if opts.Accept&(1<<tx.Type()) == 0 {
+	if !opts.Accept[tx.Type()] {
 		return fmt.Errorf("%w: tx type %v not supported by this pool", core.ErrTxTypeNotSupported, tx.Type())
 	}
 	// Before performing any expensive validations, sanity check that the tx is
@@ -63,11 +63,14 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if !opts.Config.IsLondon(head.Number) && tx.Type() == types.DynamicFeeTxType {
 		return fmt.Errorf("%w: type %d rejected, pool not yet in London", core.ErrTxTypeNotSupported, tx.Type())
 	}
+	if !opts.Config.IsAlpaca(head.Number) && tx.Type() == types.RestorationTxType {
+		return fmt.Errorf("%w: type %d rejected, pool not yet in Alpaca", core.ErrTxTypeNotSupported, tx.Type())
+	}
 	if !opts.Config.IsCancun(head.Number, head.Time) && tx.Type() == types.BlobTxType {
 		return fmt.Errorf("%w: type %d rejected, pool not yet in Cancun", core.ErrTxTypeNotSupported, tx.Type())
 	}
 	// Check whether the init code size has been exceeded
-	if opts.Config.IsShanghai(head.Number, head.Time) && tx.To() == nil && len(tx.Data()) > params.MaxInitCodeSize {
+	if opts.Config.IsShanghai(head.Number, head.Time) && tx.IsContractCreation() && len(tx.Data()) > params.MaxInitCodeSize {
 		return fmt.Errorf("%w: code size %v, limit %v", core.ErrMaxInitCodeSizeExceeded, len(tx.Data()), params.MaxInitCodeSize)
 	}
 	// Transactions can't be negative. This may never happen using RLP decoded
@@ -90,13 +93,17 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if tx.GasFeeCapIntCmp(tx.GasTipCap()) < 0 {
 		return core.ErrTipAboveFeeCap
 	}
+	// Ensure to and value is nil when restoreData is non-nil.
+	if tx.IsRestoration() && (tx.To() != nil || tx.Value().Sign() != 0) {
+		return core.ErrInvalidRestoration
+	}
 	// Make sure the transaction is signed properly
 	if _, err := types.Sender(signer, tx); err != nil {
 		return ErrInvalidSender
 	}
 	// Ensure the transaction has more gas than the bare minimum needed to cover
 	// the transaction metadata
-	intrGas, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil, true, opts.Config.IsIstanbul(head.Number), opts.Config.IsShanghai(head.Number, head.Time))
+	intrGas, err := core.IntrinsicGas(tx.Data(), tx.AccessList(), tx.IsContractCreation(), tx.IsRestoration(), true, opts.Config.IsIstanbul(head.Number), opts.Config.IsShanghai(head.Number, head.Time))
 	if err != nil {
 		return err
 	}
@@ -175,7 +182,7 @@ type ValidationOptionsWithState struct {
 	// the list of pooled transactions of a specific account. If this method is
 	// set, nonce gaps will be checked and forbidden. If this method is not set,
 	// nonce gaps will be ignored and permitted.
-	FirstNonceGap func(addr common.Address) uint64
+	FirstNonceGap func(addr common.Address) uint32
 
 	// UsedAndLeftSlots is a mandatory callback to retrieve the number of tx slots
 	// used and the number still permitted for an account. New transactions will
@@ -188,7 +195,7 @@ type ValidationOptionsWithState struct {
 
 	// ExistingCost is a mandatory callback to retrieve an already pooled
 	// transaction's cost with the given nonce to check for overdrafts.
-	ExistingCost func(addr common.Address, nonce uint64) *big.Int
+	ExistingCost func(addr common.Address, nonce uint32) *big.Int
 }
 
 // ValidateTransactionWithState is a helper method to check whether a transaction
@@ -203,14 +210,17 @@ func ValidateTransactionWithState(tx *types.Transaction, signer types.Signer, op
 		log.Error("Transaction sender recovery failed", "err", err)
 		return err
 	}
+	if opts.State.GetEpochCoverage(from) != tx.MsgEpochCoverage() {
+		return core.ErrInvalidEpochCoverage
+	}
 	next := opts.State.GetNonce(from)
-	if next > tx.Nonce() {
+	if next > tx.MsgNonce() {
 		return fmt.Errorf("%w: next nonce %v, tx nonce %v", core.ErrNonceTooLow, next, tx.Nonce())
 	}
 	// Ensure the transaction doesn't produce a nonce gap in pools that do not
 	// support arbitrary orderings
 	if opts.FirstNonceGap != nil {
-		if gap := opts.FirstNonceGap(from); gap < tx.Nonce() {
+		if gap := opts.FirstNonceGap(from); gap < tx.MsgNonce() {
 			return fmt.Errorf("%w: tx nonce %v, gapped nonce %v", core.ErrNonceTooHigh, tx.Nonce(), gap)
 		}
 	}
@@ -225,7 +235,7 @@ func ValidateTransactionWithState(tx *types.Transaction, signer types.Signer, op
 	// Ensure the transactor has enough funds to cover for replacements or nonce
 	// expansions without overdrafts
 	spent := opts.ExistingExpenditure(from)
-	if prev := opts.ExistingCost(from, tx.Nonce()); prev != nil {
+	if prev := opts.ExistingCost(from, tx.MsgNonce()); prev != nil {
 		bump := new(big.Int).Sub(cost, prev)
 		need := new(big.Int).Add(spent, bump)
 		if balance.Cmp(need) < 0 {

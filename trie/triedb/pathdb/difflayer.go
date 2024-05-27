@@ -35,6 +35,7 @@ type diffLayer struct {
 	// Immutables
 	root   common.Hash                               // Root hash to which this layer diff belongs to
 	id     uint64                                    // Corresponding state id
+	epoch  uint32                                    // Epoch which the layer belongs
 	block  uint64                                    // Associated block number
 	nodes  map[common.Hash]map[string]*trienode.Node // Cached trie nodes indexed by owner and path
 	states *triestate.Set                            // Associated state change set for building history
@@ -45,7 +46,7 @@ type diffLayer struct {
 }
 
 // newDiffLayer creates a new diff layer on top of an existing layer.
-func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer {
+func newDiffLayer(parent layer, root common.Hash, id uint64, epoch uint32, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer {
 	var (
 		size  int64
 		count int
@@ -53,6 +54,7 @@ func newDiffLayer(parent layer, root common.Hash, id uint64, block uint64, nodes
 	dl := &diffLayer{
 		root:   root,
 		id:     id,
+		epoch:  epoch,
 		block:  block,
 		nodes:  nodes,
 		states: states,
@@ -84,6 +86,11 @@ func (dl *diffLayer) rootHash() common.Hash {
 // stateID implements the layer interface, returning the state id of the layer.
 func (dl *diffLayer) stateID() uint64 {
 	return dl.id
+}
+
+// epochNumber implements the layer interface, returning the epoch of the layer.
+func (dl *diffLayer) epochNumber() uint32 {
+	return dl.epoch
 }
 
 // parentLayer implements the layer interface, returning the subsequent
@@ -122,6 +129,13 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, dept
 			return n.Blob, nil
 		}
 	}
+
+	// In case of account node, If parent epoch is different,
+	// the account doesn't exist in this epoch
+	if owner == (common.Hash{}) && dl.epochNumber() != dl.parent.epochNumber() {
+		return nil, nil
+	}
+
 	// Trie node unknown to this layer, resolve from parent
 	if diff, ok := dl.parent.(*diffLayer); ok {
 		return diff.node(owner, path, hash, depth+1)
@@ -138,8 +152,8 @@ func (dl *diffLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]b
 
 // update implements the layer interface, creating a new layer on top of the
 // existing layer tree with the specified data items.
-func (dl *diffLayer) update(root common.Hash, id uint64, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer {
-	return newDiffLayer(dl, root, id, block, nodes, states)
+func (dl *diffLayer) update(root common.Hash, id uint64, epoch uint32, block uint64, nodes map[common.Hash]map[string]*trienode.Node, states *triestate.Set) *diffLayer {
+	return newDiffLayer(dl, root, id, epoch, block, nodes, states)
 }
 
 // persist flushes the diff layer and all its parent layers to disk layer.

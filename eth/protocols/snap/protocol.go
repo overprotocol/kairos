@@ -72,6 +72,7 @@ type Packet interface {
 // GetAccountRangePacket represents an account query.
 type GetAccountRangePacket struct {
 	ID     uint64      // Request ID to match up responses with
+	Epoch  uint32      // Epoch of the account to serve
 	Root   common.Hash // Root hash of the account trie to serve
 	Origin common.Hash // Hash of the first account to retrieve
 	Limit  common.Hash // Hash of the last account to retrieve
@@ -116,6 +117,7 @@ func (p *AccountRangePacket) Unpack() ([]common.Hash, [][]byte, error) {
 // GetStorageRangesPacket represents an storage slot query.
 type GetStorageRangesPacket struct {
 	ID       uint64        // Request ID to match up responses with
+	Epoch    uint32        // Epoch of the storage to serve
 	Root     common.Hash   // Root hash of the account trie to serve
 	Accounts []common.Hash // Account hashes of the storage tries to serve
 	Origin   []byte        // Hash of the first storage slot to retrieve (large contract mode)
@@ -170,6 +172,7 @@ type ByteCodesPacket struct {
 // GetTrieNodesPacket represents a state trie node query.
 type GetTrieNodesPacket struct {
 	ID    uint64            // Request ID to match up responses with
+	Epoch uint32            // Epoch of the storage to serve
 	Root  common.Hash       // Root hash of the account trie to serve
 	Paths []TrieNodePathSet // Trie node hashes to retrieve the nodes for
 	Bytes uint64            // Soft limit at which to stop returning data

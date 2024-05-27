@@ -44,10 +44,11 @@ var (
 
 // Transaction types.
 const (
-	LegacyTxType     = 0x00
-	AccessListTxType = 0x01
-	DynamicFeeTxType = 0x02
-	BlobTxType       = 0x03
+	LegacyTxType      = 0x00
+	AccessListTxType  = 0x01
+	DynamicFeeTxType  = 0x02
+	RestorationTxType = 0x46
+	BlobTxType        = 0x03
 )
 
 // Transaction is an Ethereum transaction.
@@ -77,6 +78,7 @@ type TxData interface {
 
 	chainID() *big.Int
 	accessList() AccessList
+	restoreData() *RestoreData
 	data() []byte
 	gas() uint64
 	gasPrice() *big.Int
@@ -203,6 +205,8 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		inner = new(AccessListTx)
 	case DynamicFeeTxType:
 		inner = new(DynamicFeeTx)
+	case RestorationTxType:
+		inner = new(RestorationTx)
 	case BlobTxType:
 		inner = new(BlobTx)
 	default:
@@ -284,6 +288,9 @@ func (tx *Transaction) Data() []byte { return tx.inner.data() }
 // AccessList returns the access list of the transaction.
 func (tx *Transaction) AccessList() AccessList { return tx.inner.accessList() }
 
+// RestoreData returns the restore data of the transaction.
+func (tx *Transaction) RestoreData() *RestoreData { return tx.inner.restoreData() }
+
 // Gas returns the gas limit of the transaction.
 func (tx *Transaction) Gas() uint64 { return tx.inner.gas() }
 
@@ -299,13 +306,31 @@ func (tx *Transaction) GasFeeCap() *big.Int { return new(big.Int).Set(tx.inner.g
 // Value returns the ether amount of the transaction.
 func (tx *Transaction) Value() *big.Int { return new(big.Int).Set(tx.inner.value()) }
 
-// Nonce returns the sender account nonce of the transaction.
+// Nonce returns the transaction nonce of the sender account of the transaction.
 func (tx *Transaction) Nonce() uint64 { return tx.inner.nonce() }
+
+// MsgEpochCoverage returns the epoch coverage of the sender account of the transaction.
+func (tx *Transaction) MsgEpochCoverage() uint32 { return TxNonceToMsgEpochCoverage(tx.inner.nonce()) }
+
+// MsgNonce returns the nonce of the sender account of the transaction.
+func (tx *Transaction) MsgNonce() uint32 { return TxNonceToMsgNonce(tx.inner.nonce()) }
 
 // To returns the recipient address of the transaction.
 // For contract-creation transactions, To returns nil.
 func (tx *Transaction) To() *common.Address {
 	return copyAddressPtr(tx.inner.to())
+}
+
+func (tx *Transaction) IsContractCreation() bool {
+	return tx.RestoreData() == nil && tx.To() == nil
+}
+
+func (tx *Transaction) IsPrecompiledContractCreation() bool {
+	return tx.To() != nil && common.IsCreationPrecompiled(*tx.To())
+}
+
+func (tx *Transaction) IsRestoration() bool {
+	return tx.RestoreData() != nil
 }
 
 // Cost returns (gas * gasPrice) + (blobGas * blobGasPrice) + value.
@@ -583,4 +608,19 @@ func copyAddressPtr(a *common.Address) *common.Address {
 	}
 	cpy := *a
 	return &cpy
+}
+
+// MsgToTxNonce converts epochCoverage and nonce of message into nonce of transaction
+func MsgToTxNonce(epochCoverage, nonce uint32) uint64 {
+	return (uint64(epochCoverage) << 32) | uint64(nonce)
+}
+
+// TxNonceToMsgNonce extracts nonce of message from nonce of transaction
+func TxNonceToMsgNonce(txNonce uint64) uint32 {
+	return uint32(txNonce & 0x00000000FFFFFFFF)
+}
+
+// TxNonceToMsgEpochCoverage extracts epochCoverage of message from nonce of transaction
+func TxNonceToMsgEpochCoverage(txNonce uint64) uint32 {
+	return uint32(txNonce >> 32)
 }

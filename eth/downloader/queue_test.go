@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -35,11 +36,21 @@ import (
 	"golang.org/x/exp/slog"
 )
 
+var (
+	testDB    = rawdb.NewMemoryDatabase()
+	testGspec = &core.Genesis{
+		Config:  params.TestChainConfig,
+		Alloc:   core.GenesisAlloc{testAddress: {Balance: big.NewInt(1000000000000000)}},
+		BaseFee: big.NewInt(params.InitialBaseFee),
+	}
+	testGenesis = testGspec.MustCommit(testDB, trie.NewDatabase(testDB, trie.HashDefaults))
+)
+
 // makeChain creates a chain of n blocks starting at and including parent.
 // the returned hash chain is ordered head->parent. In addition, every 3rd block
 // contains a transaction and every 5th an uncle to allow testing correct block
 // reassembly.
-func makeChain(n int, seed byte, parent *types.Block, empty bool) ([]*types.Block, []types.Receipts) {
+func makeChain(n int, seed byte, parent *types.Block, empty bool, getHeaderByNumberExternal func(uint64) *types.Header) ([]*types.Block, []types.Receipts) {
 	blocks, receipts := core.GenerateChain(params.TestChainConfig, parent, ethash.NewFaker(), testDB, n, func(i int, block *core.BlockGen) {
 		block.SetCoinbase(common.Address{seed})
 		// Add one tx to every secondblock
@@ -51,7 +62,7 @@ func makeChain(n int, seed byte, parent *types.Block, empty bool) ([]*types.Bloc
 			}
 			block.AddTx(tx)
 		}
-	})
+	}, getHeaderByNumberExternal)
 	return blocks, receipts
 }
 
@@ -66,10 +77,10 @@ var emptyChain *chainData
 func init() {
 	// Create a chain of blocks to import
 	targetBlocks := 128
-	blocks, _ := makeChain(targetBlocks, 0, testGenesis, false)
+	blocks, _ := makeChain(targetBlocks, 0, testGenesis, false, nil)
 	chain = &chainData{blocks, 0}
 
-	blocks, _ = makeChain(targetBlocks, 0, testGenesis, true)
+	blocks, _ = makeChain(targetBlocks, 0, testGenesis, true, nil)
 	emptyChain = &chainData{blocks, 0}
 }
 
@@ -267,7 +278,7 @@ func TestEmptyBlocks(t *testing.T) {
 // some more advanced scenarios
 func XTestDelivery(t *testing.T) {
 	// the outside network, holding blocks
-	blo, rec := makeChain(128, 0, testGenesis, false)
+	blo, rec := makeChain(128, 0, testGenesis, false, nil)
 	world := newNetwork()
 	world.receipts = rec
 	world.chain = blo
@@ -443,7 +454,14 @@ func (n *network) progress(numBlocks int) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	//fmt.Printf("progressing...\n")
-	newBlocks, newR := makeChain(numBlocks, 0, n.chain[len(n.chain)-1], false)
+	newBlocks, newR := makeChain(numBlocks, 0, n.chain[len(n.chain)-1], false,
+		func(number uint64) *types.Header {
+			if int(number) >= len(n.chain) {
+				return nil
+			}
+			return n.chain[number].Header()
+		},
+	)
 	n.chain = append(n.chain, newBlocks...)
 	n.receipts = append(n.receipts, newR...)
 	n.cond.Broadcast()

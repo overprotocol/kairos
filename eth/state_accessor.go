@@ -51,10 +51,11 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		// The state is available in live database, create a reference
 		// on top to prevent garbage collection and return a release
 		// function to deref it.
-		if statedb, err = eth.blockchain.StateAt(block.Root()); err == nil {
+		if statedb, err = eth.blockchain.StateAt(block.Header()); err == nil {
 			eth.blockchain.TrieDB().Reference(block.Root(), common.Hash{})
 			return statedb, func() {
-				eth.blockchain.TrieDB().Dereference(block.Root())
+				epoch := eth.blockchain.Config().CalcEpoch(block.NumberU64())
+				eth.blockchain.TrieDB().Dereference(epoch, block.Root())
 			}, nil
 		}
 	}
@@ -68,7 +69,8 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 			// TODO(rjl493456442), clean cache is disabled to prevent memory leak,
 			// please re-enable it for better performance.
 			database = state.NewDatabaseWithConfig(eth.chainDb, trie.HashDefaults)
-			if statedb, err = state.New(block.Root(), database, nil); err == nil {
+			epoch, index := eth.blockchain.Config().CalcEpochWithIndex(block.NumberU64())
+			if statedb, err = state.New(block.Root(), block.CheckpointRoot(), epoch, index, database, nil); err == nil {
 				log.Info("Found disk backend for state trie", "root", block.Root(), "number", block.Number())
 				return statedb, noopReleaser, nil
 			}
@@ -91,7 +93,8 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		// otherwise we would rewind past a persisted block (specific corner case is
 		// chain tracing from the genesis).
 		if !readOnly {
-			statedb, err = state.New(current.Root(), database, nil)
+			epoch, index := eth.blockchain.Config().CalcEpochWithIndex(current.NumberU64())
+			statedb, err = state.New(current.Root(), current.CheckpointRoot(), epoch, index, database, nil)
 			if err == nil {
 				return statedb, noopReleaser, nil
 			}
@@ -110,7 +113,8 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 			}
 			current = parent
 
-			statedb, err = state.New(current.Root(), database, nil)
+			epoch, index := eth.blockchain.Config().CalcEpochWithIndex(current.NumberU64())
+			statedb, err = state.New(current.Root(), current.CheckpointRoot(), epoch, index, database, nil)
 			if err == nil {
 				break
 			}
@@ -155,7 +159,9 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 			return nil, nil, fmt.Errorf("stateAtBlock commit failed, number %d root %v: %w",
 				current.NumberU64(), current.Root().Hex(), err)
 		}
-		statedb, err = state.New(root, database, nil)
+		ckptRoot := statedb.GetLastCheckpointRoot()
+		epoch, index := eth.blockchain.Config().CalcEpochWithIndex(current.NumberU64())
+		statedb, err = state.New(root, ckptRoot, epoch, index, database, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("state reset after block %d failed: %v", current.NumberU64(), err)
 		}
@@ -163,7 +169,8 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		// to prevent accumulating too many nodes in memory.
 		triedb.Reference(root, common.Hash{})
 		if parent != (common.Hash{}) {
-			triedb.Dereference(parent)
+			epoch := eth.blockchain.Config().CalcEpoch(current.NumberU64() - 1)
+			triedb.Dereference(epoch, parent)
 		}
 		parent = root
 	}
@@ -171,12 +178,15 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		_, nodes, imgs := triedb.Size() // all memory is contained within the nodes return in hashdb
 		log.Info("Historical state regenerated", "block", current.NumberU64(), "elapsed", time.Since(start), "nodes", nodes, "preimages", imgs)
 	}
-	return statedb, func() { triedb.Dereference(block.Root()) }, nil
+	return statedb, func() {
+		epoch := eth.blockchain.Config().CalcEpoch(block.NumberU64())
+		triedb.Dereference(epoch, block.Root())
+	}, nil
 }
 
 func (eth *Ethereum) pathState(block *types.Block) (*state.StateDB, func(), error) {
 	// Check if the requested state is available in the live chain.
-	statedb, err := eth.blockchain.StateAt(block.Root())
+	statedb, err := eth.blockchain.StateAt(block.Header())
 	if err == nil {
 		return statedb, noopReleaser, nil
 	}

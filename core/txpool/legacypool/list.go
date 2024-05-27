@@ -29,16 +29,16 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// nonceHeap is a heap.Interface implementation over 64bit unsigned integers for
+// nonceHeap is a heap.Interface implementation over 32bit unsigned integers for
 // retrieving sorted transactions from the possibly gapped future queue.
-type nonceHeap []uint64
+type nonceHeap []uint32
 
 func (h nonceHeap) Len() int           { return len(h) }
 func (h nonceHeap) Less(i, j int) bool { return h[i] < h[j] }
 func (h nonceHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
 func (h *nonceHeap) Push(x interface{}) {
-	*h = append(*h, x.(uint64))
+	*h = append(*h, x.(uint32))
 }
 
 func (h *nonceHeap) Pop() interface{} {
@@ -53,7 +53,7 @@ func (h *nonceHeap) Pop() interface{} {
 // sortedMap is a nonce->transaction hash map with a heap based index to allow
 // iterating over the contents in a nonce-incrementing way.
 type sortedMap struct {
-	items   map[uint64]*types.Transaction // Hash map storing the transaction data
+	items   map[uint32]*types.Transaction // Hash map storing the transaction data
 	index   *nonceHeap                    // Heap of nonces of all the stored transactions (non-strict mode)
 	cache   types.Transactions            // Cache of the transactions already sorted
 	cacheMu sync.Mutex                    // Mutex covering the cache
@@ -62,20 +62,20 @@ type sortedMap struct {
 // newSortedMap creates a new nonce-sorted transaction map.
 func newSortedMap() *sortedMap {
 	return &sortedMap{
-		items: make(map[uint64]*types.Transaction),
+		items: make(map[uint32]*types.Transaction),
 		index: new(nonceHeap),
 	}
 }
 
 // Get retrieves the current transactions associated with the given nonce.
-func (m *sortedMap) Get(nonce uint64) *types.Transaction {
+func (m *sortedMap) Get(nonce uint32) *types.Transaction {
 	return m.items[nonce]
 }
 
 // Put inserts a new transaction into the map, also updating the map's nonce
 // index. If a transaction already exists with the same nonce, it's overwritten.
 func (m *sortedMap) Put(tx *types.Transaction) {
-	nonce := tx.Nonce()
+	nonce := tx.MsgNonce()
 	if m.items[nonce] == nil {
 		heap.Push(m.index, nonce)
 	}
@@ -87,12 +87,12 @@ func (m *sortedMap) Put(tx *types.Transaction) {
 // Forward removes all transactions from the map with a nonce lower than the
 // provided threshold. Every removed transaction is returned for any post-removal
 // maintenance.
-func (m *sortedMap) Forward(threshold uint64) types.Transactions {
+func (m *sortedMap) Forward(threshold uint32) types.Transactions {
 	var removed types.Transactions
 
 	// Pop off heap items until the threshold is reached
 	for m.index.Len() > 0 && (*m.index)[0] < threshold {
-		nonce := heap.Pop(m.index).(uint64)
+		nonce := heap.Pop(m.index).(uint32)
 		removed = append(removed, m.items[nonce])
 		delete(m.items, nonce)
 	}
@@ -120,7 +120,7 @@ func (m *sortedMap) Filter(filter func(*types.Transaction) bool) types.Transacti
 }
 
 func (m *sortedMap) reheap() {
-	*m.index = make([]uint64, 0, len(m.items))
+	*m.index = make([]uint32, 0, len(m.items))
 	for nonce := range m.items {
 		*m.index = append(*m.index, nonce)
 	}
@@ -179,7 +179,7 @@ func (m *sortedMap) Cap(threshold int) types.Transactions {
 
 // Remove deletes a transaction from the maintained map, returning whether the
 // transaction was found.
-func (m *sortedMap) Remove(nonce uint64) bool {
+func (m *sortedMap) Remove(nonce uint32) bool {
 	// Short circuit if no transaction is present
 	_, ok := m.items[nonce]
 	if !ok {
@@ -207,7 +207,7 @@ func (m *sortedMap) Remove(nonce uint64) bool {
 // Note, all transactions with nonces lower than start will also be returned to
 // prevent getting into an invalid state. This is not something that should ever
 // happen but better to be self correcting than failing!
-func (m *sortedMap) Ready(start uint64) types.Transactions {
+func (m *sortedMap) Ready(start uint32) types.Transactions {
 	// Short circuit if no transactions are available
 	if m.index.Len() == 0 || (*m.index)[0] > start {
 		return nil
@@ -271,25 +271,27 @@ type list struct {
 	strict bool       // Whether nonces are strictly continuous or not
 	txs    *sortedMap // Heap indexed sorted hash map of the transactions
 
-	costcap   *big.Int // Price of the highest costing transaction (reset only if exceeds balance)
-	gascap    uint64   // Gas limit of the highest spending transaction (reset only if exceeds block limit)
-	totalcost *big.Int // Total cost of all transactions in the list
+	epochCoverage uint32   // Epoch coverage of the account
+	costcap       *big.Int // Price of the highest costing transaction (reset only if exceeds balance)
+	gascap        uint64   // Gas limit of the highest spending transaction (reset only if exceeds block limit)
+	totalcost     *big.Int // Total cost of all transactions in the list
 }
 
 // newList create a new transaction list for maintaining nonce-indexable fast,
 // gapped, sortable transaction lists.
 func newList(strict bool) *list {
 	return &list{
-		strict:    strict,
-		txs:       newSortedMap(),
-		costcap:   new(big.Int),
-		totalcost: new(big.Int),
+		strict:        strict,
+		txs:           newSortedMap(),
+		epochCoverage: uint32(math.MaxUint32),
+		costcap:       new(big.Int),
+		totalcost:     new(big.Int),
 	}
 }
 
 // Contains returns whether the  list contains a transaction
 // with the provided nonce.
-func (l *list) Contains(nonce uint64) bool {
+func (l *list) Contains(nonce uint32) bool {
 	return l.txs.Get(nonce) != nil
 }
 
@@ -300,7 +302,7 @@ func (l *list) Contains(nonce uint64) bool {
 // thresholds are also potentially updated.
 func (l *list) Add(tx *types.Transaction, priceBump uint64) (bool, *types.Transaction) {
 	// If there's an older better transaction, abort
-	old := l.txs.Get(tx.Nonce())
+	old := l.txs.Get(tx.MsgNonce())
 	if old != nil {
 		if old.GasFeeCapCmp(tx) >= 0 || old.GasTipCapCmp(tx) >= 0 {
 			return false, nil
@@ -340,32 +342,33 @@ func (l *list) Add(tx *types.Transaction, priceBump uint64) (bool, *types.Transa
 // Forward removes all transactions from the list with a nonce lower than the
 // provided threshold. Every removed transaction is returned for any post-removal
 // maintenance.
-func (l *list) Forward(threshold uint64) types.Transactions {
+func (l *list) Forward(threshold uint32) types.Transactions {
 	txs := l.txs.Forward(threshold)
 	l.subTotalCost(txs)
 	return txs
 }
 
 // Filter removes all transactions from the list with a cost or gas limit higher
-// than the provided thresholds. Every removed transaction is returned for any
-// post-removal maintenance. Strict-mode invalidated transactions are also
-// returned.
+// than the provided thresholds or with a epochCoverage outdated. Every removed transaction
+// is returned for any post-removal maintenance. Strict-mode invalidated transactions are
+// also returned.
 //
 // This method uses the cached costcap and gascap to quickly decide if there's even
 // a point in calculating all the costs or if the balance covers all. If the threshold
 // is lower than the costgas cap, the caps will be reset to a new high after removing
 // the newly invalidated transactions.
-func (l *list) Filter(costLimit *big.Int, gasLimit uint64) (types.Transactions, types.Transactions) {
+func (l *list) Filter(newEpochCoverage uint32, costLimit *big.Int, gasLimit uint64) (types.Transactions, types.Transactions) {
 	// If all transactions are below the threshold, short circuit
-	if l.costcap.Cmp(costLimit) <= 0 && l.gascap <= gasLimit {
+	if l.costcap.Cmp(costLimit) <= 0 && l.gascap <= gasLimit && l.epochCoverage == newEpochCoverage {
 		return nil, nil
 	}
+	l.epochCoverage = newEpochCoverage
 	l.costcap = new(big.Int).Set(costLimit) // Lower the caps to the thresholds
 	l.gascap = gasLimit
 
-	// Filter out all the transactions above the account's funds
+	// Filter out all the transactions above the account's funds or have outdated epochCoverage
 	removed := l.txs.Filter(func(tx *types.Transaction) bool {
-		return tx.Gas() > gasLimit || tx.Cost().Cmp(costLimit) > 0
+		return tx.Gas() > gasLimit || tx.Cost().Cmp(costLimit) > 0 || tx.MsgEpochCoverage() != newEpochCoverage
 	})
 
 	if len(removed) == 0 {
@@ -374,13 +377,16 @@ func (l *list) Filter(costLimit *big.Int, gasLimit uint64) (types.Transactions, 
 	var invalids types.Transactions
 	// If the list was strict, filter anything above the lowest nonce
 	if l.strict {
-		lowest := uint64(math.MaxUint64)
+		lowest := uint32(math.MaxUint32)
 		for _, tx := range removed {
-			if nonce := tx.Nonce(); lowest > nonce {
+			if epochCoverage := tx.MsgEpochCoverage(); epochCoverage != newEpochCoverage {
+				continue
+			}
+			if nonce := tx.MsgNonce(); lowest > nonce {
 				lowest = nonce
 			}
 		}
-		invalids = l.txs.filter(func(tx *types.Transaction) bool { return tx.Nonce() > lowest })
+		invalids = l.txs.filter(func(tx *types.Transaction) bool { return tx.MsgNonce() > lowest })
 	}
 	// Reset total cost
 	l.subTotalCost(removed)
@@ -402,14 +408,14 @@ func (l *list) Cap(threshold int) types.Transactions {
 // the deletion (strict mode only).
 func (l *list) Remove(tx *types.Transaction) (bool, types.Transactions) {
 	// Remove the transaction from the set
-	nonce := tx.Nonce()
+	nonce := tx.MsgNonce()
 	if removed := l.txs.Remove(nonce); !removed {
 		return false, nil
 	}
 	l.subTotalCost([]*types.Transaction{tx})
 	// In strict mode, filter out non-executable transactions
 	if l.strict {
-		txs := l.txs.Filter(func(tx *types.Transaction) bool { return tx.Nonce() > nonce })
+		txs := l.txs.Filter(func(tx *types.Transaction) bool { return tx.MsgNonce() > nonce })
 		l.subTotalCost(txs)
 		return true, txs
 	}
@@ -423,7 +429,7 @@ func (l *list) Remove(tx *types.Transaction) (bool, types.Transactions) {
 // Note, all transactions with nonces lower than start will also be returned to
 // prevent getting into an invalid state. This is not something that should ever
 // happen but better to be self correcting than failing!
-func (l *list) Ready(start uint64) types.Transactions {
+func (l *list) Ready(start uint32) types.Transactions {
 	txs := l.txs.Ready(start)
 	l.subTotalCost(txs)
 	return txs

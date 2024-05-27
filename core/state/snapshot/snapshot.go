@@ -98,6 +98,9 @@ var (
 
 // Snapshot represents the functionality supported by a snapshot storage layer.
 type Snapshot interface {
+	// Epoch returns the epoch number for which this snapshot was made.
+	Epoch() uint32
+
 	// Root returns the root hash for which this snapshot was made.
 	Root() common.Hash
 
@@ -130,7 +133,7 @@ type snapshot interface {
 	// the specified data items.
 	//
 	// Note, the maps are retained by the method to avoid copying everything.
-	Update(blockRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer
+	Update(epoch uint32, blockRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer
 
 	// Journal commits an entire diff hierarchy to disk into a single journal entry.
 	// This is meant to be used during shutdown to persist the snapshot without
@@ -150,10 +153,11 @@ type snapshot interface {
 
 // Config includes the configurations for snapshots.
 type Config struct {
-	CacheSize  int  // Megabytes permitted to use for read caches
-	Recovery   bool // Indicator that the snapshots is in the recovery mode
-	NoBuild    bool // Indicator that the snapshots generation is disallowed
-	AsyncBuild bool // The snapshot generation is allowed to be constructed asynchronously
+	CacheSize  int    // Megabytes permitted to use for read caches
+	Recovery   bool   // Indicator that the snapshots is in the recovery mode
+	NoBuild    bool   // Indicator that the snapshots generation is disallowed
+	AsyncBuild bool   // The snapshot generation is allowed to be constructed asynchronously
+	EpochLimit uint32 // The maximum epoch number to keep in disk database
 }
 
 // Tree is an Ethereum state snapshot tree. It consists of one persistent base
@@ -192,7 +196,7 @@ type Tree struct {
 //     state trie.
 //   - otherwise, the entire snapshot is considered invalid and will be recreated on
 //     a background thread.
-func New(config Config, diskdb ethdb.KeyValueStore, triedb *trie.Database, root common.Hash) (*Tree, error) {
+func New(config Config, diskdb ethdb.KeyValueStore, triedb *trie.Database, epoch uint32, root, ckptRoot common.Hash) (*Tree, error) {
 	// Create a new, empty snapshot tree
 	snap := &Tree{
 		config: config,
@@ -201,7 +205,7 @@ func New(config Config, diskdb ethdb.KeyValueStore, triedb *trie.Database, root 
 		layers: make(map[common.Hash]snapshot),
 	}
 	// Attempt to load a previously persisted snapshot and rebuild one if failed
-	head, disabled, err := loadSnapshot(diskdb, triedb, root, config.CacheSize, config.Recovery, config.NoBuild)
+	head, disabled, err := loadSnapshot(diskdb, triedb, epoch, root, config.CacheSize, config.Recovery, config.NoBuild, snap.DeleteEpochData)
 	if disabled {
 		log.Warn("Snapshot maintenance disabled (syncing)")
 		return snap, nil
@@ -213,7 +217,7 @@ func New(config Config, diskdb ethdb.KeyValueStore, triedb *trie.Database, root 
 	if err != nil {
 		log.Warn("Failed to load snapshot", "err", err)
 		if !config.NoBuild {
-			snap.Rebuild(root)
+			snap.Rebuild(epoch, root, ckptRoot)
 			return snap, nil
 		}
 		return nil, err // Bail out the error, don't rebuild automatically.
@@ -269,6 +273,14 @@ func (t *Tree) Disable() {
 			layer.stale = true
 			layer.lock.Unlock()
 
+			// Should disable the ckpt layer too
+			ckptLayer := layer.ckptLayer
+			if ckptLayer != nil {
+				ckptLayer.lock.Lock()
+				ckptLayer.stale = true
+				ckptLayer.lock.Unlock()
+			}
+
 		case *diffLayer:
 			// If the layer is a simple diff, simply mark as stale
 			layer.lock.Lock()
@@ -285,7 +297,14 @@ func (t *Tree) Disable() {
 	batch := t.diskdb.NewBatch()
 
 	rawdb.WriteSnapshotDisabled(batch)
-	rawdb.DeleteSnapshotRoot(batch)
+	epoch := rawdb.ReadSnapshotEpoch(t.diskdb)
+	rawdb.DeleteSnapshotEpoch(batch)
+	if epoch != nil {
+		rawdb.DeleteSnapshotRoot(batch, *epoch)
+		if *epoch > 0 {
+			rawdb.DeleteSnapshotRoot(batch, *epoch-1)
+		}
+	}
 	rawdb.DeleteSnapshotJournal(batch)
 	rawdb.DeleteSnapshotGenerator(batch)
 	rawdb.DeleteSnapshotRecoveryNumber(batch)
@@ -299,10 +318,30 @@ func (t *Tree) Disable() {
 // Snapshot retrieves a snapshot belonging to the given block root, or nil if no
 // snapshot is maintained for that block.
 func (t *Tree) Snapshot(blockRoot common.Hash) Snapshot {
+	snap := t.CurrSnapshot(blockRoot)
+	if snap == nil {
+		snap = t.CkptSnapshot(blockRoot)
+	}
+	return snap
+}
+
+// CurrSnapshot retrieves the current snapshot belonging to the given block root.
+func (t *Tree) CurrSnapshot(blockRoot common.Hash) Snapshot {
 	t.lock.RLock()
 	defer t.lock.RUnlock()
 
 	return t.layers[blockRoot]
+}
+
+// CkptSnapshot retrieves the checkpoint snapshot belonging to the given block root.
+func (t *Tree) CkptSnapshot(blockRoot common.Hash) Snapshot {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	if ckptLayer := t.ckptDisklayer(); ckptLayer != nil && ckptLayer.root == blockRoot {
+		return ckptLayer
+	}
+	return nil
 }
 
 // Snapshots returns all visited layers from the topmost layer with specific
@@ -340,7 +379,7 @@ func (t *Tree) Snapshots(root common.Hash, limits int, nodisk bool) []Snapshot {
 
 // Update adds a new snapshot into the tree, if that can be linked to an existing
 // old parent. It is disallowed to insert a disk layer (the origin of all).
-func (t *Tree) Update(blockRoot common.Hash, parentRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
+func (t *Tree) Update(epoch uint32, blockRoot common.Hash, parentRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error {
 	// Reject noop updates to avoid self-loops in the snapshot tree. This is a
 	// special case that can only happen for Clique networks where empty blocks
 	// don't modify the state (0 block subsidy).
@@ -355,9 +394,30 @@ func (t *Tree) Update(blockRoot common.Hash, parentRoot common.Hash, destructs m
 	if parent == nil {
 		return fmt.Errorf("parent [%#x] snapshot missing", parentRoot)
 	}
-	snap := parent.(snapshot).Update(blockRoot, destructs, accounts, storage)
+	snap := parent.(snapshot).Update(epoch, blockRoot, destructs, accounts, storage)
 
 	// Save the new snapshot for later
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	t.layers[snap.root] = snap
+	return nil
+}
+
+// AddNewEpoch adds a new epoch snapshot into the tree.
+// No account can be read from the snapshot. But storage can be read.
+func (t *Tree) AddNewEpoch(epoch uint32, parentRoot common.Hash) error {
+	parent := t.CurrSnapshot(parentRoot)
+	if parent == nil {
+		return fmt.Errorf("parent [%#x] snapshot missing", parentRoot)
+	}
+	var (
+		emptyDestructs = make(map[common.Hash]struct{})
+		emptyAccounts  = make(map[common.Hash][]byte)
+		emptyStorage   = make(map[common.Hash]map[common.Hash][]byte)
+	)
+	snap := parent.(snapshot).Update(epoch, types.EmptyRootHash, emptyDestructs, emptyAccounts, emptyStorage)
+
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -385,11 +445,9 @@ func (t *Tree) Cap(root common.Hash, layers int) error {
 		return fmt.Errorf("snapshot [%#x] is disk layer", root)
 	}
 	// If the generator is still running, use a more aggressive cap
-	diff.origin.lock.RLock()
-	if diff.origin.genMarker != nil && layers > 8 {
+	if diff.origin.genMarker.get() != nil && layers > 8 {
 		layers = 8
 	}
-	diff.origin.lock.RUnlock()
 
 	// Run the internal capping and discard all stale layers
 	t.lock.Lock()
@@ -401,9 +459,19 @@ func (t *Tree) Cap(root common.Hash, layers int) error {
 	if layers == 0 {
 		// If full commit was requested, flatten the diffs and merge onto disk
 		diff.lock.RLock()
-		base := diffToDisk(diff.flatten().(*diffLayer))
+		flattened := diff.flatten()
 		diff.lock.RUnlock()
-
+		var base *diskLayer
+		for i := 0; i < len(flattened); i++ {
+			diff := flattened[i].(*diffLayer)
+			diff.lock.RLock()
+			base = diffToDisk(diff)
+			diff.lock.RUnlock()
+			if i < len(flattened)-1 {
+				childDl := (flattened[i+1]).(*diffLayer)
+				childDl.parent = base
+			}
+		}
 		// Replace the entire snapshot tree with the flat base
 		t.layers = map[common.Hash]snapshot{base.root: base}
 		return nil
@@ -484,21 +552,39 @@ func (t *Tree) cap(diff *diffLayer, layers int) *diskLayer {
 
 		// Flatten the parent into the grandparent. The flattening internally obtains a
 		// write lock on grandparent.
-		flattened := parent.flatten().(*diffLayer)
-		t.layers[flattened.root] = flattened
+		flattened := parent.flatten()
+		if len(flattened) == 0 {
+			return nil
+		}
+		var base *diskLayer
+		for i := 0; i < len(flattened)-1; i++ {
+			dl := flattened[i].(*diffLayer)
+			dl.lock.RLock()
+			base = diffToDisk(dl)
+			dl.lock.RUnlock()
+			childDl := (flattened[i+1]).(*diffLayer)
+			childDl.parent = base
+		}
+		latestDiffLayer := flattened[len(flattened)-1].(*diffLayer)
+		// At least one diff layer is written to disk, Replace layers with new disk layer
+		if len(flattened) > 1 {
+			// Replace base layer and the checkpoint base layer
+			t.layers[base.root] = base
+		}
+		t.layers[latestDiffLayer.root] = latestDiffLayer
 
 		// Invoke the hook if it's registered. Ugly hack.
 		if t.onFlatten != nil {
 			t.onFlatten()
 		}
-		diff.parent = flattened
-		if flattened.memory < aggregatorMemoryLimit {
+		diff.parent = latestDiffLayer
+		if latestDiffLayer.memory < aggregatorMemoryLimit {
 			// Accumulator layer is smaller than the limit, so we can abort, unless
 			// there's a snapshot being generated currently. In that case, the trie
 			// will move from underneath the generator so we **must** merge all the
 			// partial data down into the snapshot and restart the generation.
-			if flattened.parent.(*diskLayer).genAbort == nil {
-				return nil
+			if latestDiffLayer.parent.(*diskLayer).genAbort == nil {
+				return base
 			}
 		}
 	default:
@@ -523,9 +609,10 @@ func (t *Tree) cap(diff *diffLayer, layers int) *diskLayer {
 // be discarded if the whole transition if not finished.
 func diffToDisk(bottom *diffLayer) *diskLayer {
 	var (
-		base  = bottom.parent.(*diskLayer)
-		batch = base.diskdb.NewBatch()
-		stats *generatorStats
+		base     = bottom.parent.(*diskLayer)
+		ckptBase = base.ckptLayer
+		batch    = base.diskdb.NewBatch()
+		stats    *generatorStats
 	)
 	// If the disk layer is running a snapshot generator, abort it
 	if base.genAbort != nil {
@@ -534,8 +621,30 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 		stats = <-abort
 	}
 	// Put the deletion in the batch writer, flush all updates in the final step.
-	rawdb.DeleteSnapshotRoot(batch)
+	rawdb.DeleteSnapshotEpoch(batch)
+	rawdb.DeleteSnapshotRoot(batch, bottom.epoch)
 
+	if base.epoch != bottom.epoch {
+		rawdb.DeleteSnapshotRoot(batch, bottom.epoch-1)
+		if ckptBase != nil {
+			ckptBase.lock.Lock()
+			if ckptBase.stale {
+				panic("parent checkpoint disk layer is stale")
+			}
+			ckptBase.stale = true
+			ckptBase.lock.Unlock()
+		}
+
+		ckptBase = &ckptDiskLayer{
+			epoch:     base.epoch,
+			root:      base.root,
+			cache:     base.cache,
+			diskdb:    base.diskdb,
+			triedb:    base.triedb,
+			genMarker: base.genMarker,
+		}
+		rawdb.WriteSnapshotRoot(batch, bottom.epoch-1, base.root)
+	}
 	// Mark the original base as stale as we're going to create a new wrapper
 	base.lock.Lock()
 	if base.stale {
@@ -547,12 +656,13 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 	// Destroy all the destructed accounts from the database
 	for hash := range bottom.destructSet {
 		// Skip any account not covered yet by the snapshot
-		if base.genMarker != nil && bytes.Compare(hash[:], base.genMarker) > 0 {
+		genMarker := base.genMarker.get()
+		if genMarker != nil && bytes.Compare(hash[:], genMarker) > 0 {
 			continue
 		}
 		// Remove all storage slots
-		rawdb.DeleteAccountSnapshot(batch, hash)
-		base.cache.Set(hash[:], nil)
+		rawdb.DeleteAccountSnapshot(batch, bottom.epoch, hash)
+		base.cache.Set(accountCacheKey(bottom.epoch, hash), nil)
 
 		it := rawdb.IterateStorageSnapshots(base.diskdb, hash)
 		for it.Next() {
@@ -576,12 +686,13 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 	// Push all updated accounts into the database
 	for hash, data := range bottom.accountData {
 		// Skip any account not covered yet by the snapshot
-		if base.genMarker != nil && bytes.Compare(hash[:], base.genMarker) > 0 {
+		genMarker := base.genMarker.get()
+		if genMarker != nil && bytes.Compare(hash[:], genMarker) > 0 {
 			continue
 		}
 		// Push the account to disk
-		rawdb.WriteAccountSnapshot(batch, hash, data)
-		base.cache.Set(hash[:], data)
+		rawdb.WriteAccountSnapshot(batch, bottom.epoch, hash, data)
+		base.cache.Set(accountCacheKey(bottom.epoch, hash), data)
 		snapshotCleanAccountWriteMeter.Mark(int64(len(data)))
 
 		snapshotFlushAccountItemMeter.Mark(1)
@@ -600,15 +711,16 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 	// Push all the storage slots into the database
 	for accountHash, storage := range bottom.storageData {
 		// Skip any account not covered yet by the snapshot
-		if base.genMarker != nil && bytes.Compare(accountHash[:], base.genMarker) > 0 {
+		genMarker := base.genMarker.get()
+		if genMarker != nil && bytes.Compare(accountHash[:], genMarker) > 0 {
 			continue
 		}
 		// Generation might be mid-account, track that case too
-		midAccount := base.genMarker != nil && bytes.Equal(accountHash[:], base.genMarker[:common.HashLength])
+		midAccount := genMarker != nil && bytes.Equal(accountHash[:], genMarker[:common.HashLength])
 
 		for storageHash, data := range storage {
 			// Skip any slot not covered yet by the snapshot
-			if midAccount && bytes.Compare(storageHash[:], base.genMarker[common.HashLength:]) > 0 {
+			if midAccount && bytes.Compare(storageHash[:], base.genMarker.get()[common.HashLength:]) > 0 {
 				continue
 			}
 			if len(data) > 0 {
@@ -624,32 +736,43 @@ func diffToDisk(bottom *diffLayer) *diskLayer {
 		}
 	}
 	// Update the snapshot block marker and write any remainder data
-	rawdb.WriteSnapshotRoot(batch, bottom.root)
+	rawdb.WriteSnapshotEpoch(batch, bottom.epoch)
+	rawdb.WriteSnapshotRoot(batch, bottom.epoch, bottom.root)
 
 	// Write out the generator progress marker and report
-	journalProgress(batch, base.genMarker, stats)
+	journalProgress(batch, base.genMarker.get(), stats)
 
 	// Flush all the updates in the single db operation. Ensure the
 	// disk layer transition is atomic.
 	if err := batch.Write(); err != nil {
 		log.Crit("Failed to write leftover snapshot", "err", err)
 	}
-	log.Debug("Journalled disk layer", "root", bottom.root, "complete", base.genMarker == nil)
+	// Delete epoch data after new epoch data is written to disk.
+	if base.epoch != bottom.epoch {
+		// deleteEpochData is nil in some tests
+		if base.deleteEpochData != nil {
+			base.deleteEpochData(bottom.epoch)
+		}
+	}
+	log.Debug("Journalled disk layer", "root", bottom.root, "complete", base.genMarker.get() == nil)
 	res := &diskLayer{
-		root:       bottom.root,
-		cache:      base.cache,
-		diskdb:     base.diskdb,
-		triedb:     base.triedb,
-		genMarker:  base.genMarker,
-		genPending: base.genPending,
+		epoch:           bottom.epoch,
+		root:            bottom.root,
+		cache:           base.cache,
+		diskdb:          base.diskdb,
+		triedb:          base.triedb,
+		ckptLayer:       ckptBase,
+		genMarker:       base.genMarker,
+		genPending:      base.genPending,
+		deleteEpochData: base.deleteEpochData,
 	}
 	// If snapshot generation hasn't finished yet, port over all the starts and
 	// continue where the previous round left off.
 	//
 	// Note, the `base.genAbort` comparison is not used normally, it's checked
 	// to allow the tests to play with the marker without triggering this path.
-	if base.genMarker != nil && base.genAbort != nil {
-		res.genMarker = base.genMarker
+	if base.genMarker.get() != nil && base.genAbort != nil {
+		res.genMarker.set(base.genMarker.get())
 		res.genAbort = make(chan chan *generatorStats)
 		go res.generate(stats)
 	}
@@ -684,6 +807,13 @@ func (t *Tree) Journal(root common.Hash) (common.Hash, error) {
 	if err := rlp.Encode(journal, journalVersion); err != nil {
 		return common.Hash{}, err
 	}
+	diskLayer := t.disklayer()
+	if diskLayer == nil {
+		return common.Hash{}, errors.New("invalid disk layer")
+	}
+	if err := rlp.Encode(journal, diskLayer.epoch); err != nil {
+		return common.Hash{}, err
+	}
 	diskroot := t.diskRoot()
 	if diskroot == (common.Hash{}) {
 		return common.Hash{}, errors.New("invalid disk root")
@@ -692,6 +822,15 @@ func (t *Tree) Journal(root common.Hash) (common.Hash, error) {
 	// diff journal is continuous with disk.
 	if err := rlp.Encode(journal, diskroot); err != nil {
 		return common.Hash{}, err
+	}
+	if diskLayer.epoch > 0 {
+		ckptDiskRoot := t.ckptDiskRoot()
+		if ckptDiskRoot == (common.Hash{}) {
+			return common.Hash{}, errors.New("invalid checkpoint disk root")
+		}
+		if err := rlp.Encode(journal, ckptDiskRoot); err != nil {
+			return common.Hash{}, err
+		}
 	}
 	// Finally write out the journal of each layer in reverse order.
 	base, err := snap.(snapshot).Journal(journal)
@@ -706,7 +845,7 @@ func (t *Tree) Journal(root common.Hash) (common.Hash, error) {
 // Rebuild wipes all available snapshot data from the persistent database and
 // discard all caches and diff layers. Afterwards, it starts a new snapshot
 // generator with the given root hash.
-func (t *Tree) Rebuild(root common.Hash) {
+func (t *Tree) Rebuild(epoch uint32, root, ckptRoot common.Hash) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -730,6 +869,13 @@ func (t *Tree) Rebuild(root common.Hash) {
 			layer.stale = true
 			layer.lock.Unlock()
 
+			ckptLayer := layer.ckptLayer
+			if ckptLayer != nil {
+				ckptLayer.lock.Lock()
+				ckptLayer.stale = true
+				ckptLayer.lock.Unlock()
+			}
+
 		case *diffLayer:
 			// If the layer is a simple diff, simply mark as stale
 			layer.lock.Lock()
@@ -744,8 +890,23 @@ func (t *Tree) Rebuild(root common.Hash) {
 	// generator will run a wiper first if there's not one running right now.
 	log.Info("Rebuilding state snapshot")
 	t.layers = map[common.Hash]snapshot{
-		root: generateSnapshot(t.diskdb, t.triedb, t.config.CacheSize, root),
+		root: generateSnapshot(t.diskdb, t.triedb, t.config.CacheSize, epoch, root, ckptRoot, t.DeleteEpochData),
 	}
+}
+
+func (t *Tree) DeleteEpochData(newEpoch uint32) {
+	if t.config.EpochLimit == 0 {
+		// Epoch limit is disabled, no need to delete epoch data.
+		return
+	}
+	if newEpoch < t.config.EpochLimit {
+		// The new epoch is within the epoch limit, no need to delete epoch data.
+		return
+	}
+	untilEpoch := newEpoch - t.config.EpochLimit
+	log.Info("Deleting epoch data in snapshot", "epoch", untilEpoch)
+	rawdb.DeleteRangeSnapshotRoot(t.diskdb, untilEpoch)
+	rawdb.DeleteRangeAccountSnapshot(t.diskdb, untilEpoch)
 }
 
 // AccountIterator creates a new account iterator for the specified root hash and
@@ -783,18 +944,21 @@ func (t *Tree) Verify(root common.Hash) error {
 	}
 	defer acctIt.Release()
 
-	got, err := generateTrieRoot(nil, "", acctIt, common.Hash{}, stackTrieGenerate, func(db ethdb.KeyValueWriter, accountHash, codeHash common.Hash, stat *generateStats) (common.Hash, error) {
+	snapshot := t.Snapshot(root)
+	epoch := snapshot.Epoch()
+
+	got, err := generateTrieRoot(nil, "", acctIt, epoch, common.Hash{}, stackTrieGenerate, func(db ethdb.KeyValueWriter, accountHash, codeHash common.Hash, stat *generateStats) (common.Hash, bool, error) {
 		storageIt, err := t.StorageIterator(root, accountHash, common.Hash{})
 		if err != nil {
-			return common.Hash{}, err
+			return common.Hash{}, false, err
 		}
 		defer storageIt.Release()
 
-		hash, err := generateTrieRoot(nil, "", storageIt, accountHash, stackTrieGenerate, nil, stat, false)
+		hash, err := generateTrieRoot(nil, "", storageIt, epoch, accountHash, stackTrieGenerate, nil, stat, false)
 		if err != nil {
-			return common.Hash{}, err
+			return common.Hash{}, false, err
 		}
-		return hash, nil
+		return hash, false, nil
 	}, newGenerateStats(), true)
 
 	if err != nil {
@@ -827,6 +991,14 @@ func (t *Tree) disklayer() *diskLayer {
 	}
 }
 
+func (t *Tree) ckptDisklayer() *ckptDiskLayer {
+	diskLayer := t.disklayer()
+	if diskLayer == nil {
+		return nil
+	}
+	return diskLayer.ckptLayer
+}
+
 // diskRoot is a internal helper function to return the disk layer root.
 // The lock of snapTree is assumed to be held already.
 func (t *Tree) diskRoot() common.Hash {
@@ -835,6 +1007,16 @@ func (t *Tree) diskRoot() common.Hash {
 		return common.Hash{}
 	}
 	return disklayer.Root()
+}
+
+// ckptDiskRoot is a internal helper function to return the ckpt disk layer root.
+// The lock of snapTree is assumed to be held already.
+func (t *Tree) ckptDiskRoot() common.Hash {
+	ckptDisklayer := t.ckptDisklayer()
+	if ckptDisklayer == nil {
+		return common.Hash{}
+	}
+	return ckptDisklayer.Root()
 }
 
 // generating is an internal helper function which reports whether the snapshot
@@ -847,9 +1029,7 @@ func (t *Tree) generating() (bool, error) {
 	if layer == nil {
 		return false, errors.New("disk layer is missing")
 	}
-	layer.lock.RLock()
-	defer layer.lock.RUnlock()
-	return layer.genMarker != nil, nil
+	return layer.genMarker.get() != nil, nil
 }
 
 // DiskRoot is a external helper function to return the disk layer root.

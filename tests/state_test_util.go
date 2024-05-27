@@ -112,6 +112,7 @@ type stTransaction struct {
 	To                   string              `json:"to"`
 	Data                 []string            `json:"data"`
 	AccessLists          []*types.AccessList `json:"accessLists,omitempty"`
+	RestoreData          *types.RestoreData  `json:"restoreData,omitempty"`
 	GasLimit             []uint64            `json:"gasLimit"`
 	Value                []string            `json:"value"`
 	PrivateKey           []byte              `json:"secretKey"`
@@ -223,7 +224,7 @@ func (t *StateTest) Run(subtest StateSubtest, vmconfig vm.Config, snapshotter bo
 	if logs := rlpHash(statedb.Logs()); logs != common.Hash(post.Logs) {
 		return fmt.Errorf("post state logs hash mismatch: got %x, want %x", logs, post.Logs)
 	}
-	statedb, _ = state.New(root, statedb.Database(), snaps)
+	statedb, _ = state.New(root, types.EmptyRootHash, 0, 0, statedb.Database(), snaps)
 	return nil
 }
 
@@ -318,9 +319,10 @@ func MakePreState(db ethdb.Database, accounts core.GenesisAlloc, snapshotter boo
 	}
 	triedb := trie.NewDatabase(db, tconf)
 	sdb := state.NewDatabaseWithNodeDB(db, triedb)
-	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+	statedb, _ := state.New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, sdb, nil)
 	for addr, a := range accounts {
 		statedb.SetCode(addr, a.Code)
+		statedb.SetUiHash(addr, a.UiHash)
 		statedb.SetNonce(addr, a.Nonce)
 		statedb.SetBalance(addr, a.Balance)
 		for k, v := range a.Storage {
@@ -338,9 +340,9 @@ func MakePreState(db ethdb.Database, accounts core.GenesisAlloc, snapshotter boo
 			NoBuild:    false,
 			AsyncBuild: false,
 		}
-		snaps, _ = snapshot.New(snapconfig, db, triedb, root)
+		snaps, _ = snapshot.New(snapconfig, db, triedb, 0, root, types.EmptyRootHash)
 	}
-	statedb, _ = state.New(root, sdb, snaps)
+	statedb, _ = state.New(root, types.EmptyRootHash, 0, 0, sdb, snaps)
 	return triedb, snaps, statedb
 }
 
@@ -436,7 +438,8 @@ func (tx *stTransaction) toMessage(ps stPostState, baseFee *big.Int) (*core.Mess
 	msg := &core.Message{
 		From:          from,
 		To:            to,
-		Nonce:         tx.Nonce,
+		Nonce:         types.TxNonceToMsgNonce(tx.Nonce),
+		EpochCoverage: types.TxNonceToMsgEpochCoverage(tx.Nonce),
 		Value:         value,
 		GasLimit:      gasLimit,
 		GasPrice:      gasPrice,
@@ -444,6 +447,7 @@ func (tx *stTransaction) toMessage(ps stPostState, baseFee *big.Int) (*core.Mess
 		GasTipCap:     tx.MaxPriorityFeePerGas,
 		Data:          data,
 		AccessList:    accessList,
+		RestoreData:   tx.RestoreData,
 		BlobHashes:    tx.BlobVersionedHashes,
 		BlobGasFeeCap: tx.BlobGasFeeCap,
 	}

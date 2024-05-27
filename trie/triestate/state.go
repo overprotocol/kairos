@@ -162,7 +162,7 @@ func updateAccount(ctx *context, loader TrieLoader, addr common.Address) error {
 	if err != nil {
 		return err
 	}
-	post := types.NewEmptyStateAccount()
+	post := types.NewEmptyStateAccount(0)
 	if len(blob) != 0 {
 		if err := rlp.DecodeBytes(blob, &post); err != nil {
 			return err

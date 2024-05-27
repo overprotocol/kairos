@@ -49,14 +49,17 @@ type DumpCollector interface {
 
 // DumpAccount represents an account in the state.
 type DumpAccount struct {
-	Balance     string                 `json:"balance"`
-	Nonce       uint64                 `json:"nonce"`
-	Root        hexutil.Bytes          `json:"root"`
-	CodeHash    hexutil.Bytes          `json:"codeHash"`
-	Code        hexutil.Bytes          `json:"code,omitempty"`
-	Storage     map[common.Hash]string `json:"storage,omitempty"`
-	Address     *common.Address        `json:"address,omitempty"` // Address only present in iterative (line-by-line) mode
-	AddressHash hexutil.Bytes          `json:"key,omitempty"`     // If we don't have address, we can output the key
+	Balance       string                 `json:"balance"`
+	Nonce         uint32                 `json:"nonce"`
+	EpochCoverage uint32                 `json:"epochCoverage"`
+	Root          hexutil.Bytes          `json:"root"`
+	CodeHash      hexutil.Bytes          `json:"codeHash"`
+	Code          hexutil.Bytes          `json:"code,omitempty"`
+	UiHash        hexutil.Bytes          `json:"uiHash,omitempty"`
+	StorageCount  uint64                 `json:"storageCount,omitempty"`
+	Storage       map[common.Hash]string `json:"storage,omitempty"`
+	Address       *common.Address        `json:"address,omitempty"` // Address only present in iterative (line-by-line) mode
+	AddressHash   hexutil.Bytes          `json:"key,omitempty"`     // If we don't have address, we can output the key
 
 }
 
@@ -92,14 +95,17 @@ type iterativeDump struct {
 // OnAccount implements DumpCollector interface
 func (d iterativeDump) OnAccount(addr *common.Address, account DumpAccount) {
 	dumpAccount := &DumpAccount{
-		Balance:     account.Balance,
-		Nonce:       account.Nonce,
-		Root:        account.Root,
-		CodeHash:    account.CodeHash,
-		Code:        account.Code,
-		Storage:     account.Storage,
-		AddressHash: account.AddressHash,
-		Address:     addr,
+		Balance:       account.Balance,
+		Nonce:         account.Nonce,
+		EpochCoverage: account.EpochCoverage,
+		Root:          account.Root,
+		CodeHash:      account.CodeHash,
+		Code:          account.Code,
+		UiHash:        account.UiHash,
+		Storage:       account.Storage,
+		StorageCount:  account.StorageCount,
+		AddressHash:   account.AddressHash,
+		Address:       addr,
 	}
 	d.Encode(dumpAccount)
 }
@@ -140,11 +146,14 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 		}
 		var (
 			account = DumpAccount{
-				Balance:     data.Balance.String(),
-				Nonce:       data.Nonce,
-				Root:        data.Root[:],
-				CodeHash:    data.CodeHash,
-				AddressHash: it.Key,
+				Balance:       data.Balance.String(),
+				Nonce:         data.Nonce,
+				EpochCoverage: data.EpochCoverage,
+				Root:          data.Root[:],
+				CodeHash:      data.CodeHash,
+				UiHash:        data.UiHash,
+				StorageCount:  data.StorageCount,
+				AddressHash:   it.Key,
 			}
 			address   *common.Address
 			addr      common.Address

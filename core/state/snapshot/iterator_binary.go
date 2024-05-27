@@ -40,6 +40,9 @@ type binaryIterator struct {
 // accounts in a slow, but easily verifiable way. Note this function is used for
 // initialization, use `newBinaryAccountIterator` as the API.
 func (dl *diffLayer) initBinaryAccountIterator() Iterator {
+	if dl.parent.Epoch() != dl.Epoch() {
+		return dl.AccountIterator(common.Hash{})
+	}
 	parent, ok := dl.parent.(*diffLayer)
 	if !ok {
 		l := &binaryIterator{

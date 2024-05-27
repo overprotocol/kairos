@@ -19,13 +19,16 @@ package snapshot
 import (
 	"bytes"
 	crand "crypto/rand"
+	"math/big"
 	"math/rand"
 	"testing"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func copyDestructs(destructs map[common.Hash]struct{}) map[common.Hash]struct{} {
@@ -80,13 +83,14 @@ func TestMergeBasics(t *testing.T) {
 		}
 	}
 	// Add some (identical) layers on top
-	parent := newDiffLayer(emptyLayer(), common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
-	child := newDiffLayer(parent, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
-	child = newDiffLayer(child, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
-	child = newDiffLayer(child, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
-	child = newDiffLayer(child, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
+	parent := newDiffLayer(emptyLayer(), 0, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
+	child := newDiffLayer(parent, 0, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
+	child = newDiffLayer(child, 0, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
+	child = newDiffLayer(child, 0, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
+	child = newDiffLayer(child, 0, common.Hash{}, copyDestructs(destructs), copyAccounts(accounts), copyStorage(storage))
 	// And flatten
-	merged := (child.flatten()).(*diffLayer)
+	flattened := child.flatten()
+	merged := flattened[0].(*diffLayer)
 
 	{ // Check account lists
 		if have, want := len(merged.accountList), 0; have != want {
@@ -152,13 +156,13 @@ func TestMergeDelete(t *testing.T) {
 		}
 	}
 	// Add some flipAccs-flopping layers on top
-	parent := newDiffLayer(emptyLayer(), common.Hash{}, flipDrops(), flipAccs(), storage)
-	child := parent.Update(common.Hash{}, flopDrops(), flopAccs(), storage)
-	child = child.Update(common.Hash{}, flipDrops(), flipAccs(), storage)
-	child = child.Update(common.Hash{}, flopDrops(), flopAccs(), storage)
-	child = child.Update(common.Hash{}, flipDrops(), flipAccs(), storage)
-	child = child.Update(common.Hash{}, flopDrops(), flopAccs(), storage)
-	child = child.Update(common.Hash{}, flipDrops(), flipAccs(), storage)
+	parent := newDiffLayer(emptyLayer(), 0, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child := parent.Update(0, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(0, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child = child.Update(0, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(0, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child = child.Update(0, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(0, common.Hash{}, flipDrops(), flipAccs(), storage)
 
 	if data, _ := child.Account(h1); data == nil {
 		t.Errorf("last diff layer: expected %x account to be non-nil", h1)
@@ -173,7 +177,8 @@ func TestMergeDelete(t *testing.T) {
 		t.Errorf("last diff layer: expected %x drop to be present", h1)
 	}
 	// And flatten
-	merged := (child.flatten()).(*diffLayer)
+	flattened := child.flatten()
+	merged := flattened[0].(*diffLayer)
 
 	if data, _ := merged.Account(h1); data == nil {
 		t.Errorf("merged layer: expected %x account to be non-nil", h1)
@@ -210,7 +215,7 @@ func TestInsertAndMerge(t *testing.T) {
 			accounts  = make(map[common.Hash][]byte)
 			storage   = make(map[common.Hash]map[common.Hash][]byte)
 		)
-		parent = newDiffLayer(emptyLayer(), common.Hash{}, destructs, accounts, storage)
+		parent = newDiffLayer(emptyLayer(), 0, common.Hash{}, destructs, accounts, storage)
 	}
 	{
 		var (
@@ -221,10 +226,11 @@ func TestInsertAndMerge(t *testing.T) {
 		accounts[acc] = randomAccount()
 		storage[acc] = make(map[common.Hash][]byte)
 		storage[acc][slot] = []byte{0x01}
-		child = newDiffLayer(parent, common.Hash{}, destructs, accounts, storage)
+		child = newDiffLayer(parent, 0, common.Hash{}, destructs, accounts, storage)
 	}
 	// And flatten
-	merged := (child.flatten()).(*diffLayer)
+	flattened := child.flatten()
+	merged := (flattened[0]).(*diffLayer)
 	{ // Check that slot value is present
 		have, _ := merged.Storage(acc, slot)
 		if want := []byte{0x01}; !bytes.Equal(have, want) {
@@ -233,10 +239,168 @@ func TestInsertAndMerge(t *testing.T) {
 	}
 }
 
+func TestMultipleEpoch(t *testing.T) {
+	var (
+		storage   = make(map[common.Hash]map[common.Hash][]byte)
+		destructs = make(map[common.Hash]struct{})
+	)
+
+	newAccount := func(balance int64) []byte {
+		a := &types.StateAccount{
+			Balance:       big.NewInt(balance),
+			EpochCoverage: rand.Uint32(),
+			Nonce:         rand.Uint32(),
+			Root:          randomHash(),
+			CodeHash:      types.EmptyCodeHash[:],
+		}
+		data, _ := rlp.EncodeToBytes(a)
+		return data
+	}
+	acc1 := newAccount(1)
+	acc2 := newAccount(2)
+	acc3 := newAccount(3)
+
+	epoch0Accounts := map[common.Hash][]byte{
+		common.HexToHash("0x02"): acc3,
+		common.HexToHash("0x03"): acc3,
+	}
+	epoch1Accounts := map[common.Hash][]byte{
+		common.HexToHash("0x01"): acc1,
+		common.HexToHash("0x02"): acc2,
+	}
+
+	epoch0 := newDiffLayer(emptyLayer(), 0, common.Hash{}, destructs, epoch0Accounts, storage)
+	epoch1 := epoch0.Update(1, common.Hash{}, destructs, epoch1Accounts, storage)
+
+	if data, _ := epoch1.Account(common.HexToHash("0x01")); data == nil || data.Balance.Uint64() != 1 {
+		t.Errorf("epoch1: expected %x account to be non-nil", common.HexToHash("0x01"))
+	}
+	if data, _ := epoch1.Account(common.HexToHash("0x02")); data == nil || data.Balance.Uint64() != 2 {
+		t.Errorf("epoch1: expected %x account to be non-nil", common.HexToHash("0x02"))
+	}
+	if data, _ := epoch1.Account(common.HexToHash("0x03")); data != nil {
+		t.Errorf("epoch1: expected %x account to be nil", common.HexToHash("0x03"))
+	}
+
+	if data, _ := epoch0.Account(common.HexToHash("0x01")); data != nil {
+		t.Errorf("epoch0: expected %x account to be nil", common.HexToHash("0x01"))
+	}
+	if data, _ := epoch0.Account(common.HexToHash("0x02")); data == nil || data.Balance.Uint64() != 3 {
+		t.Errorf("epoch0: expected %x account to be non-nil", common.HexToHash("0x02"))
+	}
+	if data, _ := epoch0.Account(common.HexToHash("0x03")); data == nil || data.Balance.Uint64() != 3 {
+		t.Errorf("epoch0: expected %x account to be non-nil", common.HexToHash("0x03"))
+	}
+}
+
+// TestMultipleEpochMerge tests merge with multiple epochs
+func TestMultipleEpochMerge(t *testing.T) {
+	var (
+		storage = make(map[common.Hash]map[common.Hash][]byte)
+	)
+	// Fill up a parent
+	h1 := common.HexToHash("0x01")
+	h2 := common.HexToHash("0x02")
+
+	flipDrops := func() map[common.Hash]struct{} {
+		return map[common.Hash]struct{}{
+			h2: {},
+		}
+	}
+	flipAccs := func() map[common.Hash][]byte {
+		return map[common.Hash][]byte{
+			h1: randomAccount(),
+		}
+	}
+	flopDrops := func() map[common.Hash]struct{} {
+		return map[common.Hash]struct{}{
+			h1: {},
+		}
+	}
+	flopAccs := func() map[common.Hash][]byte {
+		return map[common.Hash][]byte{
+			h2: randomAccount(),
+		}
+	}
+	// Add some flipAccs-flopping layers on top
+	parent := newDiffLayer(emptyLayer(), 0, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child := parent.Update(1, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(1, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child = child.Update(2, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(2, common.Hash{}, flipDrops(), flipAccs(), storage)
+	child = child.Update(3, common.Hash{}, flopDrops(), flopAccs(), storage)
+	child = child.Update(3, common.Hash{}, flipDrops(), flipAccs(), storage)
+
+	flattened := child.flatten()
+	if len(flattened) != 4 {
+		t.Errorf("wrong number of layers: have %d, want %d", len(flattened), 4)
+	}
+	epoch0 := flattened[0].(*diffLayer)
+
+	if data, _ := epoch0.Account(h1); data == nil {
+		t.Errorf("merged layer: expected %x account to be non-nil", h1)
+	}
+	if data, _ := epoch0.Account(h2); data != nil {
+		t.Errorf("merged layer: expected %x account to be nil", h2)
+	}
+	if _, ok := child.destructSet[h1]; ok {
+		t.Errorf("last diff layer: expected %x drop to be missing", h1)
+	}
+	if _, ok := epoch0.destructSet[h2]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+
+	epoch1 := flattened[1].(*diffLayer)
+
+	if data, _ := epoch1.Account(h1); data == nil {
+		t.Errorf("merged layer: expected %x account to be non-nil", h1)
+	}
+	if data, _ := epoch1.Account(h2); data != nil {
+		t.Errorf("merged layer: expected %x account to be nil", h2)
+	}
+	if _, ok := epoch1.destructSet[h1]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+	if _, ok := epoch1.destructSet[h2]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+
+	epoch2 := flattened[2].(*diffLayer)
+
+	if data, _ := epoch2.Account(h1); data == nil {
+		t.Errorf("merged layer: expected %x account to be non-nil", h1)
+	}
+	if data, _ := epoch2.Account(h2); data != nil {
+		t.Errorf("merged layer: expected %x account to be nil", h2)
+	}
+	if _, ok := epoch2.destructSet[h1]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+	if _, ok := epoch2.destructSet[h2]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+
+	epoch3 := flattened[3].(*diffLayer)
+
+	if data, _ := epoch3.Account(h1); data == nil {
+		t.Errorf("merged layer: expected %x account to be non-nil", h1)
+	}
+	if data, _ := epoch3.Account(h2); data != nil {
+		t.Errorf("merged layer: expected %x account to be nil", h2)
+	}
+	if _, ok := epoch3.destructSet[h1]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+	if _, ok := epoch3.destructSet[h2]; !ok { // Note, drops stay alive until persisted to disk!
+		t.Errorf("merged diff layer: expected %x drop to be present", h1)
+	}
+}
+
 func emptyLayer() *diskLayer {
 	return &diskLayer{
-		diskdb: memorydb.New(),
-		cache:  fastcache.New(500 * 1024),
+		diskdb:    memorydb.New(),
+		cache:     fastcache.New(500 * 1024),
+		genMarker: newGeneratorMarker(nil),
 	}
 }
 
@@ -257,7 +421,7 @@ func BenchmarkSearch(b *testing.B) {
 		for i := 0; i < 10000; i++ {
 			accounts[randomHash()] = randomAccount()
 		}
-		return newDiffLayer(parent, common.Hash{}, destructs, accounts, storage)
+		return newDiffLayer(parent, 0, common.Hash{}, destructs, accounts, storage)
 	}
 	var layer snapshot
 	layer = emptyLayer()
@@ -299,7 +463,7 @@ func BenchmarkSearchSlot(b *testing.B) {
 			accStorage[randomHash()] = value
 			storage[accountKey] = accStorage
 		}
-		return newDiffLayer(parent, common.Hash{}, destructs, accounts, storage)
+		return newDiffLayer(parent, 0, common.Hash{}, destructs, accounts, storage)
 	}
 	var layer snapshot
 	layer = emptyLayer()
@@ -336,7 +500,7 @@ func BenchmarkFlatten(b *testing.B) {
 			}
 			storage[accountKey] = accStorage
 		}
-		return newDiffLayer(parent, common.Hash{}, destructs, accounts, storage)
+		return newDiffLayer(parent, 0, common.Hash{}, destructs, accounts, storage)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -353,7 +517,8 @@ func BenchmarkFlatten(b *testing.B) {
 			if !ok {
 				break
 			}
-			layer = dl.flatten()
+			flattened := dl.flatten()
+			layer = flattened[0]
 		}
 		b.StopTimer()
 	}
@@ -385,7 +550,7 @@ func BenchmarkJournal(b *testing.B) {
 			}
 			storage[accountKey] = accStorage
 		}
-		return newDiffLayer(parent, common.Hash{}, destructs, accounts, storage)
+		return newDiffLayer(parent, 0, common.Hash{}, destructs, accounts, storage)
 	}
 	layer := snapshot(emptyLayer())
 	for i := 1; i < 128; i++ {

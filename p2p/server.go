@@ -568,6 +568,7 @@ func (srv *Server) setupDiscovery() error {
 		srv.ntab = ntab
 		srv.discmix.AddSource(ntab.RandomNodes())
 	}
+
 	if srv.DiscoveryV5 {
 		cfg := discover.Config{
 			PrivateKey:  srv.PrivateKey,
@@ -579,6 +580,7 @@ func (srv *Server) setupDiscovery() error {
 		if err != nil {
 			return err
 		}
+		srv.discmix.AddSource(srv.DiscV5.RandomNodes())
 	}
 
 	// Add protocol-specific discovery sources.
@@ -701,7 +703,7 @@ func (srv *Server) doPeerOp(fn peerOpFunc) {
 
 // run is the main loop of the server.
 func (srv *Server) run() {
-	srv.log.Info("Started P2P networking", "self", srv.localnode.Node().URLv4())
+	srv.log.Info("Started P2P networking", "selfv4", srv.localnode.Node().URLv4(), "selfv5", srv.localnode.Node().String())
 	defer srv.loopWG.Done()
 	defer srv.nodedb.Close()
 	defer srv.discmix.Close()

@@ -113,6 +113,10 @@ type SyncProgress struct {
 	SyncedStorage       uint64 // Number of storage slots downloaded
 	SyncedStorageBytes  uint64 // Number of storage trie bytes persisted to disk
 
+	// EstimatedStateProgress represents the estimated percentage (0 to 100)
+	// of overall progress in downloading state.
+	EstimatedStateProgress float64
+
 	HealedTrienodes     uint64 // Number of state trie nodes downloaded
 	HealedTrienodeBytes uint64 // Number of state trie bytes persisted to disk
 	HealedBytecodes     uint64 // Number of bytecodes downloaded
@@ -120,6 +124,9 @@ type SyncProgress struct {
 
 	HealingTrienodes uint64 // Number of state trie nodes pending
 	HealingBytecode  uint64 // Number of bytecodes pending
+
+	SyncMode  string // Sync mode: full, snap, light
+	Committed bool   // Whether the sync is committed
 }
 
 // ChainSyncReader wraps access to the node's current sync status. If there's no
@@ -139,7 +146,8 @@ type CallMsg struct {
 	Value     *big.Int        // amount of wei sent along with the call
 	Data      []byte          // input data, usually an ABI-encoded contract method invocation
 
-	AccessList types.AccessList // EIP-2930 access list.
+	AccessList  types.AccessList   // EIP-2930 access list.
+	RestoreData *types.RestoreData // restore data for restoring account
 }
 
 // A ContractCaller provides contract calls, essentially transactions that are executed by

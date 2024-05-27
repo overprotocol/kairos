@@ -67,7 +67,8 @@ type ChildResolver interface {
 
 // Config contains the settings for database.
 type Config struct {
-	CleanCacheSize int // Maximum memory allowance (in bytes) for caching clean nodes
+	CleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
+	EpochLimit     uint32 // Maximum number of epochs to keep in disk database
 }
 
 // Defaults is the default setting for database if it's not specified.
@@ -84,6 +85,7 @@ var Defaults = &Config{
 // periodically flush a couple tries to disk, garbage collecting the remainder.
 type Database struct {
 	diskdb   ethdb.Database // Persistent storage for matured trie nodes
+	config   *Config        // Configuration for database
 	resolver ChildResolver  // The handler to resolve children of nodes
 
 	cleans  *fastcache.Cache            // GC friendly memory cache of clean node RLPs
@@ -108,6 +110,10 @@ type Database struct {
 // cachedNode is all the information we know about a single cached trie node
 // in the memory database write layer.
 type cachedNode struct {
+	// All epochs which the node is alive
+	// This was implemented to avoid all the nodes syncing all at once and cause the chain to stop for a short time
+	epochs    map[uint32]struct{}
+	owner     common.Hash              // Owner of the node, empty hash for account trie
 	node      []byte                   // Encoded node blob, immutable
 	parents   uint32                   // Number of live nodes referencing this one
 	external  map[common.Hash]struct{} // The set of external children
@@ -130,6 +136,21 @@ func (n *cachedNode) forChildren(resolver ChildResolver, onChild func(hash commo
 	resolver.ForEach(n.node, onChild)
 }
 
+func (n *cachedNode) hasEpoch(epoch uint32) bool {
+	_, exist := n.epochs[epoch]
+	return exist
+}
+
+func (n *cachedNode) maxEpoch() uint32 {
+	var maxEpoch uint32
+	for epoch := range n.epochs {
+		if epoch > maxEpoch {
+			maxEpoch = epoch
+		}
+	}
+	return maxEpoch
+}
+
 // New initializes the hash-based node database.
 func New(diskdb ethdb.Database, config *Config, resolver ChildResolver) *Database {
 	if config == nil {
@@ -141,6 +162,7 @@ func New(diskdb ethdb.Database, config *Config, resolver ChildResolver) *Databas
 	}
 	return &Database{
 		diskdb:   diskdb,
+		config:   config,
 		resolver: resolver,
 		cleans:   cleans,
 		dirties:  make(map[common.Hash]*cachedNode),
@@ -150,15 +172,18 @@ func New(diskdb ethdb.Database, config *Config, resolver ChildResolver) *Databas
 // insert inserts a trie node into the memory database. All nodes inserted by
 // this function will be reference tracked. This function assumes the lock is
 // already held.
-func (db *Database) insert(hash common.Hash, node []byte) {
+func (db *Database) insert(epoch uint32, owner, hash common.Hash, node []byte) {
 	// If the node's already cached, skip
-	if _, ok := db.dirties[hash]; ok {
+	if entry, exist := db.dirties[hash]; exist {
+		entry.epochs[epoch] = struct{}{}
 		return
 	}
 	memcacheDirtyWriteMeter.Mark(int64(len(node)))
 
 	// Create the cached entry for this node
 	entry := &cachedNode{
+		epochs:    map[uint32]struct{}{epoch: {}},
+		owner:     owner,
 		node:      node,
 		flushPrev: db.newest,
 	}
@@ -180,10 +205,14 @@ func (db *Database) insert(hash common.Hash, node []byte) {
 
 // node retrieves an encoded cached trie node from memory. If it cannot be found
 // cached, the method queries the persistent database for the content.
-func (db *Database) node(hash common.Hash) ([]byte, error) {
+func (db *Database) node(epoch uint32, owner, hash common.Hash) ([]byte, error) {
 	// It doesn't make sense to retrieve the metaroot
 	if hash == (common.Hash{}) {
 		return nil, errors.New("not found")
+	}
+	// Return empty value if hash is empty root hash
+	if hash == types.EmptyRootHash {
+		return []byte{}, nil
 	}
 	// Retrieve the node from the clean cache if available
 	if db.cleans != nil {
@@ -209,7 +238,12 @@ func (db *Database) node(hash common.Hash) ([]byte, error) {
 	memcacheDirtyMissMeter.Mark(1)
 
 	// Content unavailable in memory, attempt to retrieve from disk
-	enc := rawdb.ReadLegacyTrieNode(db.diskdb, hash)
+	var enc []byte
+	if owner == (common.Hash{}) {
+		enc = rawdb.ReadLegacyAccountTrieNode(db.diskdb, epoch, hash)
+	} else {
+		enc = rawdb.ReadLegacyStorageTrieNode(db.diskdb, hash)
+	}
 	if len(enc) != 0 {
 		if db.cleans != nil {
 			db.cleans.Set(hash[:], enc)
@@ -258,7 +292,7 @@ func (db *Database) reference(child common.Hash, parent common.Hash) {
 }
 
 // Dereference removes an existing reference from a root node.
-func (db *Database) Dereference(root common.Hash) {
+func (db *Database) Dereference(epoch uint32, root common.Hash) {
 	// Sanity check to ensure that the meta-root is not removed
 	if root == (common.Hash{}) {
 		log.Error("Attempted to dereference the trie cache meta root")
@@ -268,7 +302,7 @@ func (db *Database) Dereference(root common.Hash) {
 	defer db.lock.Unlock()
 
 	nodes, storage, start := len(db.dirties), db.dirtiesSize, time.Now()
-	db.dereference(root)
+	db.dereference(epoch, root)
 
 	db.gcnodes += uint64(nodes - len(db.dirties))
 	db.gcsize += storage - db.dirtiesSize
@@ -283,10 +317,10 @@ func (db *Database) Dereference(root common.Hash) {
 }
 
 // dereference is the private locked version of Dereference.
-func (db *Database) dereference(hash common.Hash) {
+func (db *Database) dereference(epoch uint32, hash common.Hash) {
 	// If the node does not exist, it's a previously committed node.
 	node, ok := db.dirties[hash]
-	if !ok {
+	if !ok || !node.hasEpoch(epoch) {
 		return
 	}
 	// If there are no more references to the node, delete it and cascade
@@ -298,6 +332,14 @@ func (db *Database) dereference(hash common.Hash) {
 		node.parents--
 	}
 	if node.parents == 0 {
+		// Dereference all children and delete the node
+		node.forChildren(db.resolver, func(child common.Hash) {
+			db.dereference(epoch, child)
+		})
+		delete(node.epochs, epoch)
+		if len(node.epochs) > 0 {
+			return
+		}
 		// Remove the node from the flush-list
 		switch hash {
 		case db.oldest:
@@ -314,10 +356,6 @@ func (db *Database) dereference(hash common.Hash) {
 			db.dirties[node.flushPrev].flushNext = node.flushNext
 			db.dirties[node.flushNext].flushPrev = node.flushPrev
 		}
-		// Dereference all children and delete the node
-		node.forChildren(db.resolver, func(child common.Hash) {
-			db.dereference(child)
-		})
 		delete(db.dirties, hash)
 		db.dirtiesSize -= common.StorageSize(common.HashLength + len(node.node))
 		if node.external != nil {
@@ -350,7 +388,13 @@ func (db *Database) Cap(limit common.StorageSize) error {
 	for size > limit && oldest != (common.Hash{}) {
 		// Fetch the oldest referenced node and push into the batch
 		node := db.dirties[oldest]
-		rawdb.WriteLegacyTrieNode(batch, oldest, node.node)
+		if node.owner == (common.Hash{}) {
+			for epoch := range node.epochs {
+				rawdb.WriteLegacyAccountTrieNode(batch, epoch, oldest, node.node)
+			}
+		} else {
+			rawdb.WriteLegacyStorageTrieNode(batch, oldest, node.node)
+		}
 
 		// If we exceeded the ideal batch size, commit and reset
 		if batch.ValueSize() >= ethdb.IdealBatchSize {
@@ -429,6 +473,8 @@ func (db *Database) Commit(node common.Hash, report bool) error {
 		log.Error("Failed to write trie to disk", "err", err)
 		return err
 	}
+	// Delete epoch data after new epoch data is written to disk.
+	db.deleteEpochData(node)
 	// Uncache any leftovers in the last batch
 	if err := batch.Replay(uncacher); err != nil {
 		return err
@@ -473,7 +519,13 @@ func (db *Database) commit(hash common.Hash, batch ethdb.Batch, uncacher *cleane
 		return err
 	}
 	// If we've reached an optimal batch size, commit and start over
-	rawdb.WriteLegacyTrieNode(batch, hash, node.node)
+	if node.owner == (common.Hash{}) {
+		for epoch := range node.epochs {
+			rawdb.WriteLegacyAccountTrieNode(batch, epoch, hash, node.node)
+		}
+	} else {
+		rawdb.WriteLegacyStorageTrieNode(batch, hash, node.node)
+	}
 	if batch.ValueSize() >= ethdb.IdealBatchSize {
 		if err := batch.Write(); err != nil {
 			return err
@@ -499,7 +551,7 @@ type cleaner struct {
 // the two-phase commit is to ensure data availability while moving from memory
 // to disk.
 func (c *cleaner) Put(key []byte, rlp []byte) error {
-	hash := common.BytesToHash(key)
+	hash := rawdb.LegacyTrieNodeToHash(key, rlp)
 
 	// If the node does not exist, we're done on this path
 	node, ok := c.db.dirties[hash]
@@ -543,18 +595,12 @@ func (c *cleaner) Delete(key []byte) error {
 // Initialized returns an indicator if state data is already initialized
 // in hash-based scheme by checking the presence of genesis state.
 func (db *Database) Initialized(genesisRoot common.Hash) bool {
-	return rawdb.HasLegacyTrieNode(db.diskdb, genesisRoot)
+	return rawdb.HasLegacyAccountTrieNode(db.diskdb, 0, genesisRoot)
 }
 
 // Update inserts the dirty nodes in provided nodeset into database and link the
 // account trie with multiple storage tries if necessary.
-func (db *Database) Update(root common.Hash, parent common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
-	// Ensure the parent state is present and signal a warning if not.
-	if parent != types.EmptyRootHash {
-		if blob, _ := db.node(parent); len(blob) == 0 {
-			log.Error("parent state is not present")
-		}
-	}
+func (db *Database) Update(root common.Hash, parent common.Hash, epoch uint32, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -580,7 +626,7 @@ func (db *Database) Update(root common.Hash, parent common.Hash, block uint64, n
 			if n.IsDeleted() {
 				return // ignore deletion
 			}
-			db.insert(n.Hash, n.Blob)
+			db.insert(epoch, owner, n.Hash, n.Blob)
 		})
 	}
 	// Link up the account trie and storage trie if the node points
@@ -597,6 +643,25 @@ func (db *Database) Update(root common.Hash, parent common.Hash, block uint64, n
 		}
 	}
 	return nil
+}
+
+func (db *Database) deleteEpochData(root common.Hash) {
+	if db.config.EpochLimit == 0 {
+		// Epoch limit is disabled, no need to delete epoch data.
+		return
+	}
+	node, ok := db.dirties[root]
+	if !ok {
+		return
+	}
+	newEpoch := node.maxEpoch()
+	if newEpoch < db.config.EpochLimit {
+		// The new epoch is within the epoch limit, no need to delete epoch data.
+		return
+	}
+	untilEpoch := newEpoch - db.config.EpochLimit
+	log.Info("Deleting epoch data in hashdb", "epoch", untilEpoch)
+	rawdb.DeleteRangeLegacyAccountTrieNode(db.diskdb, untilEpoch)
 }
 
 // Size returns the current storage size of the memory cache in front of the
@@ -631,21 +696,39 @@ func (db *Database) Scheme() string {
 
 // Reader retrieves a node reader belonging to the given state root.
 // An error will be returned if the requested state is not available.
-func (db *Database) Reader(root common.Hash) (*reader, error) {
-	if _, err := db.node(root); err != nil {
+func (db *Database) Reader(root common.Hash, epoch uint32) (*reader, error) {
+	if _, err := db.node(epoch, common.Hash{}, root); err != nil {
 		return nil, fmt.Errorf("state %#x is not available, %v", root, err)
 	}
-	return &reader{db: db}, nil
+	return &reader{db: db, epoch: epoch}, nil
 }
 
 // reader is a state reader of Database which implements the Reader interface.
 type reader struct {
-	db *Database
+	db    *Database
+	epoch uint32
 }
 
 // Node retrieves the trie node with the given node hash. No error will be
 // returned if the node is not found.
 func (reader *reader) Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error) {
-	blob, _ := reader.db.node(hash)
+	blob, _ := reader.db.node(reader.epoch, owner, hash)
 	return blob, nil
+}
+
+// HasState returns true if the state root is available in the database.
+func (db *Database) HasState(root, ckptRoot common.Hash, epoch uint32) bool {
+	// Check if the state root is available in the database
+	if root != (common.Hash{}) && root != types.EmptyRootHash {
+		if _, err := db.node(epoch, common.Hash{}, root); err != nil {
+			return false
+		}
+	}
+	// Check if the checkpoint state root is available in the database
+	if epoch > 0 && ckptRoot != (common.Hash{}) && ckptRoot != types.EmptyRootHash {
+		if _, err := db.node(epoch-1, common.Hash{}, ckptRoot); err != nil {
+			return false
+		}
+	}
+	return true
 }

@@ -60,7 +60,7 @@ func TestIterator(t *testing.T) {
 		trie.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	root, nodes, _ := trie.Commit(false)
-	db.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	db.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 
 	trie, _ = New(TrieID(root), db)
 	found := make(map[string]string)
@@ -146,7 +146,7 @@ func testNodeIteratorCoverage(t *testing.T, scheme string) {
 		}
 	}
 	// Cross check the hashes and the database itself
-	reader, err := nodeDb.Reader(trie.Hash())
+	reader, err := nodeDb.Reader(trie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("state is not available %x", trie.Hash())
 	}
@@ -252,7 +252,7 @@ func TestDifferenceIterator(t *testing.T) {
 		triea.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	rootA, nodesA, _ := triea.Commit(false)
-	dba.Update(rootA, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesA), nil)
+	dba.Update(rootA, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesA), nil)
 	triea, _ = New(TrieID(rootA), dba)
 
 	dbb := NewDatabase(rawdb.NewMemoryDatabase(), nil)
@@ -261,7 +261,7 @@ func TestDifferenceIterator(t *testing.T) {
 		trieb.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	rootB, nodesB, _ := trieb.Commit(false)
-	dbb.Update(rootB, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesB), nil)
+	dbb.Update(rootB, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesB), nil)
 	trieb, _ = New(TrieID(rootB), dbb)
 
 	found := make(map[string]string)
@@ -294,7 +294,7 @@ func TestUnionIterator(t *testing.T) {
 		triea.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	rootA, nodesA, _ := triea.Commit(false)
-	dba.Update(rootA, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesA), nil)
+	dba.Update(rootA, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesA), nil)
 	triea, _ = New(TrieID(rootA), dba)
 
 	dbb := NewDatabase(rawdb.NewMemoryDatabase(), nil)
@@ -303,7 +303,7 @@ func TestUnionIterator(t *testing.T) {
 		trieb.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	rootB, nodesB, _ := trieb.Commit(false)
-	dbb.Update(rootB, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesB), nil)
+	dbb.Update(rootB, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesB), nil)
 	trieb, _ = New(TrieID(rootB), dbb)
 
 	di, _ := NewUnionIterator([]NodeIterator{triea.MustNodeIterator(nil), trieb.MustNodeIterator(nil)})
@@ -365,7 +365,7 @@ func testIteratorContinueAfterError(t *testing.T, memonly bool, scheme string) {
 		tr.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	root, nodes, _ := tr.Commit(false)
-	tdb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	tdb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	if !memonly {
 		tdb.Commit(root, false)
 	}
@@ -424,8 +424,8 @@ func testIteratorContinueAfterError(t *testing.T, memonly bool, scheme string) {
 		if memonly {
 			tr.reader.banned = map[string]struct{}{string(rpath): {}}
 		} else {
-			rval = rawdb.ReadTrieNode(diskdb, common.Hash{}, rpath, rhash, tdb.Scheme())
-			rawdb.DeleteTrieNode(diskdb, common.Hash{}, rpath, rhash, tdb.Scheme())
+			rval = rawdb.ReadTrieNode(diskdb, 0, common.Hash{}, rpath, rhash, tdb.Scheme())
+			rawdb.DeleteTrieNode(diskdb, 0, common.Hash{}, rpath, rhash, tdb.Scheme())
 		}
 		// Iterate until the error is hit.
 		seen := make(map[string]bool)
@@ -440,7 +440,7 @@ func testIteratorContinueAfterError(t *testing.T, memonly bool, scheme string) {
 		if memonly {
 			delete(tr.reader.banned, string(rpath))
 		} else {
-			rawdb.WriteTrieNode(diskdb, common.Hash{}, rpath, rhash, rval, tdb.Scheme())
+			rawdb.WriteTrieNode(diskdb, 0, common.Hash{}, rpath, rhash, rval, tdb.Scheme())
 		}
 		checkIteratorNoDups(t, it, seen)
 		if it.Error() != nil {
@@ -481,7 +481,7 @@ func testIteratorContinueAfterSeekError(t *testing.T, memonly bool, scheme strin
 			break
 		}
 	}
-	triedb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	triedb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	if !memonly {
 		triedb.Commit(root, false)
 	}
@@ -492,8 +492,8 @@ func testIteratorContinueAfterSeekError(t *testing.T, memonly bool, scheme strin
 	if memonly {
 		tr.reader.banned = map[string]struct{}{string(barNodePath): {}}
 	} else {
-		barNodeBlob = rawdb.ReadTrieNode(diskdb, common.Hash{}, barNodePath, barNodeHash, triedb.Scheme())
-		rawdb.DeleteTrieNode(diskdb, common.Hash{}, barNodePath, barNodeHash, triedb.Scheme())
+		barNodeBlob = rawdb.ReadTrieNode(diskdb, 0, common.Hash{}, barNodePath, barNodeHash, triedb.Scheme())
+		rawdb.DeleteTrieNode(diskdb, 0, common.Hash{}, barNodePath, barNodeHash, triedb.Scheme())
 	}
 	// Create a new iterator that seeks to "bars". Seeking can't proceed because
 	// the node is missing.
@@ -508,7 +508,7 @@ func testIteratorContinueAfterSeekError(t *testing.T, memonly bool, scheme strin
 	if memonly {
 		delete(tr.reader.banned, string(barNodePath))
 	} else {
-		rawdb.WriteTrieNode(diskdb, common.Hash{}, barNodePath, barNodeHash, barNodeBlob, triedb.Scheme())
+		rawdb.WriteTrieNode(diskdb, 0, common.Hash{}, barNodePath, barNodeHash, barNodeBlob, triedb.Scheme())
 	}
 	// Check that iteration produces the right set of values.
 	if err := checkIteratorOrder(testdata1[2:], NewIterator(it)); err != nil {
@@ -555,7 +555,7 @@ func testIteratorNodeBlob(t *testing.T, scheme string) {
 		trie.MustUpdate([]byte(val.k), []byte(val.v))
 	}
 	root, nodes, _ := trie.Commit(false)
-	triedb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil)
+	triedb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil)
 	triedb.Commit(root, false)
 
 	var found = make(map[common.Hash][]byte)
@@ -601,9 +601,12 @@ func isTrieNode(scheme string, key, val []byte) (bool, []byte, common.Hash) {
 		hash common.Hash
 	)
 	if scheme == rawdb.HashScheme {
-		ok := rawdb.IsLegacyTrieNode(key, val)
+		ok := rawdb.IsLegacyAccountTrieNode(key, val)
 		if !ok {
-			return false, nil, common.Hash{}
+			ok = rawdb.IsLegacyStorageTrieNode(key, val)
+			if !ok {
+				return false, nil, common.Hash{}
+			}
 		}
 		hash = common.BytesToHash(key)
 	} else {

@@ -93,7 +93,7 @@ type stateObject struct {
 
 // empty returns whether the account is considered empty.
 func (s *stateObject) empty() bool {
-	return s.data.Nonce == 0 && s.data.Balance.Sign() == 0 && bytes.Equal(s.data.CodeHash, types.EmptyCodeHash.Bytes())
+	return s.data.Nonce == 0 && s.data.EpochCoverage == s.db.GetPrevEpoch() && s.data.Balance.Sign() == 0 && bytes.Equal(s.data.CodeHash, types.EmptyCodeHash.Bytes()) && bytes.Equal(s.data.UiHash, types.EmptyCodeHash.Bytes()) && s.data.StorageCount == 0
 }
 
 // newObject creates a state object.
@@ -103,7 +103,8 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		created = acct == nil // true if the account was not existent
 	)
 	if acct == nil {
-		acct = types.NewEmptyStateAccount()
+		epochCoverage := db.GetPrevEpoch()
+		acct = types.NewEmptyStateAccount(epochCoverage)
 	}
 	return &stateObject{
 		db:             db,
@@ -149,7 +150,7 @@ func (s *stateObject) getTrie() (Trie, error) {
 			s.trie = s.db.prefetcher.trie(s.addrHash, s.data.Root)
 		}
 		if s.trie == nil {
-			tr, err := s.db.db.OpenStorageTrie(s.db.originalRoot, s.address, s.data.Root, s.db.trie)
+			tr, err := s.db.db.OpenStorageTrie(s.db.originalRoot, s.db.currentEpoch, s.address, s.data.Root, s.db.trie)
 			if err != nil {
 				return nil, err
 			}
@@ -243,6 +244,12 @@ func (s *stateObject) SetState(key, value common.Hash) {
 		key:      key,
 		prevalue: prev,
 	})
+	// Update the storage count depending on whether slots are being deleted or added
+	if prev == (common.Hash{}) && value != (common.Hash{}) { // 0 => non 0
+		s.SetStorageCount(s.StorageCount() + 1)
+	} else if prev != (common.Hash{}) && value == (common.Hash{}) { // non 0 => 0
+		s.SetStorageCount(s.StorageCount() - 1)
+	}
 	s.setState(key, value)
 }
 
@@ -517,7 +524,19 @@ func (s *stateObject) setCode(codeHash common.Hash, code []byte) {
 	s.dirtyCode = true
 }
 
-func (s *stateObject) SetNonce(nonce uint64) {
+func (s *stateObject) SetUiHash(uiHash common.Hash) {
+	s.db.journal.append(uiHashChange{
+		account:    &s.address,
+		prevuihash: s.UiHash(),
+	})
+	s.setUiHash(uiHash)
+}
+
+func (s *stateObject) setUiHash(uiHash common.Hash) {
+	s.data.UiHash = uiHash[:]
+}
+
+func (s *stateObject) SetNonce(nonce uint32) {
 	s.db.journal.append(nonceChange{
 		account: &s.address,
 		prev:    s.data.Nonce,
@@ -525,22 +544,62 @@ func (s *stateObject) SetNonce(nonce uint64) {
 	s.setNonce(nonce)
 }
 
-func (s *stateObject) setNonce(nonce uint64) {
+func (s *stateObject) setNonce(nonce uint32) {
 	s.data.Nonce = nonce
+}
+
+func (s *stateObject) SetEpochCoverage(epochCoverage uint32) {
+	s.db.journal.append(epochCoverageChange{
+		account: &s.address,
+		prev:    s.data.EpochCoverage,
+	})
+	s.setEpochCoverage(epochCoverage)
+}
+
+func (s *stateObject) setEpochCoverage(epochCoverage uint32) {
+	s.data.EpochCoverage = epochCoverage
+}
+
+func (s *stateObject) SetStorageCount(storageCount uint64) {
+	s.db.journal.append(storageCountChange{
+		account: &s.address,
+		prev:    s.data.StorageCount,
+	})
+	s.setStorageCount(storageCount)
+}
+
+func (s *stateObject) setStorageCount(storageCount uint64) {
+	s.data.StorageCount = storageCount
 }
 
 func (s *stateObject) CodeHash() []byte {
 	return s.data.CodeHash
 }
 
+func (s *stateObject) UiHash() []byte {
+	return s.data.UiHash
+}
+
 func (s *stateObject) Balance() *big.Int {
 	return s.data.Balance
 }
 
-func (s *stateObject) Nonce() uint64 {
+func (s *stateObject) TxNonce() uint64 {
+	return types.MsgToTxNonce(s.data.EpochCoverage, s.data.Nonce)
+}
+
+func (s *stateObject) Nonce() uint32 {
 	return s.data.Nonce
+}
+
+func (s *stateObject) EpochCoverage() uint32 {
+	return s.data.EpochCoverage
 }
 
 func (s *stateObject) Root() common.Hash {
 	return s.data.Root
+}
+
+func (s *stateObject) StorageCount() uint64 {
+	return s.data.StorageCount
 }

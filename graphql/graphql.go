@@ -87,7 +87,7 @@ type Account struct {
 
 // getState fetches the StateDB object for an account.
 func (a *Account) getState(ctx context.Context) (*state.StateDB, error) {
-	state, _, err := a.r.backend.StateAndHeaderByNumberOrHash(ctx, a.blockNrOrHash)
+	state, _, err := a.r.backend.StateAndHeaderByNumberOrHash(ctx, a.blockNrOrHash, false)
 	return state, err
 }
 
@@ -273,7 +273,7 @@ func (t *Transaction) GasPrice(ctx context.Context) hexutil.Big {
 		return hexutil.Big{}
 	}
 	switch tx.Type() {
-	case types.DynamicFeeTxType:
+	case types.DynamicFeeTxType, types.RestorationTxType:
 		if block != nil {
 			if baseFee, _ := block.BaseFeePerGas(ctx); baseFee != nil {
 				// price = min(gasTipCap + baseFee, gasFeeCap)
@@ -311,7 +311,7 @@ func (t *Transaction) MaxFeePerGas(ctx context.Context) *hexutil.Big {
 		return nil
 	}
 	switch tx.Type() {
-	case types.DynamicFeeTxType, types.BlobTxType:
+	case types.DynamicFeeTxType, types.RestorationTxType, types.BlobTxType:
 		return (*hexutil.Big)(tx.GasFeeCap())
 	default:
 		return nil
@@ -324,7 +324,7 @@ func (t *Transaction) MaxPriorityFeePerGas(ctx context.Context) *hexutil.Big {
 		return nil
 	}
 	switch tx.Type() {
-	case types.DynamicFeeTxType, types.BlobTxType:
+	case types.DynamicFeeTxType, types.RestorationTxType, types.BlobTxType:
 		return (*hexutil.Big)(tx.GasTipCap())
 	default:
 		return nil
@@ -845,6 +845,14 @@ func (b *Block) StateRoot(ctx context.Context) (common.Hash, error) {
 		return common.Hash{}, err
 	}
 	return header.Root, nil
+}
+
+func (b *Block) CheckpointRoot(ctx context.Context) (common.Hash, error) {
+	header, err := b.resolveHeader(ctx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return header.CheckpointRoot, nil
 }
 
 func (b *Block) ReceiptsRoot(ctx context.Context) (common.Hash, error) {
@@ -1491,6 +1499,9 @@ func (s *SyncState) SyncedStorage() hexutil.Uint64 {
 func (s *SyncState) SyncedStorageBytes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.SyncedStorageBytes)
 }
+func (s *SyncState) EstimatedStateProgress() float64 {
+	return s.progress.EstimatedStateProgress
+}
 func (s *SyncState) HealedTrienodes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.HealedTrienodes)
 }
@@ -1508,6 +1519,12 @@ func (s *SyncState) HealingTrienodes() hexutil.Uint64 {
 }
 func (s *SyncState) HealingBytecode() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.HealingBytecode)
+}
+func (s *SyncState) SyncMode() string {
+	return s.progress.SyncMode
+}
+func (s *SyncState) Committed() bool {
+	return s.progress.Committed
 }
 
 // Syncing returns false in case the node is currently not syncing with the network. It can be up-to-date or has not

@@ -45,9 +45,10 @@ type allocItem struct {
 }
 
 type allocItemMisc struct {
-	Nonce uint64
-	Code  []byte
-	Slots []allocItemStorageItem
+	Nonce         uint32
+	EpochCoverage uint32
+	Code          []byte
+	Slots         []allocItemStorageItem
 }
 
 type allocItemStorageItem struct {
@@ -61,9 +62,10 @@ func makelist(g *core.Genesis) []allocItem {
 		var misc *allocItemMisc
 		if len(account.Storage) > 0 || len(account.Code) > 0 || account.Nonce != 0 {
 			misc = &allocItemMisc{
-				Nonce: account.Nonce,
-				Code:  account.Code,
-				Slots: make([]allocItemStorageItem, 0, len(account.Storage)),
+				Nonce:         account.Nonce,
+				EpochCoverage: account.EpochCoverage,
+				Code:          account.Code,
+				Slots:         make([]allocItemStorageItem, 0, len(account.Storage)),
 			}
 			for key, val := range account.Storage {
 				misc.Slots = append(misc.Slots, allocItemStorageItem{key, val})

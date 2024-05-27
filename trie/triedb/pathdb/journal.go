@@ -38,6 +38,8 @@ var (
 	errMissVersion       = errors.New("version not found")
 	errUnexpectedVersion = errors.New("unexpected journal version")
 	errMissDiskRoot      = errors.New("disk layer root not found")
+	errMissCkptDiskRoot  = errors.New("checkpoint disk layer root not found")
+	errMissDiskEpoch     = errors.New("disk epoch not found")
 	errUnmatchedJournal  = errors.New("unmatched journal")
 )
 
@@ -71,7 +73,7 @@ type journalStorage struct {
 }
 
 // loadJournal tries to parse the layer journal from the disk.
-func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
+func (db *Database) loadJournal(diskEpoch uint32, diskRoot, ckptDiskRoot common.Hash) (layer, error) {
 	journal := rawdb.ReadTrieJournal(db.diskdb)
 	if len(journal) == 0 {
 		return nil, errMissJournal
@@ -86,10 +88,20 @@ func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
 	if version != journalVersion {
 		return nil, fmt.Errorf("%w want %d got %d", errUnexpectedVersion, journalVersion, version)
 	}
-	// Secondly, resolve the disk layer root, ensure it's continuous
-	// with disk layer. Note now we can ensure it's the layer journal
-	// correct version, so we expect everything can be resolved properly.
-	var root common.Hash
+
+	// Secondly, resolve the epoch number in disk
+	var epoch uint32
+	if err := r.Decode(&epoch); err != nil {
+		return nil, errMissDiskEpoch
+	}
+	if epoch != diskEpoch {
+		return nil, fmt.Errorf("%w want %d got %d", errUnmatchedJournal, epoch, diskEpoch)
+	}
+
+	// Thirdly, resolve the disk layer root and checkpoint disk layer root,
+	// ensure it's continuous with disk layer. Note now we can ensure it's the
+	// layer journal correct version, so we expect everything can be resolved properly.
+	var root, ckptRoot common.Hash
 	if err := r.Decode(&root); err != nil {
 		return nil, errMissDiskRoot
 	}
@@ -98,6 +110,14 @@ func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
 	if !bytes.Equal(root.Bytes(), diskRoot.Bytes()) {
 		return nil, fmt.Errorf("%w want %x got %x", errUnmatchedJournal, root, diskRoot)
 	}
+
+	if err := r.Decode(&ckptRoot); err != nil {
+		return nil, errMissCkptDiskRoot
+	}
+	if !bytes.Equal(ckptRoot.Bytes(), ckptDiskRoot.Bytes()) {
+		return nil, fmt.Errorf("%w want %x got %x", errUnmatchedJournal, ckptRoot, ckptDiskRoot)
+	}
+
 	// Load the disk layer from the journal
 	base, err := db.loadDiskLayer(r)
 	if err != nil {
@@ -115,11 +135,19 @@ func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
 // loadLayers loads a pre-existing state layer backed by a key-value store.
 func (db *Database) loadLayers() layer {
 	// Retrieve the root node of persistent state.
-	_, root := rawdb.ReadAccountTrieNode(db.diskdb, nil)
+	epoch := rawdb.ReadPersistentEpoch(db.diskdb)
+	_, root := rawdb.ReadAccountTrieNode(db.diskdb, epoch, nil)
 	root = types.TrieRootHash(root)
 
+	// Retrieve the root node of checkpoint state.
+	var ckptRoot common.Hash
+	if epoch > 0 {
+		_, ckptRoot = rawdb.ReadAccountTrieNode(db.diskdb, epoch-1, nil)
+	}
+	ckptRoot = types.TrieRootHash(ckptRoot)
+
 	// Load the layers by resolving the journal
-	head, err := db.loadJournal(root)
+	head, err := db.loadJournal(epoch, root, ckptRoot)
 	if err == nil {
 		return head
 	}
@@ -130,17 +158,30 @@ func (db *Database) loadLayers() layer {
 		log.Info("Failed to load journal, discard it", "err", err)
 	}
 	// Return single layer with persistent state.
-	return newDiskLayer(root, rawdb.ReadPersistentStateID(db.diskdb), db, nil, newNodeBuffer(db.bufferSize, nil, 0))
+	var prevEpoch uint32
+	if epoch > 0 {
+		prevEpoch = epoch - 1
+	}
+	db.cleans = db.config.newCleanCache()
+	ckptDiskLayer := newCkptDiskLayer(ckptRoot, prevEpoch, db, db.cleans)
+	return newDiskLayer(root, rawdb.ReadPersistentStateID(db.diskdb), epoch, db, ckptDiskLayer, db.cleans, newNodeBuffer(epoch, db.bufferSize, nil, 0))
 }
 
 // loadDiskLayer reads the binary blob from the layer journal, reconstructing
 // a new disk layer on it.
 func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
+	// Resolve the checkpoint disk layer root
+	var ckptRoot common.Hash
+	if err := r.Decode(&ckptRoot); err != nil {
+		return nil, fmt.Errorf("load disk checkpoint root: %v", err)
+	}
+
 	// Resolve disk layer root
 	var root common.Hash
 	if err := r.Decode(&root); err != nil {
 		return nil, fmt.Errorf("load disk root: %v", err)
 	}
+
 	// Resolve the state id of disk layer, it can be different
 	// with the persistent id tracked in disk, the id distance
 	// is the number of transitions aggregated in disk layer.
@@ -152,6 +193,12 @@ func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
 	if stored > id {
 		return nil, fmt.Errorf("invalid state id: stored %d resolved %d", stored, id)
 	}
+	// Resolve the epoch of the disk layer.
+	var epoch uint32
+	if err := r.Decode(&epoch); err != nil {
+		return nil, fmt.Errorf("load epoch number: %v", err)
+	}
+
 	// Resolve nodes cached in node buffer
 	var encoded []journalNodes
 	if err := r.Decode(&encoded); err != nil {
@@ -170,7 +217,13 @@ func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
 		nodes[entry.Owner] = subset
 	}
 	// Calculate the internal state transitions by id difference.
-	base := newDiskLayer(root, id, db, nil, newNodeBuffer(db.bufferSize, nodes, id-stored))
+	var prevEpoch uint32
+	if epoch > 0 {
+		prevEpoch = epoch - 1
+	}
+	db.cleans = db.config.newCleanCache()
+	ckptBase := newCkptDiskLayer(ckptRoot, prevEpoch, db, db.cleans)
+	base := newDiskLayer(root, id, epoch, db, ckptBase, db.cleans, newNodeBuffer(epoch, db.bufferSize, nodes, id-stored))
 	return base, nil
 }
 
@@ -185,6 +238,10 @@ func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream) (layer, error) {
 			return parent, nil
 		}
 		return nil, fmt.Errorf("load diff root: %v", err)
+	}
+	var epoch uint32
+	if err := r.Decode(&epoch); err != nil {
+		return nil, fmt.Errorf("load epoch number: %v", err)
 	}
 	var block uint64
 	if err := r.Decode(&block); err != nil {
@@ -238,7 +295,7 @@ func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream) (layer, error) {
 		}
 		storages[entry.Account] = set
 	}
-	return db.loadDiffLayer(newDiffLayer(parent, root, parent.stateID()+1, block, nodes, triestate.New(accounts, storages, incomplete)), r)
+	return db.loadDiffLayer(newDiffLayer(parent, root, parent.stateID()+1, epoch, block, nodes, triestate.New(accounts, storages, incomplete)), r)
 }
 
 // journal implements the layer interface, marshaling the un-flushed trie nodes
@@ -251,12 +308,21 @@ func (dl *diskLayer) journal(w io.Writer) error {
 	if dl.stale {
 		return errSnapshotStale
 	}
+
+	// journal checkpoint disk layer first
+	if err := dl.ckptLayer.journal(w); err != nil {
+		return err
+	}
+
 	// Step one, write the disk root into the journal.
 	if err := rlp.Encode(w, dl.root); err != nil {
 		return err
 	}
 	// Step two, write the corresponding state id into the journal
 	if err := rlp.Encode(w, dl.id); err != nil {
+		return err
+	}
+	if err := rlp.Encode(w, dl.epoch); err != nil {
 		return err
 	}
 	// Step three, write all unwritten nodes into the journal
@@ -287,6 +353,9 @@ func (dl *diffLayer) journal(w io.Writer) error {
 	}
 	// Everything below was journaled, persist this layer too
 	if err := rlp.Encode(w, dl.root); err != nil {
+		return err
+	}
+	if err := rlp.Encode(w, dl.epoch); err != nil {
 		return err
 	}
 	if err := rlp.Encode(w, dl.block); err != nil {
@@ -332,6 +401,22 @@ func (dl *diffLayer) journal(w io.Writer) error {
 	return nil
 }
 
+func (dl *ckptDiskLayer) journal(w io.Writer) error {
+	dl.lock.RLock()
+	defer dl.lock.RUnlock()
+
+	// Ensure the layer didn't get stale
+	if dl.stale {
+		return errSnapshotStale
+	}
+	// Step one, write the disk root into the journal.
+	if err := rlp.Encode(w, dl.root); err != nil {
+		return err
+	}
+	log.Debug("Journaled pathdb checkpoint disk layer", "ckptRoot", dl.root)
+	return nil
+}
+
 // Journal commits an entire diff hierarchy to disk into a single journal entry.
 // This is meant to be used during shutdown to persist the layer without
 // flattening everything down (bad for reorgs). And this function will mark the
@@ -363,14 +448,30 @@ func (db *Database) Journal(root common.Hash) error {
 	if err := rlp.Encode(journal, journalVersion); err != nil {
 		return err
 	}
+
+	// Secondly write out the epoch number in disk
+	epoch := rawdb.ReadPersistentEpoch(db.diskdb)
+	if err := rlp.Encode(journal, epoch); err != nil {
+		return err
+	}
+
 	// The stored state in disk might be empty, convert the
 	// root to emptyRoot in this case.
-	_, diskroot := rawdb.ReadAccountTrieNode(db.diskdb, nil)
+	_, diskroot := rawdb.ReadAccountTrieNode(db.diskdb, epoch, nil)
 	diskroot = types.TrieRootHash(diskroot)
 
-	// Secondly write out the state root in disk, ensure all layers
+	var ckptDiskroot common.Hash
+	if epoch > 0 {
+		_, ckptDiskroot = rawdb.ReadAccountTrieNode(db.diskdb, epoch-1, nil)
+	}
+	ckptDiskroot = types.TrieRootHash(ckptDiskroot)
+
+	// Thirdly write out the state root in disk, ensure all layers
 	// on top are continuous with disk.
 	if err := rlp.Encode(journal, diskroot); err != nil {
+		return err
+	}
+	if err := rlp.Encode(journal, ckptDiskroot); err != nil {
 		return err
 	}
 	// Finally write out the journal of each layer in reverse order.

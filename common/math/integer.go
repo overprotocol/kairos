@@ -90,7 +90,7 @@ func MustParseUint64(s string) uint64 {
 	return v
 }
 
-// SafeSub returns x-y and checks for overflow.
+// SafeSub returns x-y and checks for underflow.
 func SafeSub(x, y uint64) (uint64, bool) {
 	diff, borrowOut := bits.Sub64(x, y, 0)
 	return diff, borrowOut != 0
@@ -105,5 +105,64 @@ func SafeAdd(x, y uint64) (uint64, bool) {
 // SafeMul returns x*y and checks for overflow.
 func SafeMul(x, y uint64) (uint64, bool) {
 	hi, lo := bits.Mul64(x, y)
+	return lo, hi != 0
+}
+
+// HexOrDecimal32 marshals uint32 as hex or decimal.
+type HexOrDecimal32 uint32
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (i *HexOrDecimal32) UnmarshalText(input []byte) error {
+	int, ok := ParseUint32(string(input))
+	if !ok {
+		return fmt.Errorf("invalid hex or decimal integer %q", input)
+	}
+	*i = HexOrDecimal32(int)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (i HexOrDecimal32) MarshalText() ([]byte, error) {
+	return []byte(fmt.Sprintf("%#x", uint32(i))), nil
+}
+
+// ParseUint32 parses s as an integer in decimal or hexadecimal syntax.
+// Leading zeros are accepted. The empty string parses as zero.
+func ParseUint32(s string) (uint32, bool) {
+	if s == "" {
+		return 0, true
+	}
+	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
+		v, err := strconv.ParseUint(s[2:], 16, 32)
+		return uint32(v), err == nil
+	}
+	v, err := strconv.ParseUint(s, 10, 32)
+	return uint32(v), err == nil
+}
+
+// MustParseUint32 parses s as an integer and panics if the string is invalid.
+func MustParseUint32(s string) uint32 {
+	v, ok := ParseUint32(s)
+	if !ok {
+		panic("invalid unsigned 32 bit integer: " + s)
+	}
+	return v
+}
+
+// SafeSub32 returns x-y and checks for underflow.
+func SafeSub32(x, y uint32) (uint32, bool) {
+	diff, borrowOut := bits.Sub32(x, y, 0)
+	return diff, borrowOut != 0
+}
+
+// SafeAdd32 returns x+y and checks for overflow.
+func SafeAdd32(x, y uint32) (uint32, bool) {
+	sum, carryOut := bits.Add32(x, y, 0)
+	return sum, carryOut != 0
+}
+
+// SafeMul32 returns x*y and checks for overflow.
+func SafeMul32(x, y uint32) (uint32, bool) {
+	hi, lo := bits.Mul32(x, y)
 	return lo, hi != 0
 }

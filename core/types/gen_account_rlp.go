@@ -8,7 +8,8 @@ import "io"
 func (obj *StateAccount) EncodeRLP(_w io.Writer) error {
 	w := rlp.NewEncoderBuffer(_w)
 	_tmp0 := w.List()
-	w.WriteUint64(obj.Nonce)
+	w.WriteUint64(uint64(obj.Nonce))
+	w.WriteUint64(uint64(obj.EpochCoverage))
 	if obj.Balance == nil {
 		w.Write(rlp.EmptyString)
 	} else {
@@ -19,6 +20,8 @@ func (obj *StateAccount) EncodeRLP(_w io.Writer) error {
 	}
 	w.WriteBytes(obj.Root[:])
 	w.WriteBytes(obj.CodeHash)
+	w.WriteBytes(obj.UiHash)
+	w.WriteUint64(obj.StorageCount)
 	w.ListEnd(_tmp0)
 	return w.Flush()
 }

@@ -37,6 +37,7 @@ var (
 type triePrefetcher struct {
 	db       Database               // Database to fetch trie nodes through
 	root     common.Hash            // Root hash of the account trie for metrics
+	epoch    uint32                 // Epoch of the state to prefetch
 	fetches  map[string]Trie        // Partially or fully fetched tries. Only populated for inactive copies.
 	fetchers map[string]*subfetcher // Subfetchers for each trie
 
@@ -51,11 +52,12 @@ type triePrefetcher struct {
 	storageWasteMeter metrics.Meter
 }
 
-func newTriePrefetcher(db Database, root common.Hash, namespace string) *triePrefetcher {
+func newTriePrefetcher(db Database, root common.Hash, epoch uint32, namespace string) *triePrefetcher {
 	prefix := triePrefetchMetricsPrefix + namespace
 	p := &triePrefetcher{
 		db:       db,
 		root:     root,
+		epoch:    epoch,
 		fetchers: make(map[string]*subfetcher), // Active prefetchers use the fetchers map
 
 		deliveryMissMeter: metrics.GetOrRegisterMeter(prefix+"/deliverymiss", nil),
@@ -111,6 +113,7 @@ func (p *triePrefetcher) copy() *triePrefetcher {
 	copy := &triePrefetcher{
 		db:      p.db,
 		root:    p.root,
+		epoch:   p.epoch,
 		fetches: make(map[string]Trie), // Active prefetchers use the fetches map
 
 		deliveryMissMeter: p.deliveryMissMeter,
@@ -150,7 +153,7 @@ func (p *triePrefetcher) prefetch(owner common.Hash, root common.Hash, addr comm
 	id := p.trieID(owner, root)
 	fetcher := p.fetchers[id]
 	if fetcher == nil {
-		fetcher = newSubfetcher(p.db, p.root, owner, root, addr)
+		fetcher = newSubfetcher(p.db, p.epoch, p.root, owner, root, addr)
 		p.fetchers[id] = fetcher
 	}
 	fetcher.schedule(keys)
@@ -209,6 +212,7 @@ func (p *triePrefetcher) trieID(owner common.Hash, root common.Hash) string {
 // the trie being worked on is retrieved from the prefetcher.
 type subfetcher struct {
 	db    Database       // Database to load trie nodes through
+	epoch uint32         // Epoch of the state to prefetch
 	state common.Hash    // Root hash of the state to prefetch
 	owner common.Hash    // Owner of the trie, usually account hash
 	root  common.Hash    // Root hash of the trie to prefetch
@@ -230,9 +234,10 @@ type subfetcher struct {
 
 // newSubfetcher creates a goroutine to prefetch state items belonging to a
 // particular root hash.
-func newSubfetcher(db Database, state common.Hash, owner common.Hash, root common.Hash, addr common.Address) *subfetcher {
+func newSubfetcher(db Database, epoch uint32, state common.Hash, owner common.Hash, root common.Hash, addr common.Address) *subfetcher {
 	sf := &subfetcher{
 		db:    db,
+		epoch: epoch,
 		state: state,
 		owner: owner,
 		root:  root,
@@ -298,7 +303,7 @@ func (sf *subfetcher) loop() {
 
 	// Start by opening the trie and stop processing if it fails
 	if sf.owner == (common.Hash{}) {
-		trie, err := sf.db.OpenTrie(sf.root)
+		trie, err := sf.db.OpenTrie(sf.root, sf.epoch)
 		if err != nil {
 			log.Warn("Trie prefetcher failed opening trie", "root", sf.root, "err", err)
 			return
@@ -307,7 +312,7 @@ func (sf *subfetcher) loop() {
 	} else {
 		// The trie argument can be nil as verkle doesn't support prefetching
 		// yet. TODO FIX IT(rjl493456442), otherwise code will panic here.
-		trie, err := sf.db.OpenStorageTrie(sf.state, sf.addr, sf.root, nil)
+		trie, err := sf.db.OpenStorageTrie(sf.state, sf.epoch, sf.addr, sf.root, nil)
 		if err != nil {
 			log.Warn("Trie prefetcher failed opening trie", "root", sf.root, "err", err)
 			return

@@ -194,6 +194,14 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 	return types.NewBlockWithHeader(head).WithBody(txs, uncles).WithWithdrawals(body.Withdrawals), nil
 }
 
+// EpochByNumber returns epoch of the given block number.
+// If number is nil, the latest known epoch is returned.
+func (ec *Client) EpochByNumber(ctx context.Context, number *big.Int) (uint32, error) {
+	var epoch uint32
+	err := ec.c.CallContext(ctx, &epoch, "eth_getEpochByNumber", toBlockNumArg(number))
+	return epoch, err
+}
+
 // HeaderByHash returns the block header with the given hash.
 func (ec *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
 	var head *types.Header
@@ -368,6 +376,14 @@ func (ec *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 	var result hexutil.Big
 	err := ec.c.CallContext(ctx, &result, "eth_getBalance", account, toBlockNumArg(blockNumber))
 	return (*big.Int)(&result), err
+}
+
+// ExistWithoutCkptAt returns the existence of the given account.
+// The block number can be nil, in which case the balance is taken from the latest known block.
+func (ec *Client) ExistWithoutCkptAt(ctx context.Context, account common.Address, blockNumber *big.Int) (bool, error) {
+	var result bool
+	err := ec.c.CallContext(ctx, &result, "eth_existWithoutCkpt", account, toBlockNumArg(blockNumber))
+	return result, err
 }
 
 // BalanceAtHash returns the wei balance of the given account.
@@ -649,6 +665,32 @@ func toCallArg(msg ethereum.CallMsg) interface{} {
 	if len(msg.Data) > 0 {
 		arg["input"] = hexutil.Bytes(msg.Data)
 	}
+	if msg.RestoreData != nil {
+		restoreData := map[string]interface{}{
+			"target":      msg.RestoreData.Target,
+			"sourceEpoch": hexutil.Uint64(msg.RestoreData.SourceEpoch),
+			"targetEpoch": hexutil.Uint64(msg.RestoreData.TargetEpoch),
+		}
+		if msg.RestoreData.ChainID != nil {
+			restoreData["chainId"] = (*hexutil.Big)(msg.RestoreData.ChainID)
+		}
+		if msg.RestoreData.Fee != nil {
+			restoreData["fee"] = (*hexutil.Big)(msg.RestoreData.Fee)
+		}
+		if msg.RestoreData.FeeRecipient != nil {
+			restoreData["feeRecipient"] = msg.RestoreData.FeeRecipient
+		}
+		if msg.RestoreData.V != nil {
+			restoreData["v"] = (*hexutil.Big)(msg.RestoreData.V)
+		}
+		if msg.RestoreData.R != nil {
+			restoreData["r"] = (*hexutil.Big)(msg.RestoreData.R)
+		}
+		if msg.RestoreData.S != nil {
+			restoreData["s"] = (*hexutil.Big)(msg.RestoreData.S)
+		}
+		arg["restoreData"] = restoreData
+	}
 	if msg.Value != nil {
 		arg["value"] = (*hexutil.Big)(msg.Value)
 	}
@@ -676,18 +718,22 @@ type rpcProgress struct {
 	PulledStates hexutil.Uint64
 	KnownStates  hexutil.Uint64
 
-	SyncedAccounts      hexutil.Uint64
-	SyncedAccountBytes  hexutil.Uint64
-	SyncedBytecodes     hexutil.Uint64
-	SyncedBytecodeBytes hexutil.Uint64
-	SyncedStorage       hexutil.Uint64
-	SyncedStorageBytes  hexutil.Uint64
-	HealedTrienodes     hexutil.Uint64
-	HealedTrienodeBytes hexutil.Uint64
-	HealedBytecodes     hexutil.Uint64
-	HealedBytecodeBytes hexutil.Uint64
-	HealingTrienodes    hexutil.Uint64
-	HealingBytecode     hexutil.Uint64
+	SyncedAccounts         hexutil.Uint64
+	SyncedAccountBytes     hexutil.Uint64
+	SyncedBytecodes        hexutil.Uint64
+	SyncedBytecodeBytes    hexutil.Uint64
+	SyncedStorage          hexutil.Uint64
+	SyncedStorageBytes     hexutil.Uint64
+	EstimatedStateProgress float64
+	HealedTrienodes        hexutil.Uint64
+	HealedTrienodeBytes    hexutil.Uint64
+	HealedBytecodes        hexutil.Uint64
+	HealedBytecodeBytes    hexutil.Uint64
+	HealingTrienodes       hexutil.Uint64
+	HealingBytecode        hexutil.Uint64
+
+	SyncMode  string
+	Committed bool
 }
 
 func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
@@ -695,22 +741,25 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		return nil
 	}
 	return &ethereum.SyncProgress{
-		StartingBlock:       uint64(p.StartingBlock),
-		CurrentBlock:        uint64(p.CurrentBlock),
-		HighestBlock:        uint64(p.HighestBlock),
-		PulledStates:        uint64(p.PulledStates),
-		KnownStates:         uint64(p.KnownStates),
-		SyncedAccounts:      uint64(p.SyncedAccounts),
-		SyncedAccountBytes:  uint64(p.SyncedAccountBytes),
-		SyncedBytecodes:     uint64(p.SyncedBytecodes),
-		SyncedBytecodeBytes: uint64(p.SyncedBytecodeBytes),
-		SyncedStorage:       uint64(p.SyncedStorage),
-		SyncedStorageBytes:  uint64(p.SyncedStorageBytes),
-		HealedTrienodes:     uint64(p.HealedTrienodes),
-		HealedTrienodeBytes: uint64(p.HealedTrienodeBytes),
-		HealedBytecodes:     uint64(p.HealedBytecodes),
-		HealedBytecodeBytes: uint64(p.HealedBytecodeBytes),
-		HealingTrienodes:    uint64(p.HealingTrienodes),
-		HealingBytecode:     uint64(p.HealingBytecode),
+		StartingBlock:          uint64(p.StartingBlock),
+		CurrentBlock:           uint64(p.CurrentBlock),
+		HighestBlock:           uint64(p.HighestBlock),
+		PulledStates:           uint64(p.PulledStates),
+		KnownStates:            uint64(p.KnownStates),
+		SyncedAccounts:         uint64(p.SyncedAccounts),
+		SyncedAccountBytes:     uint64(p.SyncedAccountBytes),
+		SyncedBytecodes:        uint64(p.SyncedBytecodes),
+		SyncedBytecodeBytes:    uint64(p.SyncedBytecodeBytes),
+		SyncedStorage:          uint64(p.SyncedStorage),
+		SyncedStorageBytes:     uint64(p.SyncedStorageBytes),
+		EstimatedStateProgress: p.EstimatedStateProgress,
+		HealedTrienodes:        uint64(p.HealedTrienodes),
+		HealedTrienodeBytes:    uint64(p.HealedTrienodeBytes),
+		HealedBytecodes:        uint64(p.HealedBytecodes),
+		HealedBytecodeBytes:    uint64(p.HealedBytecodeBytes),
+		HealingTrienodes:       uint64(p.HealingTrienodes),
+		HealingBytecode:        uint64(p.HealingBytecode),
+		SyncMode:               p.SyncMode,
+		Committed:              p.Committed,
 	}
 }

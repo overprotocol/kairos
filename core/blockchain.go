@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"math/rand"
 	"runtime"
 	"strings"
 	"sync"
@@ -142,7 +143,9 @@ type CacheConfig struct {
 	SnapshotLimit       int           // Memory allowance (MB) to use for caching snapshot entries in memory
 	Preimages           bool          // Whether to store preimage of trie key to the disk
 	StateHistory        uint64        // Number of blocks from head whose state histories are reserved.
+	DisableHistory      bool          // Whether to disable state history recording
 	StateScheme         string        // Scheme used to store ethereum states and merkle tree nodes on top
+	EpochLimit          uint32        // Number of epochs to keep in disk
 
 	SnapshotNoBuild bool // Whether the background generation is allowed
 	SnapshotWait    bool // Wait for snapshot construction on startup. TODO(karalabe): This is a dirty hack for testing, nuke it
@@ -154,13 +157,16 @@ func (c *CacheConfig) triedbConfig() *trie.Config {
 	if c.StateScheme == rawdb.HashScheme {
 		config.HashDB = &hashdb.Config{
 			CleanCacheSize: c.TrieCleanLimit * 1024 * 1024,
+			EpochLimit:     c.EpochLimit,
 		}
 	}
 	if c.StateScheme == rawdb.PathScheme {
 		config.PathDB = &pathdb.Config{
 			StateHistory:   c.StateHistory,
+			DisableHistory: c.DisableHistory,
 			CleanCacheSize: c.TrieCleanLimit * 1024 * 1024,
 			DirtyCacheSize: c.TrieDirtyLimit * 1024 * 1024,
+			EpochLimit:     c.EpochLimit,
 		}
 	}
 	return config
@@ -175,6 +181,7 @@ var defaultCacheConfig = &CacheConfig{
 	SnapshotLimit:  256,
 	SnapshotWait:   true,
 	StateScheme:    rawdb.HashScheme,
+	EpochLimit:     2,
 }
 
 // DefaultCacheConfigWithScheme returns a deep copied default cache config with
@@ -206,6 +213,7 @@ type BlockChain struct {
 	db            ethdb.Database                   // Low level persistent database to store final content in
 	snaps         *snapshot.Tree                   // Snapshot tree for fast trie leaf access
 	triegc        *prque.Prque[int64, common.Hash] // Priority queue mapping block numbers to tries to gc
+	ckptGcStatus  *checkpointGcStatus              // Status of Checkpoint trie to gc
 	gcproc        time.Duration                    // Accumulates canonical block processing for trie dumping
 	lastWrite     uint64                           // Last block when the state was flushed
 	flushInterval atomic.Int64                     // Time interval (processing time) after which to flush a state
@@ -340,7 +348,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	// Make sure the state associated with the block is available, or log out
 	// if there is no available state, waiting for state sync.
 	head := bc.CurrentBlock()
-	if !bc.HasState(head.Root) {
+	if !bc.HasState(head) {
 		if head.Number.Uint64() == 0 {
 			// The genesis state is missing, which is only possible in the path-based
 			// scheme. This situation occurs when the initial state sync is not finished
@@ -354,7 +362,10 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 			// rewound point is lower than disk layer.
 			var diskRoot common.Hash
 			if bc.cacheConfig.SnapshotLimit > 0 {
-				diskRoot = rawdb.ReadSnapshotRoot(bc.db)
+				diskEpoch := rawdb.ReadSnapshotEpoch(bc.db)
+				if diskEpoch != nil {
+					diskRoot = rawdb.ReadSnapshotRoot(bc.db, *diskEpoch)
+				}
 			}
 			if diskRoot != (common.Hash{}) {
 				log.Warn("Head state missing, repairing", "number", head.Number, "hash", head.Hash(), "snaproot", diskRoot)
@@ -445,8 +456,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 			Recovery:   recover,
 			NoBuild:    bc.cacheConfig.SnapshotNoBuild,
 			AsyncBuild: !bc.cacheConfig.SnapshotWait,
+			EpochLimit: bc.cacheConfig.EpochLimit,
 		}
-		bc.snaps, _ = snapshot.New(snapconfig, bc.db, bc.triedb, head.Root)
+		bc.snaps, _ = snapshot.New(snapconfig, bc.db, bc.triedb, chainConfig.CalcEpoch(head.Number.Uint64()), head.Root, head.CheckpointRoot)
 	}
 
 	// Start future block processor.
@@ -675,7 +687,7 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 					if root != (common.Hash{}) && !beyondRoot && newHeadBlock.Root() == root {
 						beyondRoot, rootNumber = true, newHeadBlock.NumberU64()
 					}
-					if !bc.HasState(newHeadBlock.Root()) && !bc.stateRecoverable(newHeadBlock.Root()) {
+					if !bc.HasState(newHeadBlock.Header()) && !bc.stateRecoverable(newHeadBlock.Header()) {
 						log.Trace("Block state missing, rewinding further", "number", newHeadBlock.NumberU64(), "hash", newHeadBlock.Hash())
 						if pivot == nil || newHeadBlock.NumberU64() > *pivot {
 							parent := bc.GetBlock(newHeadBlock.ParentHash(), newHeadBlock.NumberU64()-1)
@@ -691,10 +703,11 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 						}
 					}
 					if beyondRoot || newHeadBlock.NumberU64() == 0 {
-						if !bc.HasState(newHeadBlock.Root()) && bc.stateRecoverable(newHeadBlock.Root()) {
+						if !bc.HasState(newHeadBlock.Header()) && bc.stateRecoverable(newHeadBlock.Header()) {
 							// Rewind to a block with recoverable state. If the state is
 							// missing, run the state recovery here.
-							if err := bc.triedb.Recover(newHeadBlock.Root()); err != nil {
+							epoch := bc.chainConfig.CalcEpoch(newHeadBlock.NumberU64())
+							if err := bc.triedb.Recover(epoch, newHeadBlock.Root(), newHeadBlock.CheckpointRoot()); err != nil {
 								log.Crit("Failed to rollback state", "err", err) // Shouldn't happen
 							}
 							log.Debug("Rewound to block with state", "number", newHeadBlock.NumberU64(), "hash", newHeadBlock.Hash())
@@ -719,7 +732,7 @@ func (bc *BlockChain) setHeadBeyondRoot(head uint64, time uint64, root common.Ha
 			// the pivot point. In this scenario, there is no possible recovery
 			// approach except for rerunning a snap sync. Do nothing here until the
 			// state syncer picks it up.
-			if !bc.HasState(newHeadBlock.Root()) {
+			if !bc.HasState(newHeadBlock.Header()) {
 				log.Info("Chain is stateless, wait state sync", "number", newHeadBlock.Number(), "hash", newHeadBlock.Hash())
 			}
 		}
@@ -820,12 +833,14 @@ func (bc *BlockChain) SnapSyncCommitHead(hash common.Hash) error {
 	}
 	// Reset the trie database with the fresh snap synced state.
 	root := block.Root()
+	ckptRoot := block.CheckpointRoot()
+	epoch := bc.chainConfig.CalcEpoch(block.NumberU64())
 	if bc.triedb.Scheme() == rawdb.PathScheme {
-		if err := bc.triedb.Enable(root); err != nil {
+		if err := bc.triedb.Enable(root, ckptRoot, epoch); err != nil {
 			return err
 		}
 	}
-	if !bc.HasState(root) {
+	if !bc.HasState(block.Header()) {
 		return fmt.Errorf("non existent state [%x..]", root[:4])
 	}
 	// If all checks out, manually set the head block.
@@ -839,7 +854,7 @@ func (bc *BlockChain) SnapSyncCommitHead(hash common.Hash) error {
 	// Destroy any existing state snapshot and regenerate it in the background,
 	// also resuming the normal maintenance of any previously paused snapshot.
 	if bc.snaps != nil {
-		bc.snaps.Rebuild(root)
+		bc.snaps.Rebuild(epoch, root, ckptRoot)
 	}
 	log.Info("Committed new head block", "number", block.Number(), "hash", hash)
 	return nil
@@ -1004,6 +1019,12 @@ func (bc *BlockChain) Stop() {
 		if !bc.cacheConfig.TrieDirtyDisabled {
 			triedb := bc.triedb
 
+			if bc.ckptGcStatus != nil {
+				log.Info("Writing checkpoint state to disk", "commit block", bc.ckptGcStatus.CommitBlock, "root", bc.ckptGcStatus.Root)
+				if err := bc.CommitCkptGc(); err != nil {
+					log.Warn("Failed to commit checkpoint gc", "err", err)
+				}
+			}
 			for _, offset := range []uint64{0, 1, TriesInMemory - 1} {
 				if number := bc.CurrentBlock().Number.Uint64(); number > offset {
 					recent := bc.GetBlockByNumber(number - offset)
@@ -1021,7 +1042,9 @@ func (bc *BlockChain) Stop() {
 				}
 			}
 			for !bc.triegc.Empty() {
-				triedb.Dereference(bc.triegc.PopItem())
+				root, number := bc.triegc.Pop()
+				epoch := bc.chainConfig.CalcEpoch(uint64(-number))
+				triedb.Dereference(epoch, root)
 			}
 			if _, nodes, _ := triedb.Size(); nodes != 0 { // all memory is contained within the nodes return for hashdb
 				log.Error("Dangling trie nodes after full cleanup")
@@ -1420,12 +1443,30 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if bc.cacheConfig.TrieDirtyDisabled {
 		return bc.triedb.Commit(root, false)
 	}
+
+	current := block.NumberU64()
+	if bc.ckptGcStatus != nil && bc.ckptGcStatus.CommitBlock == current {
+		log.Info("Committing checkpoint Gc status", "current block", current, "commit block", bc.ckptGcStatus.CommitBlock, "epoch", bc.ckptGcStatus.Epoch, "root", bc.ckptGcStatus.Root)
+		if err := bc.CommitCkptGc(); err != nil {
+			log.Warn("Failed to commit checkpoint gc", "err", err)
+		}
+		bc.lastWrite = current
+		bc.gcproc = 0
+		return nil
+	}
+
+	// If block is checkpoint, commit every state in database
+	if bc.Config().IsCheckpoint(current) {
+		bc.SetCkptGcStatus(root, current)
+		log.Info("Setting checkpoint Gc status", "current block", current, "commit block", bc.ckptGcStatus.CommitBlock, "root", root)
+	} else {
+		bc.triegc.Push(root, -int64(block.NumberU64()))
+	}
+
 	// Full but not archive node, do proper garbage collection
 	bc.triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
-	bc.triegc.Push(root, -int64(block.NumberU64()))
 
 	// Flush limits are not considered for the first TriesInMemory blocks.
-	current := block.NumberU64()
 	if current <= TriesInMemory {
 		return nil
 	}
@@ -1437,11 +1478,12 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if nodes > limit || imgs > 4*1024*1024 {
 		bc.triedb.Cap(limit - ethdb.IdealBatchSize)
 	}
+
 	// Find the next state trie we need to commit
 	chosen := current - TriesInMemory
 	flushInterval := time.Duration(bc.flushInterval.Load())
 	// If we exceeded time allowance, flush an entire trie to disk
-	if bc.gcproc > flushInterval {
+	if bc.gcproc > flushInterval && bc.chainConfig.CalcEpoch(current) == bc.chainConfig.CalcEpoch(chosen) {
 		// If the header is missing (canonical chain behind), we're reorging a low
 		// diff sidechain. Suspend committing until this operation is completed.
 		header := bc.GetHeaderByNumber(chosen)
@@ -1452,6 +1494,12 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			// warn the user that the system is becoming unstable.
 			if chosen < bc.lastWrite+TriesInMemory && bc.gcproc >= 2*flushInterval {
 				log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", flushInterval, "optimum", float64(chosen-bc.lastWrite)/TriesInMemory)
+			}
+			if bc.ckptGcStatus != nil {
+				log.Info("Committing checkpoint Gc status", "current block", current, "commit block", bc.ckptGcStatus.CommitBlock, "epoch", bc.ckptGcStatus.Epoch, "root", bc.ckptGcStatus.Root)
+				if err := bc.CommitCkptGc(); err != nil {
+					log.Warn("Failed to commit checkpoint gc", "err", err)
+				}
 			}
 			// Flush an entire trie and restart the counters
 			bc.triedb.Commit(header.Root, true)
@@ -1466,7 +1514,8 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			bc.triegc.Push(root, number)
 			break
 		}
-		bc.triedb.Dereference(root)
+		epoch := bc.chainConfig.CalcEpoch(uint64(-number))
+		bc.triedb.Dereference(epoch, root)
 	}
 	return nil
 }
@@ -1778,7 +1827,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		if parent == nil {
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
-		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+		statedb, err := bc.StateAtInitialize(parent)
 		if err != nil {
 			return it.index, err
 		}
@@ -1792,7 +1841,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		var followupInterrupt atomic.Bool
 		if !bc.cacheConfig.TrieCleanNoPrefetch {
 			if followup, err := it.peek(); followup != nil && err == nil {
-				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
+				throwaway, _ := bc.StateAtInitialize(parent)
 
 				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
 					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
@@ -2014,9 +2063,10 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 		numbers []uint64
 	)
 	parent := it.previous()
-	for parent != nil && !bc.HasState(parent.Root) {
-		if bc.stateRecoverable(parent.Root) {
-			if err := bc.triedb.Recover(parent.Root); err != nil {
+	for parent != nil && !bc.HasState(parent) {
+		if bc.stateRecoverable(parent) {
+			epoch := bc.chainConfig.CalcEpoch(parent.Number.Uint64())
+			if err := bc.triedb.Recover(epoch, parent.Root, parent.CheckpointRoot); err != nil {
 				return 0, err
 			}
 			break
@@ -2076,9 +2126,10 @@ func (bc *BlockChain) recoverAncestors(block *types.Block) (common.Hash, error) 
 		numbers []uint64
 		parent  = block
 	)
-	for parent != nil && !bc.HasState(parent.Root()) {
-		if bc.stateRecoverable(parent.Root()) {
-			if err := bc.triedb.Recover(parent.Root()); err != nil {
+	for parent != nil && !bc.HasState(parent.Header()) {
+		if bc.stateRecoverable(parent.Header()) {
+			epoch := bc.chainConfig.CalcEpoch(parent.NumberU64())
+			if err := bc.triedb.Recover(epoch, parent.Root(), parent.CheckpointRoot()); err != nil {
 				return common.Hash{}, err
 			}
 			break
@@ -2332,7 +2383,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	defer bc.chainmu.Unlock()
 
 	// Re-execute the reorged chain in case the head state is missing.
-	if !bc.HasState(head.Root()) {
+	if !bc.HasState(head.Header()) {
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
 			return latestValidHash, err
 		}
@@ -2401,7 +2452,7 @@ func (bc *BlockChain) skipBlock(err error, it *insertIterator) bool {
 		parentRoot common.Hash
 	)
 	// If we also have the snapshot-state, we can skip the processing.
-	if bc.snaps.Snapshot(header.Root) != nil {
+	if bc.snaps.CurrSnapshot(header.Root) != nil {
 		return true
 	}
 	// In this case, we have the trie-state but not snapshot-state. If the parent
@@ -2417,7 +2468,7 @@ func (bc *BlockChain) skipBlock(err error, it *insertIterator) bool {
 		return false // Theoretically impossible case
 	}
 	// Parent is also missing snapshot: we can skip this. Otherwise process.
-	if bc.snaps.Snapshot(parentRoot) == nil {
+	if bc.snaps.CurrSnapshot(parentRoot) == nil {
 		return true
 	}
 	return false
@@ -2588,4 +2639,30 @@ func (bc *BlockChain) SetTrieFlushInterval(interval time.Duration) {
 // GetTrieFlushInterval gets the in-memory tries flush interval
 func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
+}
+
+type checkpointGcStatus struct {
+	Root        common.Hash
+	CommitBlock uint64
+	Epoch       uint32
+}
+
+func (bc *BlockChain) SetCkptGcStatus(root common.Hash, current uint64) {
+	epoch := bc.chainConfig.CalcEpoch(current + 1)
+	randBlock := uint64(epoch)*bc.chainConfig.SweepEpoch + rand.Uint64()%bc.chainConfig.SweepEpoch
+
+	bc.ckptGcStatus = &checkpointGcStatus{
+		Root:        root,
+		CommitBlock: randBlock,
+		Epoch:       epoch,
+	}
+}
+
+func (bc *BlockChain) CommitCkptGc() error {
+	root := bc.ckptGcStatus.Root
+	bc.ckptGcStatus = nil
+	if err := bc.triedb.Commit(root, true); err != nil {
+		return err
+	}
+	return nil
 }

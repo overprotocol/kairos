@@ -74,6 +74,7 @@ type Config struct {
 type Pruner struct {
 	config      Config
 	chainHeader *types.Header
+	epoch       uint32
 	db          ethdb.Database
 	stateBloom  *stateBloom
 	snaptree    *snapshot.Tree
@@ -88,13 +89,20 @@ func NewPruner(db ethdb.Database, config Config) (*Pruner, error) {
 	// Offline pruning is only supported in legacy hash based scheme.
 	triedb := trie.NewDatabase(db, trie.HashDefaults)
 
+	genesisHash := rawdb.ReadCanonicalHash(db, 0)
+	chainConfig := rawdb.ReadChainConfig(db, genesisHash)
+	if chainConfig == nil {
+		return nil, errors.New("failed to load chain config")
+	}
+	epoch := chainConfig.CalcEpoch(headBlock.NumberU64())
+
 	snapconfig := snapshot.Config{
 		CacheSize:  256,
 		Recovery:   false,
 		NoBuild:    true,
 		AsyncBuild: false,
 	}
-	snaptree, err := snapshot.New(snapconfig, db, triedb, headBlock.Root())
+	snaptree, err := snapshot.New(snapconfig, db, triedb, epoch, headBlock.Root(), headBlock.CheckpointRoot())
 	if err != nil {
 		return nil, err // The relevant snapshot(s) might not exist
 	}
@@ -110,6 +118,7 @@ func NewPruner(db ethdb.Database, config Config) (*Pruner, error) {
 	return &Pruner{
 		config:      config,
 		chainHeader: headBlock.Header(),
+		epoch:       epoch,
 		db:          db,
 		stateBloom:  stateBloom,
 		snaptree:    snaptree,
@@ -268,7 +277,7 @@ func (p *Pruner) Prune(root common.Hash) error {
 	// Ensure the root is really present. The weak assumption
 	// is the presence of root can indicate the presence of the
 	// entire trie.
-	if !rawdb.HasLegacyTrieNode(p.db, root) {
+	if !rawdb.HasLegacyAccountTrieNode(p.db, p.epoch, root) {
 		// The special case is for clique based networks(goerli
 		// and some other private networks), it's possible that two
 		// consecutive blocks will have same root. In this case snapshot
@@ -282,7 +291,7 @@ func (p *Pruner) Prune(root common.Hash) error {
 		// as the pruning target.
 		var found bool
 		for i := len(layers) - 2; i >= 2; i-- {
-			if rawdb.HasLegacyTrieNode(p.db, layers[i].Root()) {
+			if rawdb.HasLegacyAccountTrieNode(p.db, layers[i].Epoch(), layers[i].Root()) {
 				root = layers[i].Root()
 				found = true
 				log.Info("Selecting middle-layer as the pruning target", "root", root, "depth", i)
@@ -359,6 +368,13 @@ func RecoverPruning(datadir string, db ethdb.Database) error {
 	// - The state HEAD is rewound already because of multiple incomplete `prune-state`
 	// In this case, even the state HEAD is not exactly matched with snapshot, it
 	// still feasible to recover the pruning correctly.
+	genesisHash := rawdb.ReadCanonicalHash(db, 0)
+	chainConfig := rawdb.ReadChainConfig(db, genesisHash)
+	if chainConfig == nil {
+		return errors.New("failed to load chain config")
+	}
+	epoch := chainConfig.CalcEpoch(headBlock.NumberU64())
+
 	snapconfig := snapshot.Config{
 		CacheSize:  256,
 		Recovery:   true,
@@ -367,7 +383,7 @@ func RecoverPruning(datadir string, db ethdb.Database) error {
 	}
 	// Offline pruning is only supported in legacy hash based scheme.
 	triedb := trie.NewDatabase(db, trie.HashDefaults)
-	snaptree, err := snapshot.New(snapconfig, db, triedb, headBlock.Root())
+	snaptree, err := snapshot.New(snapconfig, db, triedb, epoch, headBlock.Root(), headBlock.CheckpointRoot())
 	if err != nil {
 		return err // The relevant snapshot(s) might not exist
 	}
@@ -409,7 +425,7 @@ func extractGenesis(db ethdb.Database, stateBloom *stateBloom) error {
 	if genesis == nil {
 		return errors.New("missing genesis block")
 	}
-	t, err := trie.NewStateTrie(trie.StateTrieID(genesis.Root()), trie.NewDatabase(db, trie.HashDefaults))
+	t, err := trie.NewStateTrie(trie.StateTrieID(genesis.Root(), 0), trie.NewDatabase(db, trie.HashDefaults))
 	if err != nil {
 		return err
 	}
@@ -432,7 +448,7 @@ func extractGenesis(db ethdb.Database, stateBloom *stateBloom) error {
 				return err
 			}
 			if acc.Root != types.EmptyRootHash {
-				id := trie.StorageTrieID(genesis.Root(), common.BytesToHash(accIter.LeafKey()), acc.Root)
+				id := trie.StorageTrieID(genesis.Root(), 0, common.BytesToHash(accIter.LeafKey()), acc.Root)
 				storageTrie, err := trie.NewStateTrie(id, trie.NewDatabase(db, trie.HashDefaults))
 				if err != nil {
 					return err

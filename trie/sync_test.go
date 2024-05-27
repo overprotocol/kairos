@@ -58,7 +58,7 @@ func makeTestTrie(scheme string) (ethdb.Database, *Database, *StateTrie, map[str
 		}
 	}
 	root, nodes, _ := trie.Commit(false)
-	if err := triedb.Update(root, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
+	if err := triedb.Update(root, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
 		panic(fmt.Errorf("failed to commit db %v", err))
 	}
 	if err := triedb.Commit(root, false); err != nil {
@@ -143,7 +143,7 @@ func TestEmptySync(t *testing.T) {
 	emptyD, _ := New(TrieID(types.EmptyRootHash), dbD)
 
 	for i, trie := range []*Trie{emptyA, emptyB, emptyC, emptyD} {
-		sync := NewSync(trie.Hash(), memorydb.New(), nil, []*Database{dbA, dbB, dbC, dbD}[i].Scheme())
+		sync := NewSync(trie.Hash(), memorydb.New(), 0, nil, []*Database{dbA, dbB, dbC, dbD}[i].Scheme())
 		if paths, nodes, codes := sync.Missing(1); len(paths) != 0 || len(nodes) != 0 || len(codes) != 0 {
 			t.Errorf("test %d: content requested for empty trie: %v, %v, %v", i, paths, nodes, codes)
 		}
@@ -169,7 +169,7 @@ func testIterativeSync(t *testing.T, count int, bypath bool, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -182,7 +182,7 @@ func testIterativeSync(t *testing.T, count int, bypath bool, scheme string) {
 			syncPath: NewSyncPath([]byte(paths[i])),
 		})
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -244,7 +244,7 @@ func testIterativeDelayedSync(t *testing.T, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -257,7 +257,7 @@ func testIterativeDelayedSync(t *testing.T, scheme string) {
 			syncPath: NewSyncPath([]byte(paths[i])),
 		})
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -313,7 +313,7 @@ func testIterativeRandomSync(t *testing.T, count int, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -326,7 +326,7 @@ func testIterativeRandomSync(t *testing.T, count int, scheme string) {
 			syncPath: NewSyncPath([]byte(paths[i])),
 		}
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -380,7 +380,7 @@ func testIterativeRandomDelayedSync(t *testing.T, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -393,7 +393,7 @@ func testIterativeRandomDelayedSync(t *testing.T, scheme string) {
 			syncPath: NewSyncPath([]byte(path)),
 		}
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -452,7 +452,7 @@ func testDuplicateAvoidanceSync(t *testing.T, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -465,7 +465,7 @@ func testDuplicateAvoidanceSync(t *testing.T, scheme string) {
 			syncPath: NewSyncPath([]byte(paths[i])),
 		})
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -523,7 +523,7 @@ func testIncompleteSync(t *testing.T, scheme string) {
 
 	// Create a destination trie and sync with the scheduler
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -541,7 +541,7 @@ func testIncompleteSync(t *testing.T, scheme string) {
 			syncPath: NewSyncPath([]byte(paths[i])),
 		})
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -594,12 +594,12 @@ func testIncompleteSync(t *testing.T, scheme string) {
 		}
 		owner, inner := ResolvePath([]byte(path))
 		nodeHash := addedHashes[i]
-		value := rawdb.ReadTrieNode(diskdb, owner, inner, nodeHash, scheme)
-		rawdb.DeleteTrieNode(diskdb, owner, inner, nodeHash, scheme)
+		value := rawdb.ReadTrieNode(diskdb, 0, owner, inner, nodeHash, scheme)
+		rawdb.DeleteTrieNode(diskdb, 0, owner, inner, nodeHash, scheme)
 		if err := checkTrieConsistency(diskdb, srcDb.Scheme(), root, false); err == nil {
 			t.Fatalf("trie inconsistency not caught, missing: %x", path)
 		}
-		rawdb.WriteTrieNode(diskdb, owner, inner, nodeHash, value, scheme)
+		rawdb.WriteTrieNode(diskdb, 0, owner, inner, nodeHash, value, scheme)
 	}
 }
 
@@ -616,7 +616,7 @@ func testSyncOrdering(t *testing.T, scheme string) {
 
 	// Create a destination trie and sync with the scheduler, tracking the requests
 	diskdb := rawdb.NewMemoryDatabase()
-	sched := NewSync(srcTrie.Hash(), diskdb, nil, srcDb.Scheme())
+	sched := NewSync(srcTrie.Hash(), diskdb, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -633,7 +633,7 @@ func testSyncOrdering(t *testing.T, scheme string) {
 		})
 		reqs = append(reqs, NewSyncPath([]byte(paths[i])))
 	}
-	reader, err := srcDb.Reader(srcTrie.Hash())
+	reader, err := srcDb.Reader(srcTrie.Hash(), 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", srcTrie.Hash())
 	}
@@ -690,7 +690,7 @@ func syncWith(t *testing.T, root common.Hash, db ethdb.Database, srcDb *Database
 
 func syncWithHookWriter(t *testing.T, root common.Hash, db ethdb.Database, srcDb *Database, hookWriter ethdb.KeyValueWriter) {
 	// Create a destination trie and sync with the scheduler
-	sched := NewSync(root, db, nil, srcDb.Scheme())
+	sched := NewSync(root, db, 0, nil, srcDb.Scheme())
 
 	// The code requests are ignored here since there is no code
 	// at the testing trie.
@@ -703,7 +703,7 @@ func syncWithHookWriter(t *testing.T, root common.Hash, db ethdb.Database, srcDb
 			syncPath: NewSyncPath([]byte(paths[i])),
 		})
 	}
-	reader, err := srcDb.Reader(root)
+	reader, err := srcDb.Reader(root, 0)
 	if err != nil {
 		t.Fatalf("State is not available %x", root)
 	}
@@ -771,7 +771,7 @@ func testSyncMovingTarget(t *testing.T, scheme string) {
 		diff[string(key)] = val
 	}
 	root, nodes, _ := srcTrie.Commit(false)
-	if err := srcDb.Update(root, preRoot, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
+	if err := srcDb.Update(root, preRoot, 0, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
 		panic(err)
 	}
 	if err := srcDb.Commit(root, false); err != nil {
@@ -796,7 +796,7 @@ func testSyncMovingTarget(t *testing.T, scheme string) {
 		reverted[k] = val
 	}
 	root, nodes, _ = srcTrie.Commit(false)
-	if err := srcDb.Update(root, preRoot, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
+	if err := srcDb.Update(root, preRoot, 0, 0, trienode.NewWithNodeSet(nodes), nil); err != nil {
 		panic(err)
 	}
 	if err := srcDb.Commit(root, false); err != nil {
@@ -854,7 +854,7 @@ func testPivotMove(t *testing.T, scheme string, tiny bool) {
 	writeFn([]byte{0x13, 0x44}, nil, srcTrie, stateA)
 
 	rootA, nodesA, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootA, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesA), nil); err != nil {
+	if err := srcTrieDB.Update(rootA, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesA), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootA, false); err != nil {
@@ -873,7 +873,7 @@ func testPivotMove(t *testing.T, scheme string, tiny bool) {
 	writeFn([]byte{0x01, 0x24}, nil, srcTrie, stateB)
 
 	rootB, nodesB, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootB, rootA, 0, trienode.NewWithNodeSet(nodesB), nil); err != nil {
+	if err := srcTrieDB.Update(rootB, rootA, 0, 0, trienode.NewWithNodeSet(nodesB), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootB, false); err != nil {
@@ -891,7 +891,7 @@ func testPivotMove(t *testing.T, scheme string, tiny bool) {
 	writeFn([]byte{0x13, 0x44}, nil, srcTrie, stateC)
 
 	rootC, nodesC, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootC, rootB, 0, trienode.NewWithNodeSet(nodesC), nil); err != nil {
+	if err := srcTrieDB.Update(rootC, rootB, 0, 0, trienode.NewWithNodeSet(nodesC), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootC, false); err != nil {
@@ -960,7 +960,7 @@ func testSyncAbort(t *testing.T, scheme string) {
 	writeFn(key, val, srcTrie, stateA)
 
 	rootA, nodesA, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootA, types.EmptyRootHash, 0, trienode.NewWithNodeSet(nodesA), nil); err != nil {
+	if err := srcTrieDB.Update(rootA, types.EmptyRootHash, 0, 0, trienode.NewWithNodeSet(nodesA), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootA, false); err != nil {
@@ -977,7 +977,7 @@ func testSyncAbort(t *testing.T, scheme string) {
 	deleteFn(key, srcTrie, stateB)
 
 	rootB, nodesB, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootB, rootA, 0, trienode.NewWithNodeSet(nodesB), nil); err != nil {
+	if err := srcTrieDB.Update(rootB, rootA, 0, 0, trienode.NewWithNodeSet(nodesB), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootB, false); err != nil {
@@ -1004,7 +1004,7 @@ func testSyncAbort(t *testing.T, scheme string) {
 
 	writeFn(key, val, srcTrie, stateC)
 	rootC, nodesC, _ := srcTrie.Commit(false)
-	if err := srcTrieDB.Update(rootC, rootB, 0, trienode.NewWithNodeSet(nodesC), nil); err != nil {
+	if err := srcTrieDB.Update(rootC, rootB, 0, 0, trienode.NewWithNodeSet(nodesC), nil); err != nil {
 		panic(err)
 	}
 	if err := srcTrieDB.Commit(rootC, false); err != nil {

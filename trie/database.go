@@ -66,7 +66,7 @@ type backend interface {
 	//
 	// The passed in maps(nodes, states) will be retained to avoid copying
 	// everything. Therefore, these maps must not be changed afterwards.
-	Update(root common.Hash, parent common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error
+	Update(root common.Hash, parent common.Hash, epoch uint32, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error
 
 	// Commit writes all relevant trie nodes belonging to the specified state
 	// to disk. Report specifies whether logs will be displayed in info level.
@@ -115,14 +115,24 @@ func NewDatabase(diskdb ethdb.Database, config *Config) *Database {
 
 // Reader returns a reader for accessing all trie nodes with provided state root.
 // An error will be returned if the requested state is not available.
-func (db *Database) Reader(blockRoot common.Hash) (Reader, error) {
+func (db *Database) Reader(blockRoot common.Hash, epoch uint32) (Reader, error) {
 	switch b := db.backend.(type) {
 	case *hashdb.Database:
-		return b.Reader(blockRoot)
+		return b.Reader(blockRoot, epoch)
 	case *pathdb.Database:
-		return b.Reader(blockRoot)
+		return b.Reader(blockRoot, epoch)
 	}
 	return nil, errors.New("unknown backend")
+}
+
+func (db *Database) HasState(root, ckptRoot common.Hash, epoch uint32) bool {
+	switch b := db.backend.(type) {
+	case *hashdb.Database:
+		return b.HasState(root, ckptRoot, epoch)
+	case *pathdb.Database:
+		return b.HasState(root, ckptRoot, epoch)
+	}
+	return false
 }
 
 // Update performs a state transition by committing dirty nodes contained in the
@@ -132,11 +142,11 @@ func (db *Database) Reader(blockRoot common.Hash) (Reader, error) {
 //
 // The passed in maps(nodes, states) will be retained to avoid copying everything.
 // Therefore, these maps must not be changed afterwards.
-func (db *Database) Update(root common.Hash, parent common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
+func (db *Database) Update(root common.Hash, parent common.Hash, epoch uint32, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
 	if db.preimages != nil {
 		db.preimages.commit(false)
 	}
-	return db.backend.Update(root, parent, block, nodes, states)
+	return db.backend.Update(root, parent, epoch, block, nodes, states)
 }
 
 // Commit iterates over all the children of a particular node, writes them out
@@ -231,36 +241,49 @@ func (db *Database) Reference(root common.Hash, parent common.Hash) error {
 
 // Dereference removes an existing reference from a root node. It's only
 // supported by hash-based database and will return an error for others.
-func (db *Database) Dereference(root common.Hash) error {
+func (db *Database) Dereference(epoch uint32, root common.Hash) error {
 	hdb, ok := db.backend.(*hashdb.Database)
 	if !ok {
 		return errors.New("not supported")
 	}
-	hdb.Dereference(root)
+	hdb.Dereference(epoch, root)
 	return nil
+}
+
+// AddNewEpoch add empty layer tree for the new epoch. It's only supported by
+// path-based database and will return an error for others.
+func (db *Database) AddNewEpoch(epoch uint32, root common.Hash) error {
+	pdb, ok := db.backend.(*pathdb.Database)
+	if !ok {
+		return errors.New("not supported")
+	}
+	if db.preimages != nil {
+		db.preimages.commit(false)
+	}
+	return pdb.AddNewEpoch(epoch, root)
 }
 
 // Recover rollbacks the database to a specified historical point. The state is
 // supported as the rollback destination only if it's canonical state and the
 // corresponding trie histories are existent. It's only supported by path-based
 // database and will return an error for others.
-func (db *Database) Recover(target common.Hash) error {
+func (db *Database) Recover(epoch uint32, root, ckptRoot common.Hash) error {
 	pdb, ok := db.backend.(*pathdb.Database)
 	if !ok {
 		return errors.New("not supported")
 	}
-	return pdb.Recover(target, &trieLoader{db: db})
+	return pdb.Recover(epoch, root, ckptRoot, &trieLoader{db: db, epoch: epoch})
 }
 
 // Recoverable returns the indicator if the specified state is enabled to be
 // recovered. It's only supported by path-based database and will return an
 // error for others.
-func (db *Database) Recoverable(root common.Hash) (bool, error) {
+func (db *Database) Recoverable(epoch uint32, root, ckptRoot common.Hash) (bool, error) {
 	pdb, ok := db.backend.(*pathdb.Database)
 	if !ok {
 		return false, errors.New("not supported")
 	}
-	return pdb.Recoverable(root), nil
+	return pdb.Recoverable(epoch, root, ckptRoot), nil
 }
 
 // Disable deactivates the database and invalidates all available state layers
@@ -278,12 +301,12 @@ func (db *Database) Disable() error {
 
 // Enable activates database and resets the state tree with the provided persistent
 // state root once the state sync is finished.
-func (db *Database) Enable(root common.Hash) error {
+func (db *Database) Enable(root, ckptRoot common.Hash, epoch uint32) error {
 	pdb, ok := db.backend.(*pathdb.Database)
 	if !ok {
 		return errors.New("not supported")
 	}
-	return pdb.Enable(root)
+	return pdb.Enable(root, ckptRoot, epoch)
 }
 
 // Journal commits an entire diff hierarchy to disk into a single journal entry.

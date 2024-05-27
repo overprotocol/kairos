@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	snapAccount = "account" // Identifier of account snapshot generation
-	snapStorage = "storage" // Identifier of storage snapshot generation
+	snapAccount     = "account"     // Identifier of account snapshot generation
+	snapCkptAccount = "ckptaccount" // Identifier of checkpoint account snapshot generation
+	snapStorage     = "storage"     // Identifier of storage snapshot generation
 )
 
 // generatorStats is a collection of statistics gathered by the snapshot generator
@@ -87,23 +88,27 @@ func (gs *generatorStats) Log(msg string, root common.Hash, marker []byte) {
 
 // generatorContext carries a few global values to be shared by all generation functions.
 type generatorContext struct {
-	stats   *generatorStats     // Generation statistic collection
-	db      ethdb.KeyValueStore // Key-value store containing the snapshot data
-	account *holdableIterator   // Iterator of account snapshot data
-	storage *holdableIterator   // Iterator of storage snapshot data
-	batch   ethdb.Batch         // Database batch for writing batch data atomically
-	logged  time.Time           // The timestamp when last generation progress was displayed
+	stats       *generatorStats     // Generation statistic collection
+	db          ethdb.KeyValueStore // Key-value store containing the snapshot data
+	epoch       uint32
+	account     *holdableIterator // Iterator of account snapshot data
+	ckptAccount *holdableIterator // Iterator of checkpoint account snapshot data
+	storage     *holdableIterator // Iterator of storage snapshot data
+	batch       ethdb.Batch       // Database batch for writing batch data atomically
+	logged      time.Time         // The timestamp when last generation progress was displayed
 }
 
 // newGeneratorContext initializes the context for generation.
-func newGeneratorContext(stats *generatorStats, db ethdb.KeyValueStore, accMarker []byte, storageMarker []byte) *generatorContext {
+func newGeneratorContext(stats *generatorStats, db ethdb.KeyValueStore, epoch uint32, accMarker []byte, storageMarker []byte) *generatorContext {
 	ctx := &generatorContext{
 		stats:  stats,
 		db:     db,
+		epoch:  epoch,
 		batch:  db.NewBatch(),
 		logged: time.Now(),
 	}
 	ctx.openIterator(snapAccount, accMarker)
+	ctx.openIterator(snapCkptAccount, accMarker)
 	ctx.openIterator(snapStorage, storageMarker)
 	return ctx
 }
@@ -113,8 +118,15 @@ func newGeneratorContext(stats *generatorStats, db ethdb.KeyValueStore, accMarke
 // to time to avoid blocking leveldb compaction for a long time.
 func (ctx *generatorContext) openIterator(kind string, start []byte) {
 	if kind == snapAccount {
-		iter := ctx.db.NewIterator(rawdb.SnapshotAccountPrefix, start)
-		ctx.account = newHoldableIterator(rawdb.NewKeyLengthIterator(iter, 1+common.HashLength))
+		iter := ctx.db.NewIterator(append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(ctx.epoch)...), start)
+		ctx.account = newHoldableIterator(rawdb.NewKeyLengthIterator(iter, 1+4+common.HashLength))
+		return
+	} else if kind == snapCkptAccount {
+		if ctx.epoch == 0 {
+			return
+		}
+		iter := ctx.db.NewIterator(append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(ctx.epoch-1)...), start)
+		ctx.ckptAccount = newHoldableIterator(rawdb.NewKeyLengthIterator(iter, 1+4+common.HashLength))
 		return
 	}
 	iter := ctx.db.NewIterator(rawdb.SnapshotStoragePrefix, start)
@@ -126,8 +138,15 @@ func (ctx *generatorContext) openIterator(kind string, start []byte) {
 func (ctx *generatorContext) reopenIterator(kind string) {
 	// Shift iterator one more step, so that we can reopen
 	// the iterator at the right position.
+	var prefixLength = 5
 	var iter = ctx.account
-	if kind == snapStorage {
+	if kind == snapCkptAccount {
+		if ctx.ckptAccount == nil {
+			return
+		}
+		iter = ctx.ckptAccount
+	} else if kind == snapStorage {
+		prefixLength = 1
 		iter = ctx.storage
 	}
 	hasNext := iter.Next()
@@ -137,25 +156,33 @@ func (ctx *generatorContext) reopenIterator(kind string) {
 		if kind == snapAccount {
 			ctx.account = newHoldableIterator(memorydb.New().NewIterator(nil, nil))
 			return
+		} else if kind == snapCkptAccount {
+			ctx.ckptAccount = newHoldableIterator(memorydb.New().NewIterator(nil, nil))
+			return
 		}
 		ctx.storage = newHoldableIterator(memorydb.New().NewIterator(nil, nil))
 		return
 	}
 	next := iter.Key()
 	iter.Release()
-	ctx.openIterator(kind, next[1:])
+	ctx.openIterator(kind, next[prefixLength:])
 }
 
 // close releases all the held resources.
 func (ctx *generatorContext) close() {
 	ctx.account.Release()
 	ctx.storage.Release()
+	if ctx.ckptAccount != nil {
+		ctx.ckptAccount.Release()
+	}
 }
 
 // iterator returns the corresponding iterator specified by the kind.
 func (ctx *generatorContext) iterator(kind string) *holdableIterator {
 	if kind == snapAccount {
 		return ctx.account
+	} else if kind == snapCkptAccount {
+		return ctx.ckptAccount
 	}
 	return ctx.storage
 }

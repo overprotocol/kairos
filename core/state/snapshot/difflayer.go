@@ -103,6 +103,7 @@ type diffLayer struct {
 	parent snapshot   // Parent snapshot modified by this one, never nil
 	memory uint64     // Approximate guess as to how much memory we use
 
+	epoch uint32
 	root  common.Hash // Root hash to which this snapshot diff belongs to
 	stale atomic.Bool // Signals that the layer became stale (state progressed)
 
@@ -169,10 +170,11 @@ func (h storageBloomHasher) Sum64() uint64 {
 
 // newDiffLayer creates a new diff on top of an existing snapshot, whether that's a low
 // level persistent database or a hierarchical diff already.
-func newDiffLayer(parent snapshot, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer {
+func newDiffLayer(parent snapshot, epoch uint32, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer {
 	// Create the new layer with some pre-allocated data segments
 	dl := &diffLayer{
 		parent:      parent,
+		epoch:       epoch,
 		root:        root,
 		destructSet: destructs,
 		accountData: accounts,
@@ -252,6 +254,11 @@ func (dl *diffLayer) rebloom(origin *diskLayer) {
 	snapshotBloomErrorGauge.Update(math.Pow(1.0-math.Exp((-k)*(n+0.5)/(m-1)), k))
 }
 
+// Epoch returns the epoch number for which this snapshot was made.
+func (dl *diffLayer) Epoch() uint32 {
+	return dl.epoch
+}
+
 // Root returns the root hash for which this snapshot was made.
 func (dl *diffLayer) Root() common.Hash {
 	return dl.root
@@ -314,6 +321,10 @@ func (dl *diffLayer) AccountRLP(hash common.Hash) ([]byte, error) {
 	// If the bloom filter misses, don't even bother with traversing the memory
 	// diff layers, reach straight into the bottom persistent disk layer
 	if origin != nil {
+		// If epoch of origin is different, the account doesn't exist in this epoch
+		if origin.Epoch() != dl.Epoch() {
+			return nil, nil
+		}
 		snapshotBloomAccountMissMeter.Mark(1)
 		return origin.AccountRLP(hash)
 	}
@@ -347,6 +358,10 @@ func (dl *diffLayer) accountRLP(hash common.Hash, depth int) ([]byte, error) {
 		snapshotDirtyAccountHitDepthHist.Update(int64(depth))
 		snapshotDirtyAccountInexMeter.Mark(1)
 		snapshotBloomAccountTrueHitMeter.Mark(1)
+		return nil, nil
+	}
+	// If parent epoch is different, the account doesn't exist in this epoch
+	if dl.parent.Epoch() != dl.Epoch() {
 		return nil, nil
 	}
 	// Account unknown to this diff, resolve from parent
@@ -437,23 +452,29 @@ func (dl *diffLayer) storage(accountHash, storageHash common.Hash, depth int) ([
 
 // Update creates a new layer on top of the existing snapshot diff tree with
 // the specified data items.
-func (dl *diffLayer) Update(blockRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer {
-	return newDiffLayer(dl, blockRoot, destructs, accounts, storage)
+func (dl *diffLayer) Update(epoch uint32, blockRoot common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) *diffLayer {
+	return newDiffLayer(dl, epoch, blockRoot, destructs, accounts, storage)
 }
 
 // flatten pushes all data from this point downwards, flattening everything into
 // a single diff at the bottom. Since usually the lowermost diff is the largest,
 // the flattening builds up from there in reverse.
-func (dl *diffLayer) flatten() snapshot {
+func (dl *diffLayer) flatten() []snapshot {
 	// If the parent is not diff, we're the first in line, return unmodified
 	parent, ok := dl.parent.(*diffLayer)
 	if !ok {
-		return dl
+		return []snapshot{dl}
 	}
 	// Parent is a diff, flatten it first (note, apart from weird corned cases,
 	// flatten will realistically only ever merge 1 layer, so there's no need to
 	// be smarter about grouping flattens together).
-	parent = parent.flatten().(*diffLayer)
+	flattened := parent.flatten()
+
+	if dl.epoch != parent.epoch {
+		return append(flattened, dl)
+	}
+
+	parent = flattened[len(flattened)-1].(*diffLayer)
 
 	parent.lock.Lock()
 	defer parent.lock.Unlock()
@@ -485,11 +506,12 @@ func (dl *diffLayer) flatten() snapshot {
 			comboData[storageHash] = data
 		}
 	}
-	// Return the combo parent
-	return &diffLayer{
+
+	flattened[len(flattened)-1] = &diffLayer{
 		parent:      parent.parent,
 		origin:      parent.origin,
 		root:        dl.root,
+		epoch:       dl.epoch,
 		destructSet: parent.destructSet,
 		accountData: parent.accountData,
 		storageData: parent.storageData,
@@ -497,6 +519,8 @@ func (dl *diffLayer) flatten() snapshot {
 		diffed:      dl.diffed,
 		memory:      parent.memory + dl.memory,
 	}
+	// Return the combo parent
+	return flattened
 }
 
 // AccountList returns a sorted list of all accounts in this diffLayer, including

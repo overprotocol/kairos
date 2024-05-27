@@ -54,6 +54,7 @@ var (
 	istanbulInstructionSet         = newIstanbulInstructionSet()
 	berlinInstructionSet           = newBerlinInstructionSet()
 	londonInstructionSet           = newLondonInstructionSet()
+	alpacaInstructionSet           = newAlpacaInstructionSet()
 	mergeInstructionSet            = newMergeInstructionSet()
 	shanghaiInstructionSet         = newShanghaiInstructionSet()
 	cancunInstructionSet           = newCancunInstructionSet()
@@ -86,7 +87,6 @@ func newCancunInstructionSet() JumpTable {
 	enable7516(&instructionSet) // EIP-7516 (BLOBBASEFEE opcode)
 	enable1153(&instructionSet) // EIP-1153 "Transient Storage"
 	enable5656(&instructionSet) // EIP-5656 (MCOPY opcode)
-	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction
 	return validate(instructionSet)
 }
 
@@ -94,18 +94,25 @@ func newShanghaiInstructionSet() JumpTable {
 	instructionSet := newMergeInstructionSet()
 	enable3855(&instructionSet) // PUSH0 instruction
 	enable3860(&instructionSet) // Limit and meter initcode
-
 	return validate(instructionSet)
 }
 
 func newMergeInstructionSet() JumpTable {
-	instructionSet := newLondonInstructionSet()
+	instructionSet := newAlpacaInstructionSet()
 	instructionSet[PREVRANDAO] = &operation{
 		execute:     opRandom,
 		constantGas: GasQuickStep,
 		minStack:    minStack(0, 1),
 		maxStack:    maxStack(0, 1),
 	}
+	return validate(instructionSet)
+}
+
+// newAlpacaInstructionSet returns the frontier, homestead, byzantium,
+// constantinople, istanbul, petersburg, berlin, london and alpaca instructions.
+func newAlpacaInstructionSet() JumpTable {
+	instructionSet := newLondonInstructionSet()
+	enable6780(&instructionSet) // EIP-6780 SELFDESTRUCT only in same transaction
 	return validate(instructionSet)
 }
 

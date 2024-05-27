@@ -1481,3 +1481,55 @@ func TestAdjustTimeAfterFork(t *testing.T) {
 		t.Errorf("failed to build block on fork")
 	}
 }
+
+func TestBaseFeeToTreasury(t *testing.T) {
+	testAddr := crypto.PubkeyToAddress(testKey.PublicKey)
+
+	sim := simTestBackend(testAddr)
+	defer sim.Close()
+	bgCtx := context.Background()
+
+	// check balance at Treasury account is zero
+	initbal, err := sim.BalanceAt(bgCtx, params.FoundationTreasuryAddress, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	if initbal.Cmp(big.NewInt(0)) != 0 {
+		t.Errorf("expected a initial balance of treasury account is 0 but %v exists at balance", initbal)
+	}
+
+	// create a signed transaction to send
+	head, _ := sim.HeaderByNumber(context.Background(), nil)
+	gasPrice := new(big.Int).Add(head.BaseFee, big.NewInt(1))
+
+	tx := types.NewTransaction(uint64(0), testAddr, big.NewInt(1000), params.TxGas, gasPrice, nil)
+	signedTx, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
+	if err != nil {
+		t.Errorf("could not sign tx: %v", err)
+	}
+
+	// send tx to simulated backend
+	err = sim.SendTransaction(bgCtx, signedTx)
+	if err != nil {
+		t.Errorf("could not add tx to pending block: %v", err)
+	}
+
+	sim.Commit()
+
+	lastBlock, err := sim.BlockByNumber(bgCtx, nil)
+	if err != nil {
+		t.Errorf("could not get header for tip of chain: %v", err)
+	}
+
+	// check balance at Treasury account
+	bal, err := sim.BalanceAt(bgCtx, params.FoundationTreasuryAddress, nil)
+	if err != nil {
+		t.Error(err)
+	}
+
+	expectedFee := new(big.Int).Mul(lastBlock.BaseFee(), big.NewInt(int64(params.TxGas)))
+	if bal.Cmp(expectedFee) != 0 {
+		t.Errorf("expected a transfered basefee amount %v to treasury account but only %v exists at balance", expectedFee, bal)
+	}
+}

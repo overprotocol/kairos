@@ -32,17 +32,25 @@ type StateDB interface {
 	AddBalance(common.Address, *big.Int)
 	GetBalance(common.Address) *big.Int
 
-	GetNonce(common.Address) uint64
-	SetNonce(common.Address, uint64)
+	GetNonce(common.Address) uint32
+	SetNonce(common.Address, uint32)
+
+	GetEpochCoverage(common.Address) uint32
+	SetEpochCoverage(common.Address, uint32)
 
 	GetCodeHash(common.Address) common.Hash
 	GetCode(common.Address) []byte
 	SetCode(common.Address, []byte)
 	GetCodeSize(common.Address) int
 
+	GetUiHash(common.Address) common.Hash
+	SetUiHash(common.Address, common.Hash)
+
 	AddRefund(uint64)
 	SubRefund(uint64)
 	GetRefund() uint64
+
+	GetCurrentEpoch() uint32
 
 	GetCommittedState(common.Address, common.Hash) common.Hash
 	GetState(common.Address, common.Hash) common.Hash

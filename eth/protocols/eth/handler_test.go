@@ -96,6 +96,7 @@ func newTestBackendWithGenerator(blocks int, shanghai bool, generator func(int, 
 			TerminalTotalDifficulty:       big.NewInt(0),
 			TerminalTotalDifficultyPassed: true,
 			Ethash:                        new(params.EthashConfig),
+			SweepEpoch:                    3600,
 		}
 		engine = beacon.NewFaker()
 	}

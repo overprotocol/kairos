@@ -51,13 +51,13 @@ func TestUpdateLeaks(t *testing.T) {
 		db  = rawdb.NewMemoryDatabase()
 		tdb = trie.NewDatabase(db, nil)
 	)
-	state, _ := New(types.EmptyRootHash, NewDatabaseWithNodeDB(db, tdb), nil)
+	state, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, NewDatabaseWithNodeDB(db, tdb), nil)
 
 	// Update it with some accounts
 	for i := byte(0); i < 255; i++ {
 		addr := common.BytesToAddress([]byte{i})
 		state.AddBalance(addr, big.NewInt(int64(11*i)))
-		state.SetNonce(addr, uint64(42*i))
+		state.SetNonce(addr, uint32(42*i))
 		if i%2 == 0 {
 			state.SetState(addr, common.BytesToHash([]byte{i, i, i}), common.BytesToHash([]byte{i, i, i, i}))
 		}
@@ -87,12 +87,12 @@ func TestIntermediateLeaks(t *testing.T) {
 	finalDb := rawdb.NewMemoryDatabase()
 	transNdb := trie.NewDatabase(transDb, nil)
 	finalNdb := trie.NewDatabase(finalDb, nil)
-	transState, _ := New(types.EmptyRootHash, NewDatabaseWithNodeDB(transDb, transNdb), nil)
-	finalState, _ := New(types.EmptyRootHash, NewDatabaseWithNodeDB(finalDb, finalNdb), nil)
+	transState, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, NewDatabaseWithNodeDB(transDb, transNdb), nil)
+	finalState, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, NewDatabaseWithNodeDB(finalDb, finalNdb), nil)
 
 	modify := func(state *StateDB, addr common.Address, i, tweak byte) {
 		state.SetBalance(addr, big.NewInt(int64(11*i)+int64(tweak)))
-		state.SetNonce(addr, uint64(42*i+tweak))
+		state.SetNonce(addr, uint32(42*i+tweak))
 		if i%2 == 0 {
 			state.SetState(addr, common.Hash{i, i, i, 0}, common.Hash{})
 			state.SetState(addr, common.Hash{i, i, i, tweak}, common.Hash{i, i, i, i, tweak})
@@ -163,7 +163,7 @@ func TestIntermediateLeaks(t *testing.T) {
 // https://github.com/ethereum/go-ethereum/pull/15549.
 func TestCopy(t *testing.T) {
 	// Create a random state test to copy and modify "independently"
-	orig, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	orig, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, NewDatabase(rawdb.NewMemoryDatabase()), nil)
 
 	for i := byte(0); i < 255; i++ {
 		obj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
@@ -224,6 +224,54 @@ func TestCopy(t *testing.T) {
 	}
 }
 
+func TestCopyObject(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	triedb := NewDatabase(db)
+	snapconfig := snapshot.Config{
+		CacheSize:  128,
+		Recovery:   false,
+		NoBuild:    false,
+		AsyncBuild: true,
+	}
+	snaps, _ := snapshot.New(snapconfig, db, triedb.TrieDB(), 0, types.EmptyRootHash, types.EmptyRootHash)
+	state, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, triedb, snaps)
+	state.StartPrefetcher("chain")
+	for i := byte(0); i < 200; i++ {
+		state.AddBalance(common.BytesToAddress([]byte{i}), big.NewInt(int64(i)))
+		state.SetState(common.BytesToAddress([]byte{i}), common.BytesToHash([]byte{i}), common.BytesToHash([]byte{i}))
+	}
+	verifyCopyStateDB(t, state)
+
+	state.Finalise(true)
+	verifyCopyStateDB(t, state)
+
+	state.IntermediateRoot(true)
+	verifyCopyStateDB(t, state)
+
+	root, err := state.Commit(0, true)
+	if err != nil {
+		t.Fatalf("failed to commit state: %v", err)
+	}
+	verifyCopyStateDB(t, state)
+
+	nextState, _ := New(root, types.EmptyRootHash, 1, 0, state.db, state.snaps)
+	nextState.StartPrefetcher("chain")
+	for i := byte(100); i < 255; i++ {
+		nextState.AddBalance(common.BytesToAddress([]byte{i}), big.NewInt(int64(i)))
+		nextState.SetState(common.BytesToAddress([]byte{i}), common.BytesToHash([]byte{i}), common.BytesToHash([]byte{i}))
+	}
+	verifyCopyStateDB(t, nextState)
+
+	nextState.Finalise(true)
+	verifyCopyStateDB(t, nextState)
+
+	nextState.IntermediateRoot(true)
+	verifyCopyStateDB(t, nextState)
+
+	nextState.Commit(1, true)
+	verifyCopyStateDB(t, nextState)
+}
+
 func TestSnapshotRandom(t *testing.T) {
 	config := &quick.Config{MaxCount: 1000}
 	err := quick.Check((*snapshotTest).run, config)
@@ -280,7 +328,14 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 		{
 			name: "SetNonce",
 			fn: func(a testAction, s *StateDB) {
-				s.SetNonce(addr, uint64(a.args[0]))
+				s.SetNonce(addr, uint32(a.args[0]))
+			},
+			args: make([]int64, 1),
+		},
+		{
+			name: "SetEpochCoverage",
+			fn: func(a testAction, s *StateDB) {
+				s.SetEpochCoverage(addr, uint32(a.args[0]))
 			},
 			args: make([]int64, 1),
 		},
@@ -291,6 +346,15 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 				binary.BigEndian.PutUint16(key[:], uint16(a.args[0]))
 				binary.BigEndian.PutUint16(val[:], uint16(a.args[1]))
 				s.SetState(addr, key, val)
+			},
+			args: make([]int64, 2),
+		},
+		{
+			name: "SetUiHash",
+			fn: func(a testAction, s *StateDB) {
+				var uiHash common.Hash
+				binary.BigEndian.PutUint16(uiHash[:], uint16(a.args[0]))
+				s.SetUiHash(addr, uiHash)
 			},
 			args: make([]int64, 2),
 		},
@@ -423,7 +487,7 @@ func (test *snapshotTest) String() string {
 func (test *snapshotTest) run() bool {
 	// Run all actions and create snapshots.
 	var (
-		state, _     = New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		state, _     = New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, NewDatabase(rawdb.NewMemoryDatabase()), nil)
 		snapshotRevs = make([]int, len(test.snapshots))
 		sindex       = 0
 		checkstates  = make([]*StateDB, len(test.snapshots))
@@ -501,6 +565,7 @@ func (test *snapshotTest) checkEqual(state, checkstate *StateDB) error {
 		checkeq("HasSelfdestructed", state.HasSelfDestructed(addr), checkstate.HasSelfDestructed(addr))
 		checkeq("GetBalance", state.GetBalance(addr), checkstate.GetBalance(addr))
 		checkeq("GetNonce", state.GetNonce(addr), checkstate.GetNonce(addr))
+		checkeq("GetEpochCoverage", state.GetEpochCoverage(addr), checkstate.GetEpochCoverage(addr))
 		checkeq("GetCode", state.GetCode(addr), checkstate.GetCode(addr))
 		checkeq("GetCodeHash", state.GetCodeHash(addr), checkstate.GetCodeHash(addr))
 		checkeq("GetCodeSize", state.GetCodeSize(addr), checkstate.GetCodeSize(addr))
@@ -530,10 +595,10 @@ func (test *snapshotTest) checkEqual(state, checkstate *StateDB) error {
 }
 
 func TestTouchDelete(t *testing.T) {
-	s := newStateEnv()
+	s := newStateEnv(0, nil)
 	s.state.GetOrNewStateObject(common.Address{})
 	root, _ := s.state.Commit(0, false)
-	s.state, _ = New(root, s.state.db, s.state.snaps)
+	s.state, _ = New(root, types.EmptyRootHash, 0, 0, s.state.db, s.state.snaps)
 
 	snapshot := s.state.Snapshot()
 	s.state.AddBalance(common.Address{}, new(big.Int))
@@ -550,7 +615,8 @@ func TestTouchDelete(t *testing.T) {
 // TestCopyOfCopy tests that modified objects are carried over to the copy, and the copy of the copy.
 // See https://github.com/ethereum/go-ethereum/pull/15225#issuecomment-380191512
 func TestCopyOfCopy(t *testing.T) {
-	state, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 	addr := common.HexToAddress("aaaa")
 	state.SetBalance(addr, big.NewInt(42))
 
@@ -567,8 +633,8 @@ func TestCopyOfCopy(t *testing.T) {
 //
 // See https://github.com/ethereum/go-ethereum/issues/20106.
 func TestCopyCommitCopy(t *testing.T) {
-	tdb := NewDatabase(rawdb.NewMemoryDatabase())
-	state, _ := New(types.EmptyRootHash, tdb, nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 
 	// Create an account and check if the retrieved balance is correct
 	addr := common.HexToAddress("0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe")
@@ -578,12 +644,16 @@ func TestCopyCommitCopy(t *testing.T) {
 	state.SetBalance(addr, big.NewInt(42)) // Change the account trie
 	state.SetCode(addr, []byte("hello"))   // Change an external metadata
 	state.SetState(addr, skey, sval)       // Change the storage trie
+	state.SetEpochCoverage(addr, 11)       // Change the epoch coverage
 
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("initial balance mismatch: have %v, want %v", balance, 42)
 	}
 	if code := state.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("initial code mismatch: have %x, want %x", code, []byte("hello"))
+	}
+	if epochCoverage := state.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("initial epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
 	}
 	if val := state.GetState(addr, skey); val != sval {
 		t.Fatalf("initial non-committed storage slot mismatch: have %x, want %x", val, sval)
@@ -599,6 +669,9 @@ func TestCopyCommitCopy(t *testing.T) {
 	if code := copyOne.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("first copy pre-commit code mismatch: have %x, want %x", code, []byte("hello"))
 	}
+	if epochCoverage := copyOne.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("first copy pre-commit epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
+	}
 	if val := copyOne.GetState(addr, skey); val != sval {
 		t.Fatalf("first copy pre-commit non-committed storage slot mismatch: have %x, want %x", val, sval)
 	}
@@ -613,6 +686,9 @@ func TestCopyCommitCopy(t *testing.T) {
 	if code := copyTwo.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("second copy code mismatch: have %x, want %x", code, []byte("hello"))
 	}
+	if epochCoverage := copyTwo.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("second copy epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
+	}
 	if val := copyTwo.GetState(addr, skey); val != sval {
 		t.Fatalf("second copy non-committed storage slot mismatch: have %x, want %x", val, sval)
 	}
@@ -621,12 +697,15 @@ func TestCopyCommitCopy(t *testing.T) {
 	}
 	// Commit state, ensure states can be loaded from disk
 	root, _ := state.Commit(0, false)
-	state, _ = New(root, tdb, nil)
+	state, _ = New(root, types.EmptyRootHash, 0, 0, state.db, nil)
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("state post-commit balance mismatch: have %v, want %v", balance, 42)
 	}
 	if code := state.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("state post-commit code mismatch: have %x, want %x", code, []byte("hello"))
+	}
+	if epochCoverage := state.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("state post-commit epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
 	}
 	if val := state.GetState(addr, skey); val != sval {
 		t.Fatalf("state post-commit non-committed storage slot mismatch: have %x, want %x", val, sval)
@@ -641,7 +720,8 @@ func TestCopyCommitCopy(t *testing.T) {
 //
 // See https://github.com/ethereum/go-ethereum/issues/20106.
 func TestCopyCopyCommitCopy(t *testing.T) {
-	state, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 
 	// Create an account and check if the retrieved balance is correct
 	addr := common.HexToAddress("0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe")
@@ -651,12 +731,16 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 	state.SetBalance(addr, big.NewInt(42)) // Change the account trie
 	state.SetCode(addr, []byte("hello"))   // Change an external metadata
 	state.SetState(addr, skey, sval)       // Change the storage trie
+	state.SetEpochCoverage(addr, 11)       // Change the epoch coverage
 
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("initial balance mismatch: have %v, want %v", balance, 42)
 	}
 	if code := state.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("initial code mismatch: have %x, want %x", code, []byte("hello"))
+	}
+	if epochCoverage := state.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("initial epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
 	}
 	if val := state.GetState(addr, skey); val != sval {
 		t.Fatalf("initial non-committed storage slot mismatch: have %x, want %x", val, sval)
@@ -672,6 +756,9 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 	if code := copyOne.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("first copy code mismatch: have %x, want %x", code, []byte("hello"))
 	}
+	if epochCoverage := copyOne.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("first copy epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
+	}
 	if val := copyOne.GetState(addr, skey); val != sval {
 		t.Fatalf("first copy non-committed storage slot mismatch: have %x, want %x", val, sval)
 	}
@@ -685,6 +772,9 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 	}
 	if code := copyTwo.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("second copy pre-commit code mismatch: have %x, want %x", code, []byte("hello"))
+	}
+	if epochCoverage := copyTwo.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("second copy pre-commit epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
 	}
 	if val := copyTwo.GetState(addr, skey); val != sval {
 		t.Fatalf("second copy pre-commit non-committed storage slot mismatch: have %x, want %x", val, sval)
@@ -700,6 +790,9 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 	if code := copyThree.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("third copy code mismatch: have %x, want %x", code, []byte("hello"))
 	}
+	if epochCoverage := copyThree.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("third copy epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
+	}
 	if val := copyThree.GetState(addr, skey); val != sval {
 		t.Fatalf("third copy non-committed storage slot mismatch: have %x, want %x", val, sval)
 	}
@@ -710,7 +803,8 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 
 // TestCommitCopy tests the copy from a committed state is not functional.
 func TestCommitCopy(t *testing.T) {
-	state, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 
 	// Create an account and check if the retrieved balance is correct
 	addr := common.HexToAddress("0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe")
@@ -720,12 +814,16 @@ func TestCommitCopy(t *testing.T) {
 	state.SetBalance(addr, big.NewInt(42)) // Change the account trie
 	state.SetCode(addr, []byte("hello"))   // Change an external metadata
 	state.SetState(addr, skey, sval)       // Change the storage trie
+	state.SetEpochCoverage(addr, 11)       // Change the epoch coverage
 
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("initial balance mismatch: have %v, want %v", balance, 42)
 	}
 	if code := state.GetCode(addr); !bytes.Equal(code, []byte("hello")) {
 		t.Fatalf("initial code mismatch: have %x, want %x", code, []byte("hello"))
+	}
+	if epochCoverage := state.GetEpochCoverage(addr); epochCoverage != 11 {
+		t.Fatalf("initial epochCoverage mismatch: have %d, want %d", epochCoverage, 11)
 	}
 	if val := state.GetState(addr, skey); val != sval {
 		t.Fatalf("initial non-committed storage slot mismatch: have %x, want %x", val, sval)
@@ -741,6 +839,9 @@ func TestCommitCopy(t *testing.T) {
 	}
 	if code := copied.GetCode(addr); code != nil {
 		t.Fatalf("unexpected code: have %x", code)
+	}
+	if epochCoverage := copied.GetEpochCoverage(addr); epochCoverage != 0 {
+		t.Fatalf("unexpected epochCoverage: have %d", epochCoverage)
 	}
 	if val := copied.GetState(addr, skey); val != (common.Hash{}) {
 		t.Fatalf("unexpected storage slot: have %x", val)
@@ -763,13 +864,14 @@ func TestCommitCopy(t *testing.T) {
 // first, but the journal wiped the entire state object on create-revert.
 func TestDeleteCreateRevert(t *testing.T) {
 	// Create an initial state with a single contract
-	state, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 
 	addr := common.BytesToAddress([]byte("so"))
 	state.SetBalance(addr, big.NewInt(1))
 
 	root, _ := state.Commit(0, false)
-	state, _ = New(root, state.db, state.snaps)
+	state, _ = New(root, types.EmptyRootHash, 0, 0, state.db, state.snaps)
 
 	// Simulate self-destructing in one transaction, then create-reverting in another
 	state.SelfDestruct(addr)
@@ -781,7 +883,7 @@ func TestDeleteCreateRevert(t *testing.T) {
 
 	// Commit the entire state and make sure we don't crash and have the correct state
 	root, _ = state.Commit(0, true)
-	state, _ = New(root, state.db, state.snaps)
+	state, _ = New(root, types.EmptyRootHash, 0, 0, state.db, state.snaps)
 
 	if state.getStateObject(addr) != nil {
 		t.Fatalf("self-destructed contract came alive")
@@ -815,7 +917,7 @@ func testMissingTrieNodes(t *testing.T, scheme string) {
 	db := NewDatabaseWithNodeDB(memDb, triedb)
 
 	var root common.Hash
-	state, _ := New(types.EmptyRootHash, db, nil)
+	state, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, nil)
 	addr := common.BytesToAddress([]byte("so"))
 	{
 		state.SetBalance(addr, big.NewInt(1))
@@ -829,7 +931,7 @@ func testMissingTrieNodes(t *testing.T, scheme string) {
 		triedb.Commit(root, false)
 	}
 	// Create a new state on the old root
-	state, _ = New(root, db, nil)
+	state, _ = New(root, types.EmptyRootHash, 0, 0, db, nil)
 	// Now we clear out the memdb
 	it := memDb.NewIterator(nil, nil)
 	for it.Next() {
@@ -864,7 +966,7 @@ func TestStateDBAccessList(t *testing.T) {
 
 	memDb := rawdb.NewMemoryDatabase()
 	db := NewDatabase(memDb)
-	state, _ := New(types.EmptyRootHash, db, nil)
+	state, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, nil)
 	state.accessList = newAccessList()
 
 	verifyAddrs := func(astrings ...string) {
@@ -1035,7 +1137,7 @@ func TestFlushOrderDataLoss(t *testing.T) {
 		memdb    = rawdb.NewMemoryDatabase()
 		triedb   = trie.NewDatabase(memdb, nil)
 		statedb  = NewDatabaseWithNodeDB(memdb, triedb)
-		state, _ = New(types.EmptyRootHash, statedb, nil)
+		state, _ = New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, statedb, nil)
 	)
 	for a := byte(0); a < 10; a++ {
 		state.CreateAccount(common.Address{a})
@@ -1055,7 +1157,7 @@ func TestFlushOrderDataLoss(t *testing.T) {
 		t.Fatalf("failed to commit state trie: %v", err)
 	}
 	// Reopen the state trie from flushed disk and verify it
-	state, err = New(root, NewDatabase(memdb), nil)
+	state, err = New(root, types.EmptyRootHash, 0, 0, NewDatabase(memdb), nil)
 	if err != nil {
 		t.Fatalf("failed to reopen state trie: %v", err)
 	}
@@ -1071,7 +1173,7 @@ func TestFlushOrderDataLoss(t *testing.T) {
 func TestStateDBTransientStorage(t *testing.T) {
 	memDb := rawdb.NewMemoryDatabase()
 	db := NewDatabase(memDb)
-	state, _ := New(types.EmptyRootHash, db, nil)
+	state, _ := New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, nil)
 
 	key := common.Hash{0x01}
 	value := common.Hash{0x02}
@@ -1107,8 +1209,8 @@ func TestResetObject(t *testing.T) {
 		disk     = rawdb.NewMemoryDatabase()
 		tdb      = trie.NewDatabase(disk, nil)
 		db       = NewDatabaseWithNodeDB(disk, tdb)
-		snaps, _ = snapshot.New(snapshot.Config{CacheSize: 10}, disk, tdb, types.EmptyRootHash)
-		state, _ = New(types.EmptyRootHash, db, snaps)
+		snaps, _ = snapshot.New(snapshot.Config{CacheSize: 10}, disk, tdb, 0, types.EmptyRootHash, types.EmptyRootHash)
+		state, _ = New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, snaps)
 		addr     = common.HexToAddress("0x1")
 		slotA    = common.HexToHash("0x1")
 		slotB    = common.HexToHash("0x2")
@@ -1141,8 +1243,8 @@ func TestDeleteStorage(t *testing.T) {
 		disk     = rawdb.NewMemoryDatabase()
 		tdb      = trie.NewDatabase(disk, nil)
 		db       = NewDatabaseWithNodeDB(disk, tdb)
-		snaps, _ = snapshot.New(snapshot.Config{CacheSize: 10}, disk, tdb, types.EmptyRootHash)
-		state, _ = New(types.EmptyRootHash, db, snaps)
+		snaps, _ = snapshot.New(snapshot.Config{CacheSize: 10}, disk, tdb, 0, types.EmptyRootHash, types.EmptyRootHash)
+		state, _ = New(types.EmptyRootHash, types.EmptyRootHash, 0, 0, db, snaps)
 		addr     = common.HexToAddress("0x1")
 	)
 	// Initialize account and populate storage
@@ -1155,8 +1257,8 @@ func TestDeleteStorage(t *testing.T) {
 	}
 	root, _ := state.Commit(0, true)
 	// Init phase done, create two states, one with snap and one without
-	fastState, _ := New(root, db, snaps)
-	slowState, _ := New(root, db, nil)
+	fastState, _ := New(root, types.EmptyRootHash, 0, 0, db, snaps)
+	slowState, _ := New(root, types.EmptyRootHash, 0, 0, db, nil)
 
 	obj := fastState.GetOrNewStateObject(addr)
 	storageRoot := obj.data.Root
@@ -1188,4 +1290,91 @@ func TestDeleteStorage(t *testing.T) {
 	if slowRes != fastRes {
 		t.Fatalf("difference found:\nfast: %v\nslow: %v\n", fastRes, slowRes)
 	}
+}
+
+func verifyCopyStateDB(t *testing.T, a *StateDB) {
+	b := a.Copy()
+
+	if a.db != b.db {
+		t.Errorf("database mismatch: %v != %v", a.db, b.db)
+	}
+
+	// Don't compare prefetcher because it's not copied as same object
+	// And also prefetcher is not necessary for stateDB to work
+
+	if !trieEqual(a.trie, b.trie) {
+		t.Errorf("trie mismatch: %v != %v", a.trie, b.trie)
+	}
+
+	if !trieEqual(a.ckptTrie, b.ckptTrie) {
+		t.Errorf("ckptTrie mismatch: %v != %v", a.ckptTrie, b.ckptTrie)
+	}
+
+	if a.currentIndex != b.currentIndex {
+		t.Errorf("epochCoverageInit mismatch: %v != %v", a.currentIndex, b.currentIndex)
+	}
+
+	if a.currentEpoch != b.currentEpoch {
+		t.Errorf("epochCoverageInit mismatch: %v != %v", a.currentEpoch, b.currentEpoch)
+	}
+
+	if a.originalRoot != b.originalRoot {
+		t.Errorf("originalRoot mismatch: %v != %v", a.originalRoot, b.originalRoot)
+	}
+
+	if a.lastCkptRoot != b.lastCkptRoot {
+		t.Errorf("lastCkptRoot mismatch: %v != %v", a.lastCkptRoot, b.lastCkptRoot)
+	}
+
+	if a.snaps != b.snaps {
+		t.Errorf("account snaps mismatch: %v != %v", a.snaps, b.snaps)
+	}
+
+	if a.snap != b.snap {
+		t.Errorf("account snap mismatch: %v != %v", a.snap, b.snap)
+	}
+
+	if a.ckptSnap != b.ckptSnap {
+		t.Errorf("ckpt account snaps mismatch: %v != %v", a.ckptSnap, b.ckptSnap)
+	}
+
+	if a.refund != b.refund {
+		t.Errorf("refund mismatch: %v != %v", a.refund, b.refund)
+	}
+
+	if !reflect.DeepEqual(a.logs, b.logs) {
+		t.Errorf("logs mismatch: %v != %v", a.logs, b.logs)
+	}
+
+	if a.logSize != b.logSize {
+		t.Errorf("logSize mismatch: %v != %v", a.logSize, b.logSize)
+	}
+
+	if !reflect.DeepEqual(a.preimages, b.preimages) {
+		t.Errorf("preimages mismatch: %v != %v", a.preimages, b.preimages)
+	}
+}
+
+func trieEqual(a, b Trie) bool {
+	if a == nil && b == nil {
+		return true
+	} else if (a == nil) != (b == nil) {
+		return false
+	}
+	iterA, _ := a.NodeIterator(nil)
+	iterB, _ := b.NodeIterator(nil)
+	if iterA == nil && iterB == nil {
+		return true
+	} else if (iterA == nil) != (iterB == nil) {
+		return false
+	}
+	for iterA.Next(false) && iterB.Next(false) {
+		if iterA.Hash() != iterB.Hash() {
+			return false
+		}
+	}
+	if iterA.Next(false) || iterB.Next(false) {
+		return false
+	}
+	return true
 }

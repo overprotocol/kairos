@@ -46,8 +46,8 @@ type VerkleTrie struct {
 }
 
 // NewVerkleTrie constructs a verkle tree based on the specified root hash.
-func NewVerkleTrie(root common.Hash, db *Database, cache *utils.PointCache) (*VerkleTrie, error) {
-	reader, err := newTrieReader(root, common.Hash{}, db)
+func NewVerkleTrie(root common.Hash, epoch uint32, db *Database, cache *utils.PointCache) (*VerkleTrie, error) {
+	reader, err := newTrieReader(epoch, root, common.Hash{}, db)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	}
 	// Decode nonce in little-endian
 	if len(values[utils.NonceLeafKey]) > 0 {
-		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
+		acc.Nonce = binary.LittleEndian.Uint32(values[utils.NonceLeafKey])
 	}
 	// Decode balance in little-endian
 	var balance [32]byte
@@ -141,7 +141,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	values[utils.CodeKeccakLeafKey] = acc.CodeHash[:]
 
 	// Encode nonce in little-endian
-	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
+	binary.LittleEndian.PutUint32(nonce[:], acc.Nonce)
 	values[utils.NonceLeafKey] = nonce[:]
 
 	// Encode balance in little-endian

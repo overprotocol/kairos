@@ -114,3 +114,90 @@ func TestMustParseUint64Panic(t *testing.T) {
 	}()
 	MustParseUint64("ggg")
 }
+
+func TestOverflowUint32(t *testing.T) {
+	for i, test := range []struct {
+		x        uint32
+		y        uint32
+		overflow bool
+		op       operation
+	}{
+		// add operations
+		{MaxUint32, 1, true, add},
+		{MaxUint32 - 1, 1, false, add},
+
+		// sub operations
+		{0, 1, true, sub},
+		{0, 0, false, sub},
+
+		// mul operations
+		{0, 0, false, mul},
+		{10, 10, false, mul},
+		{MaxUint32, 2, true, mul},
+		{MaxUint32, 1, false, mul},
+	} {
+		var overflows bool
+		switch test.op {
+		case sub:
+			_, overflows = SafeSub32(test.x, test.y)
+		case add:
+			_, overflows = SafeAdd32(test.x, test.y)
+		case mul:
+			_, overflows = SafeMul32(test.x, test.y)
+		}
+
+		if test.overflow != overflows {
+			t.Errorf("%d failed. Expected test to be %v, got %v", i, test.overflow, overflows)
+		}
+	}
+}
+
+func TestHexOrDecimal32(t *testing.T) {
+	tests := []struct {
+		input string
+		num   uint32
+		ok    bool
+	}{
+		{"", 0, true},
+		{"0", 0, true},
+		{"0x0", 0, true},
+		{"12345678", 12345678, true},
+		{"0x12345678", 0x12345678, true},
+		{"0X12345678", 0x12345678, true},
+		// Tests for leading zero behaviour:
+		{"0123456789", 123456789, true}, // note: not octal
+		{"0x00", 0, true},
+		{"0x012345678", 0x12345678, true},
+		// Invalid syntax:
+		{"abcdef", 0, false},
+		{"0xgg", 0, false},
+		// Doesn't fit into 32 bits:
+		{"0x012345678abc", 0, false},
+	}
+	for _, test := range tests {
+		var num HexOrDecimal32
+		err := num.UnmarshalText([]byte(test.input))
+		if (err == nil) != test.ok {
+			t.Errorf("ParseUint32(%q) -> (err == nil) = %t, want %t", test.input, err == nil, test.ok)
+			continue
+		}
+		if err == nil && uint32(num) != test.num {
+			t.Errorf("ParseUint32(%q) -> %d, want %d", test.input, num, test.num)
+		}
+	}
+}
+
+func TestMustParseUint32(t *testing.T) {
+	if v := MustParseUint32("12345"); v != 12345 {
+		t.Errorf(`MustParseUint32("12345") = %d, want 12345`, v)
+	}
+}
+
+func TestMustParseUint32Panic(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("MustParseBig should've panicked")
+		}
+	}()
+	MustParseUint32("ggg")
+}

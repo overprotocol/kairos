@@ -40,6 +40,7 @@ type header struct {
 	OmmerHash             *common.Hash      `json:"sha3Uncles"`
 	Coinbase              *common.Address   `json:"miner"`
 	Root                  common.Hash       `json:"stateRoot"        gencodec:"required"`
+	CheckpointRoot        common.Hash       `json:"checkpointRoot"`
 	TxHash                *common.Hash      `json:"transactionsRoot"`
 	ReceiptHash           *common.Hash      `json:"receiptsRoot"`
 	Bloom                 types.Bloom       `json:"logsBloom"`
@@ -121,6 +122,7 @@ func (i *bbInput) ToBlock() *types.Block {
 		UncleHash:        types.EmptyUncleHash,
 		Coinbase:         common.Address{},
 		Root:             i.Header.Root,
+		CheckpointRoot:   i.Header.CheckpointRoot,
 		TxHash:           types.EmptyTxsHash,
 		ReceiptHash:      types.EmptyReceiptsHash,
 		Bloom:            i.Header.Bloom,

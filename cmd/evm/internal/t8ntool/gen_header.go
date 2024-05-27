@@ -22,6 +22,7 @@ func (h header) MarshalJSON() ([]byte, error) {
 		OmmerHash             *common.Hash          `json:"sha3Uncles"`
 		Coinbase              *common.Address       `json:"miner"`
 		Root                  common.Hash           `json:"stateRoot"        gencodec:"required"`
+		CheckpointRoot        common.Hash           `json:"checkpointRoot"`
 		TxHash                *common.Hash          `json:"transactionsRoot"`
 		ReceiptHash           *common.Hash          `json:"receiptsRoot"`
 		Bloom                 types.Bloom           `json:"logsBloom"`
@@ -44,6 +45,7 @@ func (h header) MarshalJSON() ([]byte, error) {
 	enc.OmmerHash = h.OmmerHash
 	enc.Coinbase = h.Coinbase
 	enc.Root = h.Root
+	enc.CheckpointRoot = h.CheckpointRoot
 	enc.TxHash = h.TxHash
 	enc.ReceiptHash = h.ReceiptHash
 	enc.Bloom = h.Bloom
@@ -70,6 +72,7 @@ func (h *header) UnmarshalJSON(input []byte) error {
 		OmmerHash             *common.Hash          `json:"sha3Uncles"`
 		Coinbase              *common.Address       `json:"miner"`
 		Root                  *common.Hash          `json:"stateRoot"        gencodec:"required"`
+		CheckpointRoot        *common.Hash          `json:"checkpointRoot"`
 		TxHash                *common.Hash          `json:"transactionsRoot"`
 		ReceiptHash           *common.Hash          `json:"receiptsRoot"`
 		Bloom                 *types.Bloom          `json:"logsBloom"`
@@ -104,6 +107,9 @@ func (h *header) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'stateRoot' for header")
 	}
 	h.Root = *dec.Root
+	if dec.CheckpointRoot != nil {
+		h.CheckpointRoot = *dec.CheckpointRoot
+	}
 	if dec.TxHash != nil {
 		h.TxHash = dec.TxHash
 	}

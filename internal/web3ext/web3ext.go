@@ -23,6 +23,7 @@ var Modules = map[string]string{
 	"ethash":   EthashJs,
 	"debug":    DebugJs,
 	"eth":      EthJs,
+	"ethanos":  EthanosJs,
 	"miner":    MinerJs,
 	"net":      NetJs,
 	"personal": PersonalJs,
@@ -189,6 +190,14 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'stopWS',
 			call: 'admin_stopWS'
+		}),
+		new web3._extend.Method({
+			name: 'stopNode',
+			call: 'admin_stopNode'
+		}),
+		new web3._extend.Method({
+			name: 'clientVersion',
+			call: 'admin_clientVersion'
 		}),
 	],
 	properties: [
@@ -516,6 +525,11 @@ web3._extend({
 			params: 0
 		}),
 		new web3._extend.Method({
+			name: 'sweepEpoch',
+			call: 'eth_sweepEpoch',
+			params: 0
+		}),
+		new web3._extend.Method({
 			name: 'sign',
 			call: 'eth_sign',
 			params: 2,
@@ -622,6 +636,12 @@ web3._extend({
 			call: 'eth_getBlockReceipts',
 			params: 1,
 		}),
+		new web3._extend.Method({
+			name: 'getEpochByNumber',
+			call: 'eth_getEpochByNumber',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
+		}),
 	],
 	properties: [
 		new web3._extend.Property({
@@ -642,6 +662,21 @@ web3._extend({
 			outputFormatter: web3._extend.utils.toBigNumber
 		}),
 	]
+});
+`
+
+const EthanosJs = `
+web3._extend({
+	property: 'ethanos',
+	methods: [
+		new web3._extend.Method({
+			name: 'getRestorationProof',
+			call: 'ethanos_getRestorationProof',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null]
+		}),
+	],
+	properties: []
 });
 `
 

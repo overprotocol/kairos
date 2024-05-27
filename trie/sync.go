@@ -230,6 +230,7 @@ func (batch *syncMemBatch) delNode(owner common.Hash, path []byte) {
 type Sync struct {
 	scheme   string                       // Node scheme descriptor used in database.
 	database ethdb.KeyValueReader         // Persistent database to check for existing entries
+	epoch    uint32                       // Target epoch to schedule syncing
 	membatch *syncMemBatch                // Memory buffer to avoid frequent database writes
 	nodeReqs map[string]*nodeRequest      // Pending requests pertaining to a trie node path
 	codeReqs map[common.Hash]*codeRequest // Pending requests pertaining to a code hash
@@ -238,10 +239,11 @@ type Sync struct {
 }
 
 // NewSync creates a new trie data download scheduler.
-func NewSync(root common.Hash, database ethdb.KeyValueReader, callback LeafCallback, scheme string) *Sync {
+func NewSync(root common.Hash, database ethdb.KeyValueReader, epoch uint32, callback LeafCallback, scheme string) *Sync {
 	ts := &Sync{
 		scheme:   scheme,
 		database: database,
+		epoch:    epoch,
 		membatch: newSyncMemBatch(scheme),
 		nodeReqs: make(map[string]*nodeRequest),
 		codeReqs: make(map[common.Hash]*codeRequest),
@@ -430,7 +432,7 @@ func (s *Sync) Commit(dbw ethdb.Batch) error {
 		if op.isDelete() {
 			// node deletion is only supported in path mode.
 			if op.owner == (common.Hash{}) {
-				rawdb.DeleteAccountTrieNode(dbw, op.path)
+				rawdb.DeleteAccountTrieNode(dbw, s.epoch, op.path)
 			} else {
 				rawdb.DeleteStorageTrieNode(dbw, op.owner, op.path)
 			}
@@ -441,7 +443,7 @@ func (s *Sync) Commit(dbw ethdb.Batch) error {
 			} else {
 				storage += 1
 			}
-			rawdb.WriteTrieNode(dbw, op.owner, op.path, op.hash, op.blob, s.scheme)
+			rawdb.WriteTrieNode(dbw, s.epoch, op.owner, op.path, op.hash, op.blob, s.scheme)
 		}
 	}
 	accountNodeSyncedGauge.Inc(int64(account))
@@ -546,7 +548,7 @@ func (s *Sync) children(req *nodeRequest, object node) ([]*nodeRequest, error) {
 				// the performance impact negligible.
 				var exists bool
 				if owner == (common.Hash{}) {
-					exists = rawdb.ExistsAccountTrieNode(s.database, append(inner, key[:i]...))
+					exists = rawdb.ExistsAccountTrieNode(s.database, s.epoch, append(inner, key[:i]...))
 				} else {
 					exists = rawdb.ExistsStorageTrieNode(s.database, owner, append(inner, key[:i]...))
 				}
@@ -687,13 +689,16 @@ func (s *Sync) commitCodeRequest(req *codeRequest) error {
 func (s *Sync) hasNode(owner common.Hash, path []byte, hash common.Hash) (exists bool, inconsistent bool) {
 	// If node is running with hash scheme, check the presence with node hash.
 	if s.scheme == rawdb.HashScheme {
-		return rawdb.HasLegacyTrieNode(s.database, hash), false
+		if owner == (common.Hash{}) {
+			return rawdb.HasLegacyAccountTrieNode(s.database, s.epoch, hash), false
+		}
+		return rawdb.HasLegacyStorageTrieNode(s.database, hash), false
 	}
 	// If node is running with path scheme, check the presence with node path.
 	var blob []byte
 	var dbHash common.Hash
 	if owner == (common.Hash{}) {
-		blob, dbHash = rawdb.ReadAccountTrieNode(s.database, path)
+		blob, dbHash = rawdb.ReadAccountTrieNode(s.database, s.epoch, path)
 	} else {
 		blob, dbHash = rawdb.ReadStorageTrieNode(s.database, owner, path)
 	}

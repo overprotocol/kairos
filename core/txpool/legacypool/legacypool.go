@@ -102,6 +102,15 @@ var (
 	reheapTimer = metrics.NewRegisteredTimer("txpool/reheap", nil)
 )
 
+var (
+	acceptTypes = map[uint8]bool{
+		types.LegacyTxType:      true,
+		types.AccessListTxType:  true,
+		types.DynamicFeeTxType:  true,
+		types.RestorationTxType: true,
+	}
+)
+
 // BlockChain defines the minimal set of methods needed to back a tx pool with
 // a chain. Exists to allow mocking the live chain out of tests.
 type BlockChain interface {
@@ -115,7 +124,7 @@ type BlockChain interface {
 	GetBlock(hash common.Hash, number uint64) *types.Block
 
 	// StateAt returns a state database for a given root hash (generally the head).
-	StateAt(root common.Hash) (*state.StateDB, error)
+	StateAt(header *types.Header) (*state.StateDB, error)
 }
 
 // Config are the configuration parameters of the transaction pool.
@@ -276,7 +285,7 @@ func New(config Config, chain BlockChain) *LegacyPool {
 // pool, specifically, whether it is a Legacy, AccessList or Dynamic transaction.
 func (pool *LegacyPool) Filter(tx *types.Transaction) bool {
 	switch tx.Type() {
-	case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType:
+	case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType, types.RestorationTxType:
 		return true
 	default:
 		return false
@@ -297,9 +306,10 @@ func (pool *LegacyPool) Init(gasTip *big.Int, head *types.Header, reserve txpool
 	// Initialize the state with head block, or fallback to empty one in
 	// case the head state is not available(might occur when node is not
 	// fully synced).
-	statedb, err := pool.chain.StateAt(head.Root)
+	statedb, err := pool.chain.StateAt(head)
 	if err != nil {
-		statedb, err = pool.chain.StateAt(types.EmptyRootHash)
+		emptyHeader := &types.Header{Number: big.NewInt(0), Root: types.EmptyRootHash, CheckpointRoot: types.EmptyRootHash}
+		statedb, err = pool.chain.StateAt(emptyHeader)
 	}
 	if err != nil {
 		return err
@@ -448,13 +458,24 @@ func (pool *LegacyPool) SetGasTip(tip *big.Int) {
 	log.Info("Legacy pool tip threshold updated", "tip", tip)
 }
 
+// EpochCoverage returns the next epoch coverage of an account, with all transactions executable
+// by the pool already applied on top.
+func (pool *LegacyPool) EpochCoverage(addr common.Address) uint32 {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	return pool.currentState.GetEpochCoverage(addr)
+}
+
 // Nonce returns the next nonce of an account, with all transactions executable
 // by the pool already applied on top.
 func (pool *LegacyPool) Nonce(addr common.Address) uint64 {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
-	return pool.pendingNonces.get(addr)
+	nonce := pool.pendingNonces.getNonce(addr)
+	epochCoverage := pool.pendingNonces.getEpochCoverage(addr)
+	return types.MsgToTxNonce(epochCoverage, nonce)
 }
 
 // Stats retrieves the current pool stats, namely the number of pending and the
@@ -588,11 +609,8 @@ func (pool *LegacyPool) local() map[common.Address]types.Transactions {
 // and does not require the pool mutex to be held.
 func (pool *LegacyPool) validateTxBasics(tx *types.Transaction, local bool) error {
 	opts := &txpool.ValidationOptions{
-		Config: pool.chainconfig,
-		Accept: 0 |
-			1<<types.LegacyTxType |
-			1<<types.AccessListTxType |
-			1<<types.DynamicFeeTxType,
+		Config:  pool.chainconfig,
+		Accept:  acceptTypes,
 		MaxSize: txMaxSize,
 		MinTip:  pool.gasTip.Load(),
 	}
@@ -628,7 +646,7 @@ func (pool *LegacyPool) validateTx(tx *types.Transaction, local bool) error {
 			}
 			return new(big.Int)
 		},
-		ExistingCost: func(addr common.Address, nonce uint64) *big.Int {
+		ExistingCost: func(addr common.Address, nonce uint32) *big.Int {
 			if list := pool.pending[addr]; list != nil {
 				if tx := list.txs.Get(nonce); tx != nil {
 					return tx.Cost()
@@ -728,7 +746,7 @@ func (pool *LegacyPool) add(tx *types.Transaction, local bool) (replaced bool, e
 			var replacesPending bool
 			for _, dropTx := range drop {
 				dropSender, _ := types.Sender(pool.signer, dropTx)
-				if list := pool.pending[dropSender]; list != nil && list.Contains(dropTx.Nonce()) {
+				if list := pool.pending[dropSender]; list != nil && list.Contains(dropTx.MsgNonce()) {
 					replacesPending = true
 					break
 				}
@@ -756,7 +774,7 @@ func (pool *LegacyPool) add(tx *types.Transaction, local bool) (replaced bool, e
 	}
 
 	// Try to replace an existing transaction in the pending pool
-	if list := pool.pending[from]; list != nil && list.Contains(tx.Nonce()) {
+	if list := pool.pending[from]; list != nil && list.Contains(tx.MsgNonce()) {
 		// Nonce already pending, check if required price bump is met
 		inserted, old := list.Add(tx, pool.config.PriceBump)
 		if !inserted {
@@ -805,8 +823,8 @@ func (pool *LegacyPool) isGapped(from common.Address, tx *types.Transaction) boo
 	// or matches the next pending nonce which can be promoted as an executable
 	// transaction afterwards. Note, the tx staleness is already checked in
 	// 'validateTx' function previously.
-	next := pool.pendingNonces.get(from)
-	if tx.Nonce() <= next {
+	next := pool.pendingNonces.getNonce(from)
+	if tx.MsgNonce() <= next {
 		return false
 	}
 	// The transaction has a nonce gap with pending list, it's only considered
@@ -815,7 +833,7 @@ func (pool *LegacyPool) isGapped(from common.Address, tx *types.Transaction) boo
 	if !ok {
 		return true
 	}
-	for nonce := next; nonce < tx.Nonce(); nonce++ {
+	for nonce := next; nonce < tx.MsgNonce(); nonce++ {
 		if !queue.Contains(nonce) {
 			return true // txs in queue can't fill up the nonce gap
 		}
@@ -904,7 +922,10 @@ func (pool *LegacyPool) promoteTx(addr common.Address, hash common.Hash, tx *typ
 		pendingGauge.Inc(1)
 	}
 	// Set the potentially new pending nonce and notify any subsystems of the new tx
-	pool.pendingNonces.set(addr, tx.Nonce()+1)
+	pool.pendingNonces.set(addr, nonceEpochCoverage{
+		nonce:         tx.MsgNonce() + 1,
+		epochCoverage: tx.MsgEpochCoverage(),
+	})
 
 	// Successful promotion, bump the heartbeat
 	pool.beats[addr] = time.Now()
@@ -1037,9 +1058,9 @@ func (pool *LegacyPool) Status(hash common.Hash) txpool.TxStatus {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
-	if txList := pool.pending[from]; txList != nil && txList.txs.items[tx.Nonce()] != nil {
+	if txList := pool.pending[from]; txList != nil && txList.txs.items[tx.MsgNonce()] != nil {
 		return txpool.TxStatusPending
-	} else if txList := pool.queue[from]; txList != nil && txList.txs.items[tx.Nonce()] != nil {
+	} else if txList := pool.queue[from]; txList != nil && txList.txs.items[tx.MsgNonce()] != nil {
 		return txpool.TxStatusQueued
 	}
 	return txpool.TxStatusUnknown
@@ -1117,7 +1138,10 @@ func (pool *LegacyPool) removeTx(hash common.Hash, outofbound bool, unreserve bo
 				pool.enqueueTx(tx.Hash(), tx, false, false)
 			}
 			// Update the account nonce if needed
-			pool.pendingNonces.setIfLower(addr, tx.Nonce())
+			pool.pendingNonces.setIfLower(addr, nonceEpochCoverage{
+				nonce:         tx.MsgNonce(),
+				epochCoverage: tx.MsgEpochCoverage(),
+			})
 			// Reduce the pending counter
 			pendingGauge.Dec(int64(1 + len(invalids)))
 			return 1 + len(invalids)
@@ -1260,7 +1284,10 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 
 		// Nonces were reset, discard any events that became stale
 		for addr := range events {
-			events[addr].Forward(pool.pendingNonces.get(addr))
+			events[addr].Filter(func(tx *types.Transaction) bool {
+				return tx.MsgEpochCoverage() != pool.pendingNonces.getEpochCoverage(addr)
+			})
+			events[addr].Forward(pool.pendingNonces.getNonce(addr))
 			if events[addr].Len() == 0 {
 				delete(events, addr)
 			}
@@ -1288,12 +1315,15 @@ func (pool *LegacyPool) runReorg(done chan struct{}, reset *txpoolResetRequest, 
 			}
 		}
 		// Update all accounts to the latest known pending nonce
-		nonces := make(map[common.Address]uint64, len(pool.pending))
+		txNonces := make(map[common.Address]nonceEpochCoverage, len(pool.pending))
 		for addr, list := range pool.pending {
 			highestPending := list.LastElement()
-			nonces[addr] = highestPending.Nonce() + 1
+			txNonces[addr] = nonceEpochCoverage{
+				nonce:         types.TxNonceToMsgNonce(highestPending.Nonce()) + 1,
+				epochCoverage: types.TxNonceToMsgEpochCoverage(highestPending.Nonce()),
+			}
 		}
-		pool.pendingNonces.setAll(nonces)
+		pool.pendingNonces.setAll(txNonces)
 	}
 	// Ensure pool.queue and pool.pending sizes stay within the configured limits.
 	pool.truncatePending()
@@ -1404,7 +1434,7 @@ func (pool *LegacyPool) reset(oldHead, newHead *types.Header) {
 	if newHead == nil {
 		newHead = pool.chain.CurrentBlock() // Special case during testing
 	}
-	statedb, err := pool.chain.StateAt(newHead.Root)
+	statedb, err := pool.chain.StateAt(newHead)
 	if err != nil {
 		log.Error("Failed to reset txpool state", "err", err)
 		return
@@ -1441,7 +1471,7 @@ func (pool *LegacyPool) promoteExecutables(accounts []common.Address) []*types.T
 		}
 		log.Trace("Removed old queued transactions", "count", len(forwards))
 		// Drop all transactions that are too costly (low balance or out of gas)
-		drops, _ := list.Filter(pool.currentState.GetBalance(addr), gasLimit)
+		drops, _ := list.Filter(pool.currentState.GetEpochCoverage(addr), pool.currentState.GetBalance(addr), gasLimit)
 		for _, tx := range drops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
@@ -1450,7 +1480,7 @@ func (pool *LegacyPool) promoteExecutables(accounts []common.Address) []*types.T
 		queuedNofundsMeter.Mark(int64(len(drops)))
 
 		// Gather all executable transactions and promote them
-		readies := list.Ready(pool.pendingNonces.get(addr))
+		readies := list.Ready(pool.pendingNonces.getNonce(addr))
 		for _, tx := range readies {
 			hash := tx.Hash()
 			if pool.promoteTx(addr, hash, tx) {
@@ -1534,7 +1564,10 @@ func (pool *LegacyPool) truncatePending() {
 						pool.all.Remove(hash)
 
 						// Update the account nonce to the dropped transaction
-						pool.pendingNonces.setIfLower(offenders[i], tx.Nonce())
+						pool.pendingNonces.setIfLower(offenders[i], nonceEpochCoverage{
+							nonce:         tx.MsgNonce(),
+							epochCoverage: tx.MsgEpochCoverage(),
+						})
 						log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 					}
 					pool.priced.Removed(len(caps))
@@ -1561,7 +1594,10 @@ func (pool *LegacyPool) truncatePending() {
 					pool.all.Remove(hash)
 
 					// Update the account nonce to the dropped transaction
-					pool.pendingNonces.setIfLower(addr, tx.Nonce())
+					pool.pendingNonces.setIfLower(addr, nonceEpochCoverage{
+						nonce:         tx.MsgNonce(),
+						epochCoverage: tx.MsgEpochCoverage(),
+					})
 					log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 				}
 				pool.priced.Removed(len(caps))
@@ -1642,7 +1678,7 @@ func (pool *LegacyPool) demoteUnexecutables() {
 			log.Trace("Removed old pending transaction", "hash", hash)
 		}
 		// Drop all transactions that are too costly (low balance or out of gas), and queue any invalids back for later
-		drops, invalids := list.Filter(pool.currentState.GetBalance(addr), gasLimit)
+		drops, invalids := list.Filter(pool.currentState.GetEpochCoverage(addr), pool.currentState.GetBalance(addr), gasLimit)
 		for _, tx := range drops {
 			hash := tx.Hash()
 			log.Trace("Removed unpayable pending transaction", "hash", hash)

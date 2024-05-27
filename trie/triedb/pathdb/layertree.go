@@ -33,8 +33,9 @@ import (
 // thread-safe to use. However, callers need to ensure the thread-safety
 // of the referenced layer by themselves.
 type layerTree struct {
-	lock   sync.RWMutex
-	layers map[common.Hash]layer
+	lock      sync.RWMutex
+	layers    map[common.Hash]layer
+	diskLayer *diskLayer
 }
 
 // newLayerTree constructs the layerTree with the given head layer.
@@ -52,6 +53,9 @@ func (tree *layerTree) reset(head layer) {
 
 	var layers = make(map[common.Hash]layer)
 	for head != nil {
+		if dl, ok := head.(*diskLayer); ok {
+			tree.diskLayer = dl
+		}
 		layers[head.rootHash()] = head
 		head = head.parentLayer()
 	}
@@ -63,7 +67,12 @@ func (tree *layerTree) get(root common.Hash) layer {
 	tree.lock.RLock()
 	defer tree.lock.RUnlock()
 
-	return tree.layers[types.TrieRootHash(root)]
+	if layer, ok := tree.layers[types.TrieRootHash(root)]; ok {
+		return layer
+	} else if ckptLayer := tree.ckptBottom(); ckptLayer != nil && ckptLayer.rootHash() == types.TrieRootHash(root) {
+		return ckptLayer
+	}
+	return nil
 }
 
 // forEach iterates the stored layers inside and applies the
@@ -86,7 +95,7 @@ func (tree *layerTree) len() int {
 }
 
 // add inserts a new layer into the tree if it can be linked to an existing old parent.
-func (tree *layerTree) add(root common.Hash, parentRoot common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
+func (tree *layerTree) add(root common.Hash, parentRoot common.Hash, epoch uint32, block uint64, nodes *trienode.MergedNodeSet, states *triestate.Set) error {
 	// Reject noop updates to avoid self-loops. This is a special case that can
 	// happen for clique networks and proof-of-stake networks where empty blocks
 	// don't modify the state (0 block subsidy).
@@ -101,7 +110,18 @@ func (tree *layerTree) add(root common.Hash, parentRoot common.Hash, block uint6
 	if parent == nil {
 		return fmt.Errorf("triedb parent [%#x] layer missing", parentRoot)
 	}
-	l := parent.update(root, parent.stateID()+1, block, nodes.Flatten(), states)
+	// In case the parent is an empty layer and epoch is not 0, we need to
+	// replace the empty layer with the new layer.
+	if parent.rootHash() == types.EmptyRootHash && parent.epochNumber() > 0 {
+		tree.lock.Lock()
+		delete(tree.layers, types.EmptyRootHash)
+		tree.lock.Unlock()
+		parent = parent.parentLayer()
+		if parent == nil {
+			return errors.New("triedb empty layer not linked to previous epoch")
+		}
+	}
+	l := parent.update(root, parent.stateID()+1, epoch, block, nodes.Flatten(), states)
 
 	tree.lock.Lock()
 	tree.layers[l.rootHash()] = l
@@ -133,6 +153,7 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 		}
 		// Replace the entire layer tree with the flat base
 		tree.layers = map[common.Hash]layer{base.rootHash(): base}
+		tree.diskLayer = base.(*diskLayer)
 		return nil
 	}
 	// Dive until we run out of layers or reach the persistent database
@@ -162,6 +183,7 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 			return err
 		}
 		tree.layers[base.rootHash()] = base
+		tree.diskLayer = base.(*diskLayer)
 		diff.parent = base
 
 		diff.lock.Unlock()
@@ -193,22 +215,43 @@ func (tree *layerTree) cap(root common.Hash, layers int) error {
 	return nil
 }
 
+// addNewEpoch inserts a new empty layer into the tree. It is called at the start of each epoch.
+// Note that the empty layer is going to be replaced when the next layer is inserted.
+func (tree *layerTree) addNewEpoch(epoch uint32, root common.Hash) error {
+	parent := tree.get(root)
+	if parent == nil {
+		return fmt.Errorf("triedb layer [%#x] missing", root)
+	}
+	if parent.epochNumber()+1 != epoch {
+		return fmt.Errorf("triedb layer [%#x] epoch mismatch", root)
+	}
+	var (
+		nodes  map[common.Hash]map[string]*trienode.Node
+		states *triestate.Set
+	)
+	l := parent.update(types.EmptyRootHash, parent.stateID()+1, epoch, 0, nodes, states)
+
+	tree.lock.Lock()
+	tree.layers[l.rootHash()] = l
+	tree.lock.Unlock()
+	return nil
+}
+
 // bottom returns the bottom-most disk layer in this tree.
 func (tree *layerTree) bottom() *diskLayer {
 	tree.lock.RLock()
 	defer tree.lock.RUnlock()
 
-	if len(tree.layers) == 0 {
+	return tree.diskLayer
+}
+
+// ckptBottom returns the checkpoint layer of this tree.
+func (tree *layerTree) ckptBottom() *ckptDiskLayer {
+	tree.lock.RLock()
+	defer tree.lock.RUnlock()
+
+	if tree.diskLayer == nil {
 		return nil // Shouldn't happen, empty tree
 	}
-	// pick a random one as the entry point
-	var current layer
-	for _, layer := range tree.layers {
-		current = layer
-		break
-	}
-	for current.parentLayer() != nil {
-		current = current.parentLayer()
-	}
-	return current.(*diskLayer)
+	return tree.diskLayer.ckptLayer
 }

@@ -34,15 +34,19 @@ type ChainContext interface {
 
 	// GetHeader returns the header corresponding to the hash/number argument pair.
 	GetHeader(common.Hash, uint64) *types.Header
+
+	// GetHeaderByNumber returns the header corresponding to the given block number.
+	GetHeaderByNumber(uint64) *types.Header
 }
 
 // NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	var (
-		beneficiary common.Address
-		baseFee     *big.Int
-		blobBaseFee *big.Int
-		random      *common.Hash
+		beneficiary       common.Address
+		baseFee           *big.Int
+		blobBaseFee       *big.Int
+		random            *common.Hash
+		GetHeaderByNumber func(uint64) *types.Header
 	)
 
 	// If we don't have an explicit author (i.e. not mining), extract from the header
@@ -60,18 +64,25 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 	if header.Difficulty.Cmp(common.Big0) == 0 {
 		random = &header.MixDigest
 	}
+	if chain == nil {
+		GetHeaderByNumber = func(uint64) *types.Header { return nil }
+	} else {
+		GetHeaderByNumber = chain.GetHeaderByNumber
+	}
+
 	return vm.BlockContext{
-		CanTransfer: CanTransfer,
-		Transfer:    Transfer,
-		GetHash:     GetHashFn(header, chain),
-		Coinbase:    beneficiary,
-		BlockNumber: new(big.Int).Set(header.Number),
-		Time:        header.Time,
-		Difficulty:  new(big.Int).Set(header.Difficulty),
-		BaseFee:     baseFee,
-		BlobBaseFee: blobBaseFee,
-		GasLimit:    header.GasLimit,
-		Random:      random,
+		CanTransfer:       CanTransfer,
+		Transfer:          Transfer,
+		GetHash:           GetHashFn(header, chain),
+		GetHeaderByNumber: GetHeaderByNumber,
+		Coinbase:          beneficiary,
+		BlockNumber:       new(big.Int).Set(header.Number),
+		Time:              header.Time,
+		Difficulty:        new(big.Int).Set(header.Difficulty),
+		BaseFee:           baseFee,
+		BlobBaseFee:       blobBaseFee,
+		GasLimit:          header.GasLimit,
+		Random:            random,
 	}
 }
 

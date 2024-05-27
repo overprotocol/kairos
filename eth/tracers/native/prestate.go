@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers"
@@ -39,14 +40,16 @@ func init() {
 type state = map[common.Address]*account
 
 type account struct {
-	Balance *big.Int                    `json:"balance,omitempty"`
-	Code    []byte                      `json:"code,omitempty"`
-	Nonce   uint64                      `json:"nonce,omitempty"`
-	Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
+	Balance       *big.Int                    `json:"balance,omitempty"`
+	Code          []byte                      `json:"code,omitempty"`
+	UiHash        common.Hash                 `json:"uiHash,omitempty"`
+	EpochCoverage uint32                      `json:"epochCoverage"`
+	Nonce         uint32                      `json:"nonce,omitempty"`
+	Storage       map[common.Hash]common.Hash `json:"storage,omitempty"`
 }
 
 func (a *account) exists() bool {
-	return a.Nonce > 0 || len(a.Code) > 0 || len(a.Storage) > 0 || (a.Balance != nil && a.Balance.Sign() != 0)
+	return a.Nonce > 0 || a.EpochCoverage > 0 || len(a.Code) > 0 || a.UiHash != types.EmptyCodeHash || len(a.Storage) > 0 || (a.Balance != nil && a.Balance.Sign() != 0)
 }
 
 type accountMarshaling struct {
@@ -159,8 +162,9 @@ func (t *prestateTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64,
 		addr := common.Address(stackData[stackLen-2].Bytes20())
 		t.lookupAccount(addr)
 	case op == vm.CREATE:
+		epochCoverage := t.env.StateDB.GetEpochCoverage(caller)
 		nonce := t.env.StateDB.GetNonce(caller)
-		addr := crypto.CreateAddress(caller, nonce)
+		addr := crypto.CreateAddress(caller, epochCoverage, nonce)
 		t.lookupAccount(addr)
 		t.created[addr] = true
 	case stackLen >= 4 && op == vm.CREATE2:
@@ -196,16 +200,26 @@ func (t *prestateTracer) CaptureTxEnd(restGas uint64) {
 		modified := false
 		postAccount := &account{Storage: make(map[common.Hash]common.Hash)}
 		newBalance := t.env.StateDB.GetBalance(addr)
+		newEpochCoverage := t.env.StateDB.GetEpochCoverage(addr)
 		newNonce := t.env.StateDB.GetNonce(addr)
 		newCode := t.env.StateDB.GetCode(addr)
+		newUiHash := t.env.StateDB.GetUiHash(addr)
 
 		if newBalance.Cmp(t.pre[addr].Balance) != 0 {
 			modified = true
 			postAccount.Balance = newBalance
 		}
+		if newEpochCoverage != t.pre[addr].EpochCoverage {
+			modified = true
+			postAccount.EpochCoverage = newEpochCoverage
+		}
 		if newNonce != t.pre[addr].Nonce {
 			modified = true
 			postAccount.Nonce = newNonce
+		}
+		if newUiHash != t.pre[addr].UiHash {
+			modified = true
+			postAccount.UiHash = newUiHash
 		}
 		if !bytes.Equal(newCode, t.pre[addr].Code) {
 			modified = true
@@ -279,10 +293,12 @@ func (t *prestateTracer) lookupAccount(addr common.Address) {
 	}
 
 	t.pre[addr] = &account{
-		Balance: t.env.StateDB.GetBalance(addr),
-		Nonce:   t.env.StateDB.GetNonce(addr),
-		Code:    t.env.StateDB.GetCode(addr),
-		Storage: make(map[common.Hash]common.Hash),
+		Balance:       t.env.StateDB.GetBalance(addr),
+		EpochCoverage: t.env.StateDB.GetEpochCoverage(addr),
+		Nonce:         t.env.StateDB.GetNonce(addr),
+		Code:          t.env.StateDB.GetCode(addr),
+		UiHash:        t.env.StateDB.GetUiHash(addr),
+		Storage:       make(map[common.Hash]common.Hash),
 	}
 }
 

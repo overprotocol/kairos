@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
@@ -42,6 +43,12 @@ func (bc *BlockChain) CurrentHeader() *types.Header {
 // block is retrieved from the blockchain's internal cache.
 func (bc *BlockChain) CurrentBlock() *types.Header {
 	return bc.currentBlock.Load()
+}
+
+// CurrentEpoch retrieves the current epoch of the canonical chain. It is calculated
+// based on the current head block retrieved from the blockchain's internal cache.
+func (bc *BlockChain) CurrentEpoch() uint32 {
+	return bc.Config().CalcEpoch(bc.CurrentBlock().Number.Uint64())
 }
 
 // CurrentSnapBlock retrieves the current snap-sync head block of the canonical
@@ -277,9 +284,9 @@ func (bc *BlockChain) GetTd(hash common.Hash, number uint64) *big.Int {
 }
 
 // HasState checks if state trie is fully present in the database or not.
-func (bc *BlockChain) HasState(hash common.Hash) bool {
-	_, err := bc.stateCache.OpenTrie(hash)
-	return err == nil
+func (bc *BlockChain) HasState(header *types.Header) bool {
+	epoch := bc.Config().CalcEpoch(header.Number.Uint64())
+	return bc.triedb.HasState(header.Root, header.CheckpointRoot, epoch)
 }
 
 // HasBlockAndState checks if a block and associated state trie is fully present
@@ -290,18 +297,19 @@ func (bc *BlockChain) HasBlockAndState(hash common.Hash, number uint64) bool {
 	if block == nil {
 		return false
 	}
-	return bc.HasState(block.Root())
+	return bc.HasState(block.Header())
 }
 
 // stateRecoverable checks if the specified state is recoverable.
 // Note, this function assumes the state is not present, because
 // state is not treated as recoverable if it's available, thus
 // false will be returned in this case.
-func (bc *BlockChain) stateRecoverable(root common.Hash) bool {
+func (bc *BlockChain) stateRecoverable(header *types.Header) bool {
 	if bc.triedb.Scheme() == rawdb.HashScheme {
 		return false
 	}
-	result, _ := bc.triedb.Recoverable(root)
+	epoch := bc.Config().CalcEpoch(header.Number.Uint64())
+	result, _ := bc.triedb.Recoverable(epoch, header.Root, header.CheckpointRoot)
 	return result
 }
 
@@ -321,12 +329,54 @@ func (bc *BlockChain) ContractCodeWithPrefix(hash common.Hash) ([]byte, error) {
 
 // State returns a new mutable state based on the current HEAD block.
 func (bc *BlockChain) State() (*state.StateDB, error) {
-	return bc.StateAt(bc.CurrentBlock().Root)
+	return bc.StateAt(bc.CurrentBlock())
 }
 
 // StateAt returns a new mutable state based on a particular point in time.
-func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
-	return state.New(root, bc.stateCache, bc.snaps)
+func (bc *BlockChain) StateAt(header *types.Header) (*state.StateDB, error) {
+	epoch, index := bc.Config().CalcEpochWithIndex(header.Number.Uint64())
+	return state.New(header.Root, header.CheckpointRoot, epoch, index, bc.stateCache, bc.snaps)
+}
+
+// StateAtWithoutCheckpoint returns a new mutable state based on a particular point in time without checkpoint state.
+func (bc *BlockChain) StateAtWithoutCheckpoint(header *types.Header) (*state.StateDB, error) {
+	epoch, index := bc.Config().CalcEpochWithIndex(header.Number.Uint64())
+	return state.New(header.Root, types.EmptyRootHash, epoch, index, bc.stateCache, bc.snaps)
+}
+
+// StateAtInitialize returns a new mutable state of currentHeader at initialize given parentHeader
+// Note, since Ethanos(sweep after checkpoint block), state at finalized parent block no longer equivalent to initial state at consequent child block
+// for example, at checkpoint block, it sweeps state. it results in decrepancy between finalize state of block and initial state of next block
+// here it returns state at initialize of currentHeader block
+func (bc *BlockChain) StateAtInitialize(parentHeader *types.Header) (*state.StateDB, error) {
+	currentBn := parentHeader.Number.Uint64() + 1
+	epoch, index := bc.Config().CalcEpochWithIndex(currentBn)
+	root := parentHeader.Root
+	lastCkptRoot := parentHeader.CheckpointRoot
+	if index == 0 {
+		root = types.EmptyRootHash
+		lastCkptRoot = parentHeader.Root
+		// Add empty snapshot for new epoch
+		if bc.snaps != nil {
+			if err := bc.snaps.AddNewEpoch(epoch, parentHeader.Root); err != nil {
+				log.Warn("Failed to add new epoch snapshot", "epoch", epoch, "root", parentHeader.Root, "err", err)
+			}
+		}
+		if triedb := bc.TrieDB(); triedb.Scheme() == rawdb.PathScheme {
+			if err := triedb.AddNewEpoch(epoch, parentHeader.Root); err != nil {
+				return nil, err
+			}
+		}
+	}
+	state, err := state.New(root, lastCkptRoot, epoch, index, bc.stateCache, bc.snaps)
+	if err != nil {
+		return nil, err
+	}
+	if index == 0 {
+		// Prevent the deposit contract from being removed.
+		state.RestoreStateAccountFromCkpt(params.DepositContractAddress)
+	}
+	return state, nil
 }
 
 // Config retrieves the chain's fork configuration.

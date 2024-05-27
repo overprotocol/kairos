@@ -148,7 +148,7 @@ WARNING: This is a low-level operation which may cause database corruption!`,
 		Action:    dbDumpTrie,
 		Name:      "dumptrie",
 		Usage:     "Show the storage key/values of a given storage trie",
-		ArgsUsage: "<hex-encoded state root> <hex-encoded account hash> <hex-encoded storage trie root> <hex-encoded start (optional)> <int max elements (optional)>",
+		ArgsUsage: "<hex-encoded state root> <hex-encoded account hash> <hex-encoded storage trie root> <epoch> <hex-encoded start (optional)> <int max elements (optional)>",
 		Flags: flags.Merge([]cli.Flag{
 			utils.SyncModeFlag,
 		}, utils.NetworkFlags, utils.DatabaseFlags),
@@ -486,7 +486,7 @@ func dbPut(ctx *cli.Context) error {
 
 // dbDumpTrie shows the key-value slots of a given storage trie
 func dbDumpTrie(ctx *cli.Context) error {
-	if ctx.NArg() < 3 {
+	if ctx.NArg() < 4 {
 		return fmt.Errorf("required arguments: %v", ctx.Command.ArgsUsage)
 	}
 	stack, _ := makeConfigNode(ctx)
@@ -504,6 +504,7 @@ func dbDumpTrie(ctx *cli.Context) error {
 		account []byte
 		start   []byte
 		max     = int64(-1)
+		epoch   = uint32(0)
 		err     error
 	)
 	if state, err = hexutil.Decode(ctx.Args().Get(0)); err != nil {
@@ -518,19 +519,24 @@ func dbDumpTrie(ctx *cli.Context) error {
 		log.Info("Could not decode the storage trie root", "error", err)
 		return err
 	}
-	if ctx.NArg() > 3 {
-		if start, err = hexutil.Decode(ctx.Args().Get(3)); err != nil {
+	if epochU64, err := strconv.ParseUint(ctx.Args().Get(3), 10, 32); err != nil {
+		log.Info("Could not decode the epoch", "error", err)
+	} else {
+		epoch = uint32(epochU64)
+	}
+	if ctx.NArg() > 4 {
+		if start, err = hexutil.Decode(ctx.Args().Get(4)); err != nil {
 			log.Info("Could not decode the seek position", "error", err)
 			return err
 		}
 	}
-	if ctx.NArg() > 4 {
-		if max, err = strconv.ParseInt(ctx.Args().Get(4), 10, 64); err != nil {
+	if ctx.NArg() > 5 {
+		if max, err = strconv.ParseInt(ctx.Args().Get(5), 10, 64); err != nil {
 			log.Info("Could not decode the max count", "error", err)
 			return err
 		}
 	}
-	id := trie.StorageTrieID(common.BytesToHash(state), common.BytesToHash(account), common.BytesToHash(storage))
+	id := trie.StorageTrieID(common.BytesToHash(state), epoch, common.BytesToHash(account), common.BytesToHash(storage))
 	theTrie, err := trie.New(id, triedb)
 	if err != nil {
 		return err

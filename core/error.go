@@ -55,6 +55,10 @@ var (
 	// maximum allowed value and would become invalid if incremented.
 	ErrNonceMax = errors.New("nonce has max value")
 
+	// ErrInvalidEpochCoverage is returned if the epochCoverage of a transaction is not the one
+	// expected based on the local chain
+	ErrInvalidEpochCoverage = errors.New("invalid epochCoverage")
+
 	// ErrGasLimitReached is returned by the gas pool if the amount of gas required
 	// by a transaction is higher than what's left in the block.
 	ErrGasLimitReached = errors.New("gas limit reached")
@@ -100,6 +104,14 @@ var (
 
 	// ErrSenderNoEOA is returned if the sender of a transaction is a contract.
 	ErrSenderNoEOA = errors.New("sender not an eoa")
+
+	// ErrInvalidRestoration is returned if the transaction has a restore data
+	// with the To or Value field being non-nil.
+	ErrInvalidRestoration = errors.New("transaction to, value should be nil for restoration")
+
+	// ErrEmptyRestorationProof is returned if the transaction has a restore data
+	// with the Data field being nil.
+	ErrEmptyRestorationProof = errors.New("restoration proof must not be empty for restoration")
 
 	// ErrBlobFeeCapTooLow is returned if the transaction fee cap is less than the
 	// blob gas fee of the block.

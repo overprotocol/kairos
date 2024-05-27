@@ -33,6 +33,7 @@ import (
 // write. The content of the nodebuffer must be checked before diving into
 // disk (since it basically is not-yet-written data).
 type nodebuffer struct {
+	epoch  uint32                                    // Epoch which the nodebuffer belongs
 	layers uint64                                    // The number of diff layers aggregated inside
 	size   uint64                                    // The size of aggregated writes
 	limit  uint64                                    // The maximum memory allowance in bytes
@@ -40,7 +41,7 @@ type nodebuffer struct {
 }
 
 // newNodeBuffer initializes the node buffer with the provided nodes.
-func newNodeBuffer(limit int, nodes map[common.Hash]map[string]*trienode.Node, layers uint64) *nodebuffer {
+func newNodeBuffer(epoch uint32, limit int, nodes map[common.Hash]map[string]*trienode.Node, layers uint64) *nodebuffer {
 	if nodes == nil {
 		nodes = make(map[common.Hash]map[string]*trienode.Node)
 	}
@@ -51,11 +52,22 @@ func newNodeBuffer(limit int, nodes map[common.Hash]map[string]*trienode.Node, l
 		}
 	}
 	return &nodebuffer{
+		epoch:  epoch,
 		layers: layers,
 		nodes:  nodes,
 		size:   size,
 		limit:  uint64(limit),
 	}
+}
+
+// epochNumber returns the epoch number of the nodebuffer.
+func (b *nodebuffer) epochNumber() uint32 {
+	return b.epoch
+}
+
+// updateEpochNumber updates the epoch number of the nodebuffer.
+func (b *nodebuffer) updateEpochNumber(epoch uint32) {
+	b.epoch = epoch
 }
 
 // node retrieves the trie node with given node info.
@@ -155,7 +167,7 @@ func (b *nodebuffer) revert(db ethdb.KeyValueReader, nodes map[common.Hash]map[s
 				// node occurs which is not present in buffer.
 				var nhash common.Hash
 				if owner == (common.Hash{}) {
-					_, nhash = rawdb.ReadAccountTrieNode(db, []byte(path))
+					_, nhash = rawdb.ReadAccountTrieNode(db, b.epoch, []byte(path))
 				} else {
 					_, nhash = rawdb.ReadStorageTrieNode(db, owner, []byte(path))
 				}
@@ -219,8 +231,9 @@ func (b *nodebuffer) flush(db ethdb.KeyValueStore, clean *fastcache.Cache, id ui
 		start = time.Now()
 		batch = db.NewBatchWithSize(int(b.size))
 	)
-	nodes := writeNodes(batch, b.nodes, clean)
+	nodes := writeNodes(batch, b.epoch, b.nodes, clean)
 	rawdb.WritePersistentStateID(batch, id)
+	rawdb.WritePersistentEpoch(batch, b.epoch)
 
 	// Flush all mutations in a single batch
 	size := batch.ValueSize()
@@ -238,26 +251,26 @@ func (b *nodebuffer) flush(db ethdb.KeyValueStore, clean *fastcache.Cache, id ui
 // writeNodes writes the trie nodes into the provided database batch.
 // Note this function will also inject all the newly written nodes
 // into clean cache.
-func writeNodes(batch ethdb.Batch, nodes map[common.Hash]map[string]*trienode.Node, clean *fastcache.Cache) (total int) {
+func writeNodes(batch ethdb.Batch, epoch uint32, nodes map[common.Hash]map[string]*trienode.Node, clean *fastcache.Cache) (total int) {
 	for owner, subset := range nodes {
 		for path, n := range subset {
 			if n.IsDeleted() {
 				if owner == (common.Hash{}) {
-					rawdb.DeleteAccountTrieNode(batch, []byte(path))
+					rawdb.DeleteAccountTrieNode(batch, epoch, []byte(path))
 				} else {
 					rawdb.DeleteStorageTrieNode(batch, owner, []byte(path))
 				}
 				if clean != nil {
-					clean.Del(cacheKey(owner, []byte(path)))
+					clean.Del(cacheKey(owner, epoch, []byte(path)))
 				}
 			} else {
 				if owner == (common.Hash{}) {
-					rawdb.WriteAccountTrieNode(batch, []byte(path), n.Blob)
+					rawdb.WriteAccountTrieNode(batch, epoch, []byte(path), n.Blob)
 				} else {
 					rawdb.WriteStorageTrieNode(batch, owner, []byte(path), n.Blob)
 				}
 				if clean != nil {
-					clean.Set(cacheKey(owner, []byte(path)), n.Blob)
+					clean.Set(cacheKey(owner, epoch, []byte(path)), n.Blob)
 				}
 			}
 		}
@@ -267,9 +280,9 @@ func writeNodes(batch ethdb.Batch, nodes map[common.Hash]map[string]*trienode.No
 }
 
 // cacheKey constructs the unique key of clean cache.
-func cacheKey(owner common.Hash, path []byte) []byte {
+func cacheKey(owner common.Hash, epoch uint32, path []byte) []byte {
 	if owner == (common.Hash{}) {
-		return path
+		return append(common.Uint32ToBytes(epoch), path...)
 	}
 	return append(owner.Bytes(), path...)
 }

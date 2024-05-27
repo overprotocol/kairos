@@ -22,12 +22,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func filledStateDB() *StateDB {
-	state, _ := New(types.EmptyRootHash, NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	s := newStateEnv(1, nil)
+	state := s.state
 
 	// Create an account and check if the retrieved balance is correct
 	addr := common.HexToAddress("0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe")
@@ -46,7 +46,7 @@ func filledStateDB() *StateDB {
 
 func TestCopyAndClose(t *testing.T) {
 	db := filledStateDB()
-	prefetcher := newTriePrefetcher(db.db, db.originalRoot, "")
+	prefetcher := newTriePrefetcher(db.db, db.originalRoot, 0, "")
 	skey := common.HexToHash("aaa")
 	prefetcher.prefetch(common.Hash{}, db.originalRoot, common.Address{}, [][]byte{skey.Bytes()})
 	prefetcher.prefetch(common.Hash{}, db.originalRoot, common.Address{}, [][]byte{skey.Bytes()})
@@ -69,9 +69,36 @@ func TestCopyAndClose(t *testing.T) {
 	}
 }
 
+func TestCopyAndCloseStorageTrie(t *testing.T) {
+	db := filledStateDB()
+	prefetcher := newTriePrefetcher(db.db, db.originalRoot, 0, "")
+	skey := common.HexToHash("aaa")
+	addr := common.HexToAddress("0xaffeaffeaffeaffeaffeaffeaffeaffeaffeaffe")
+	addrHash := crypto.Keccak256Hash(addr.Bytes())
+	prefetcher.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	prefetcher.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	time.Sleep(1 * time.Second)
+	a := prefetcher.trie(addrHash, db.getStateObject(addr).data.Root)
+	prefetcher.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	b := prefetcher.trie(addrHash, db.getStateObject(addr).data.Root)
+	cpy := prefetcher.copy()
+	cpy.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	cpy.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	c := cpy.trie(addrHash, db.getStateObject(addr).data.Root)
+	prefetcher.close()
+	cpy2 := cpy.copy()
+	cpy2.prefetch(addrHash, db.getStateObject(addr).data.Root, common.Address{}, [][]byte{skey.Bytes()})
+	d := cpy2.trie(addrHash, db.getStateObject(addr).data.Root)
+	cpy.close()
+	cpy2.close()
+	if a.Hash() != b.Hash() || a.Hash() != c.Hash() || a.Hash() != d.Hash() {
+		t.Fatalf("Invalid trie, hashes should be equal: %v %v %v %v", a.Hash(), b.Hash(), c.Hash(), d.Hash())
+	}
+}
+
 func TestUseAfterClose(t *testing.T) {
 	db := filledStateDB()
-	prefetcher := newTriePrefetcher(db.db, db.originalRoot, "")
+	prefetcher := newTriePrefetcher(db.db, db.originalRoot, 0, "")
 	skey := common.HexToHash("aaa")
 	prefetcher.prefetch(common.Hash{}, db.originalRoot, common.Address{}, [][]byte{skey.Bytes()})
 	a := prefetcher.trie(common.Hash{}, db.originalRoot)
@@ -87,7 +114,7 @@ func TestUseAfterClose(t *testing.T) {
 
 func TestCopyClose(t *testing.T) {
 	db := filledStateDB()
-	prefetcher := newTriePrefetcher(db.db, db.originalRoot, "")
+	prefetcher := newTriePrefetcher(db.db, db.originalRoot, 0, "")
 	skey := common.HexToHash("aaa")
 	prefetcher.prefetch(common.Hash{}, db.originalRoot, common.Address{}, [][]byte{skey.Bytes()})
 	cpy := prefetcher.copy()

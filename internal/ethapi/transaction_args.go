@@ -51,8 +51,35 @@ type TransactionArgs struct {
 	Input *hexutil.Bytes `json:"input"`
 
 	// Introduced by AccessListTxType transaction.
-	AccessList *types.AccessList `json:"accessList,omitempty"`
-	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
+	AccessList  *types.AccessList `json:"accessList,omitempty"`
+	RestoreData *RestoreDataArgs  `json:"restoreData,omitempty"`
+	ChainID     *hexutil.Big      `json:"chainId,omitempty"`
+}
+
+type RestoreDataArgs struct {
+	ChainID      *hexutil.Big    `json:"chainId" gencodec:"required"`
+	Target       common.Address  `json:"target" gencodec:"required"`
+	SourceEpoch  *hexutil.Uint64 `json:"sourceEpoch" gencodec:"required"`
+	TargetEpoch  *hexutil.Uint64 `json:"targetEpoch" gencodec:"required"`
+	Fee          *hexutil.Big    `json:"fee" gencodec:"required"`
+	FeeRecipient *common.Address `json:"feeRecipient" gencodec:"required"`
+	V            *hexutil.Big    `json:"v" gencodec:"required"`
+	R            *hexutil.Big    `json:"r" gencodec:"required"`
+	S            *hexutil.Big    `json:"s" gencodec:"required"`
+}
+
+func (restoreArgs *RestoreDataArgs) toRestoreData() *types.RestoreData {
+	return &types.RestoreData{
+		ChainID:      (*big.Int)(restoreArgs.ChainID),
+		Target:       restoreArgs.Target,
+		SourceEpoch:  uint32(*restoreArgs.SourceEpoch),
+		TargetEpoch:  uint32(*restoreArgs.TargetEpoch),
+		Fee:          (*big.Int)(restoreArgs.Fee),
+		FeeRecipient: restoreArgs.FeeRecipient,
+		V:            (*big.Int)(restoreArgs.V),
+		R:            (*big.Int)(restoreArgs.R),
+		S:            (*big.Int)(restoreArgs.S),
+	}
 }
 
 // from retrieves the transaction sender address.
@@ -109,6 +136,7 @@ func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
 			Value:                args.Value,
 			Data:                 (*hexutil.Bytes)(&data),
 			AccessList:           args.AccessList,
+			RestoreData:          args.RestoreData,
 		}
 		pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
 		estimated, err := DoEstimateGas(ctx, b, callArgs, pendingBlockNr, nil, b.RPCGasCap())
@@ -279,6 +307,10 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (*
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
+	var restoreData *types.RestoreData
+	if args.RestoreData != nil {
+		restoreData = args.RestoreData.toRestoreData()
+	}
 	msg := &core.Message{
 		From:              addr,
 		To:                args.To,
@@ -289,6 +321,7 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (*
 		GasTipCap:         gasTipCap,
 		Data:              data,
 		AccessList:        accessList,
+		RestoreData:       restoreData,
 		SkipAccountChecks: true,
 	}
 	return msg, nil
@@ -299,6 +332,23 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (*
 func (args *TransactionArgs) toTransaction() *types.Transaction {
 	var data types.TxData
 	switch {
+	case args.RestoreData != nil:
+		al := types.AccessList{}
+		if args.AccessList != nil {
+			al = *args.AccessList
+		}
+		data = &types.RestorationTx{
+			To:          args.To,
+			ChainID:     (*big.Int)(args.ChainID),
+			Nonce:       uint64(*args.Nonce),
+			Gas:         uint64(*args.Gas),
+			GasFeeCap:   (*big.Int)(args.MaxFeePerGas),
+			GasTipCap:   (*big.Int)(args.MaxPriorityFeePerGas),
+			Value:       (*big.Int)(args.Value),
+			Data:        args.data(),
+			AccessList:  al,
+			RestoreData: args.RestoreData.toRestoreData(),
+		}
 	case args.MaxFeePerGas != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {

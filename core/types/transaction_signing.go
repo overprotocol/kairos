@@ -42,6 +42,8 @@ func MakeSigner(config *params.ChainConfig, blockNumber *big.Int, blockTime uint
 	switch {
 	case config.IsCancun(blockNumber, blockTime):
 		signer = NewCancunSigner(config.ChainID)
+	case config.IsAlpaca(blockNumber):
+		signer = NewAlpacaSigner(config.ChainID)
 	case config.IsLondon(blockNumber):
 		signer = NewLondonSigner(config.ChainID)
 	case config.IsBerlin(blockNumber):
@@ -67,6 +69,9 @@ func LatestSigner(config *params.ChainConfig) Signer {
 	if config.ChainID != nil {
 		if config.CancunTime != nil {
 			return NewCancunSigner(config.ChainID)
+		}
+		if config.AlpacaBlock != nil {
+			return NewAlpacaSigner(config.ChainID)
 		}
 		if config.LondonBlock != nil {
 			return NewLondonSigner(config.ChainID)
@@ -175,21 +180,22 @@ type Signer interface {
 	Equal(Signer) bool
 }
 
-type cancunSigner struct{ londonSigner }
+type cancunSigner struct{ alpacaSigner }
 
 // NewCancunSigner returns a signer that accepts
 // - EIP-4844 blob transactions
+// - restoration transactions,
 // - EIP-1559 dynamic fee transactions
 // - EIP-2930 access list transactions,
 // - EIP-155 replay protected transactions, and
 // - legacy Homestead transactions.
 func NewCancunSigner(chainId *big.Int) Signer {
-	return cancunSigner{londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}}
+	return cancunSigner{alpacaSigner{londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}}}
 }
 
 func (s cancunSigner) Sender(tx *Transaction) (common.Address, error) {
 	if tx.Type() != BlobTxType {
-		return s.londonSigner.Sender(tx)
+		return s.alpacaSigner.Sender(tx)
 	}
 	V, R, S := tx.RawSignatureValues()
 	// Blob txs are defined to use 0 and 1 as their recovery
@@ -209,7 +215,7 @@ func (s cancunSigner) Equal(s2 Signer) bool {
 func (s cancunSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
 	txdata, ok := tx.inner.(*BlobTx)
 	if !ok {
-		return s.londonSigner.SignatureValues(tx, sig)
+		return s.alpacaSigner.SignatureValues(tx, sig)
 	}
 	// Check that chain ID of tx matches the signer. We also accept ID zero here,
 	// because it indicates that the chain ID was not specified in the tx.
@@ -225,6 +231,74 @@ func (s cancunSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big
 // It does not uniquely identify the transaction.
 func (s cancunSigner) Hash(tx *Transaction) common.Hash {
 	if tx.Type() != BlobTxType {
+		return s.alpacaSigner.Hash(tx)
+	}
+	return prefixedRlpHash(
+		tx.Type(),
+		[]interface{}{
+			s.chainId,
+			tx.Nonce(),
+			tx.GasTipCap(),
+			tx.GasFeeCap(),
+			tx.Gas(),
+			tx.To(),
+			tx.Value(),
+			tx.Data(),
+			tx.AccessList(),
+			tx.RestoreData(),
+			tx.BlobGasFeeCap(),
+			tx.BlobHashes(),
+		})
+}
+
+type alpacaSigner struct{ londonSigner }
+
+// NewAlpacaSigner returns a signer that accepts
+// - restoration transactions,
+// - EIP-1559 dynamic fee transactions,
+// - EIP-2930 access list transactions,
+// - EIP-155 replay protected transactions, and
+// - legacy Homestead transactions.
+func NewAlpacaSigner(chainId *big.Int) Signer {
+	return alpacaSigner{londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}}
+}
+
+func (s alpacaSigner) Sender(tx *Transaction) (common.Address, error) {
+	if tx.Type() != RestorationTxType {
+		return s.londonSigner.Sender(tx)
+	}
+	V, R, S := tx.RawSignatureValues()
+	// Restoration txs are defined to use 0 and 1 as their recovery
+	// id, add 27 to become equivalent to unprotected Homestead signatures.
+	V = new(big.Int).Add(V, big.NewInt(27))
+	if tx.ChainId().Cmp(s.chainId) != 0 {
+		return common.Address{}, fmt.Errorf("%w: have %d want %d", ErrInvalidChainId, tx.ChainId(), s.chainId)
+	}
+	return recoverPlain(s.Hash(tx), R, S, V, true)
+}
+
+func (s alpacaSigner) Equal(s2 Signer) bool {
+	x, ok := s2.(alpacaSigner)
+	return ok && x.chainId.Cmp(s.chainId) == 0
+}
+
+func (s alpacaSigner) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big.Int, err error) {
+	txdata, ok := tx.inner.(*RestorationTx)
+	if !ok {
+		return s.londonSigner.SignatureValues(tx, sig)
+	}
+	// Check that chain ID of tx matches the signer. We also accept ID zero here,
+	// because it indicates that the chain ID was not specified in the tx.
+	if txdata.ChainID.Sign() != 0 && txdata.ChainID.Cmp(s.chainId) != 0 {
+		return nil, nil, nil, fmt.Errorf("%w: have %d want %d", ErrInvalidChainId, txdata.ChainID, s.chainId)
+	}
+	R, S, _ = decodeSignature(sig)
+	V = big.NewInt(int64(sig[64]))
+	return R, S, V, nil
+}
+
+func (s alpacaSigner) Hash(tx *Transaction) common.Hash {
+	if tx.Type() != RestorationTxType {
 		return s.londonSigner.Hash(tx)
 	}
 	return prefixedRlpHash(
@@ -239,8 +313,7 @@ func (s cancunSigner) Hash(tx *Transaction) common.Hash {
 			tx.Value(),
 			tx.Data(),
 			tx.AccessList(),
-			tx.BlobGasFeeCap(),
-			tx.BlobHashes(),
+			tx.RestoreData(),
 		})
 }
 

@@ -80,7 +80,7 @@ func (api *DebugAPI) DumpBlock(blockNr rpc.BlockNumber) (state.Dump, error) {
 	if header == nil {
 		return state.Dump{}, fmt.Errorf("block #%d not found", blockNr)
 	}
-	stateDb, err := api.eth.BlockChain().StateAt(header.Root)
+	stateDb, err := api.eth.BlockChain().StateAt(header)
 	if err != nil {
 		return state.Dump{}, err
 	}
@@ -165,7 +165,7 @@ func (api *DebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, start hex
 			if header == nil {
 				return state.Dump{}, fmt.Errorf("block #%d not found", number)
 			}
-			stateDb, err = api.eth.BlockChain().StateAt(header.Root)
+			stateDb, err = api.eth.BlockChain().StateAt(header)
 			if err != nil {
 				return state.Dump{}, err
 			}
@@ -175,7 +175,7 @@ func (api *DebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, start hex
 		if block == nil {
 			return state.Dump{}, fmt.Errorf("block %s not found", hash.Hex())
 		}
-		stateDb, err = api.eth.BlockChain().StateAt(block.Root())
+		stateDb, err = api.eth.BlockChain().StateAt(block.Header())
 		if err != nil {
 			return state.Dump{}, err
 		}
@@ -234,7 +234,7 @@ func storageRangeAt(statedb *state.StateDB, root common.Hash, address common.Add
 	if storageRoot == types.EmptyRootHash || storageRoot == (common.Hash{}) {
 		return StorageRangeResult{}, nil // empty storage
 	}
-	id := trie.StorageTrieID(root, crypto.Keccak256Hash(address.Bytes()), storageRoot)
+	id := trie.StorageTrieID(root, statedb.GetCurrentEpoch(), crypto.Keccak256Hash(address.Bytes()), storageRoot)
 	tr, err := trie.NewStateTrie(id, statedb.Database().TrieDB())
 	if err != nil {
 		return StorageRangeResult{}, err
@@ -326,11 +326,13 @@ func (api *DebugAPI) getModifiedAccounts(startBlock, endBlock *types.Block) ([]c
 	}
 	triedb := api.eth.BlockChain().TrieDB()
 
-	oldTrie, err := trie.NewStateTrie(trie.StateTrieID(startBlock.Root()), triedb)
+	oldEpoch := api.eth.blockchain.Config().CalcEpoch(startBlock.NumberU64())
+	oldTrie, err := trie.NewStateTrie(trie.StateTrieID(startBlock.Root(), oldEpoch), triedb)
 	if err != nil {
 		return nil, err
 	}
-	newTrie, err := trie.NewStateTrie(trie.StateTrieID(endBlock.Root()), triedb)
+	newEpoch := api.eth.blockchain.Config().CalcEpoch(endBlock.NumberU64())
+	newTrie, err := trie.NewStateTrie(trie.StateTrieID(endBlock.Root(), newEpoch), triedb)
 	if err != nil {
 		return nil, err
 	}

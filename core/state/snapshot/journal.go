@@ -109,8 +109,8 @@ func loadAndParseJournal(db ethdb.KeyValueStore, base *diskLayer) (snapshot, jou
 	// is not matched with disk layer; or the it's the legacy-format journal,
 	// etc.), we just discard all diffs and try to recover them later.
 	var current snapshot = base
-	err := iterateJournal(db, func(parent common.Hash, root common.Hash, destructSet map[common.Hash]struct{}, accountData map[common.Hash][]byte, storageData map[common.Hash]map[common.Hash][]byte) error {
-		current = newDiffLayer(current, root, destructSet, accountData, storageData)
+	err := iterateJournal(db, func(parent common.Hash, epoch uint32, root common.Hash, destructSet map[common.Hash]struct{}, accountData map[common.Hash][]byte, storageData map[common.Hash]map[common.Hash][]byte) error {
+		current = newDiffLayer(current, epoch, root, destructSet, accountData, storageData)
 		return nil
 	})
 	if err != nil {
@@ -120,7 +120,7 @@ func loadAndParseJournal(db ethdb.KeyValueStore, base *diskLayer) (snapshot, jou
 }
 
 // loadSnapshot loads a pre-existing state snapshot backed by a key-value store.
-func loadSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, root common.Hash, cache int, recovery bool, noBuild bool) (snapshot, bool, error) {
+func loadSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, epoch uint32, root common.Hash, cache int, recovery bool, noBuild bool, deleteEpochData func(uint32)) (snapshot, bool, error) {
 	// If snapshotting is disabled (initial sync in progress), don't do anything,
 	// wait for the chain to permit us to do something meaningful
 	if rawdb.ReadSnapshotDisabled(diskdb) {
@@ -128,15 +128,40 @@ func loadSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, root common
 	}
 	// Retrieve the block number and hash of the snapshot, failing if no snapshot
 	// is present in the database (or crashed mid-update).
-	baseRoot := rawdb.ReadSnapshotRoot(diskdb)
+	baseEpoch := rawdb.ReadSnapshotEpoch(diskdb)
+	if baseEpoch == nil {
+		return nil, false, errors.New("missing snapshot epoch")
+	}
+	baseRoot := rawdb.ReadSnapshotRoot(diskdb, *baseEpoch)
 	if baseRoot == (common.Hash{}) {
 		return nil, false, errors.New("missing or corrupted snapshot")
 	}
+	snapshotCache := fastcache.New(cache * 1024 * 1024)
+	genMarker := newGeneratorMarker(nil)
+	var ckptBase *ckptDiskLayer
+	if *baseEpoch > 0 {
+		baseCkptRoot := rawdb.ReadSnapshotRoot(diskdb, *baseEpoch-1)
+		if baseCkptRoot == (common.Hash{}) {
+			return nil, false, errors.New("missing or corrupted checkpoint snapshot")
+		}
+		ckptBase = &ckptDiskLayer{
+			diskdb:    diskdb,
+			triedb:    triedb,
+			cache:     snapshotCache,
+			epoch:     *baseEpoch - 1,
+			root:      baseCkptRoot,
+			genMarker: genMarker,
+		}
+	}
 	base := &diskLayer{
-		diskdb: diskdb,
-		triedb: triedb,
-		cache:  fastcache.New(cache * 1024 * 1024),
-		root:   baseRoot,
+		diskdb:          diskdb,
+		triedb:          triedb,
+		cache:           snapshotCache,
+		epoch:           *baseEpoch,
+		root:            baseRoot,
+		ckptLayer:       ckptBase,
+		genMarker:       genMarker,
+		deleteEpochData: deleteEpochData,
 	}
 	snapshot, generator, err := loadAndParseJournal(diskdb, base)
 	if err != nil {
@@ -151,24 +176,25 @@ func loadSnapshot(diskdb ethdb.KeyValueStore, triedb *trie.Database, root common
 	// restart, the head is rewound to the point with available state(trie)
 	// which is below the snapshot. In this case the snapshot can be recovered
 	// by re-executing blocks but right now it's unavailable.
-	if head := snapshot.Root(); head != root {
+	if head, headEpoch := snapshot.Root(), snapshot.Epoch(); head != root || headEpoch != epoch {
 		// If it's legacy snapshot, or it's new-format snapshot but
 		// it's not in recovery mode, returns the error here for
 		// rebuilding the entire snapshot forcibly.
 		if !recovery {
-			return nil, false, fmt.Errorf("head doesn't match snapshot: have %#x, want %#x", head, root)
+			return nil, false, fmt.Errorf("head doesn't match snapshot: root: have %#x, want %#x, epoch have %d, want %d", head, root, headEpoch, epoch)
 		}
 		// It's in snapshot recovery, the assumption is held that
 		// the disk layer is always higher than chain head. It can
 		// be eventually recovered when the chain head beyonds the
 		// disk layer.
-		log.Warn("Snapshot is not continuous with chain", "snaproot", head, "chainroot", root)
+		log.Warn("Snapshot is not continuous with chain", "snaproot", head, "chainroot", root, "snapepoch", headEpoch, "chainepoch", epoch)
 	}
 	// Load the disk layer status from the generator if it's not complete
 	if !generator.Done {
-		base.genMarker = generator.Marker
-		if base.genMarker == nil {
-			base.genMarker = []byte{}
+		if generator.Marker == nil {
+			base.genMarker.set([]byte{})
+		} else {
+			base.genMarker.set(generator.Marker)
 		}
 	}
 	// Everything loaded correctly, resume any suspended operations
@@ -202,7 +228,7 @@ func (dl *diskLayer) Journal(buffer *bytes.Buffer) (common.Hash, error) {
 		dl.genAbort <- abort
 
 		if stats = <-abort; stats != nil {
-			stats.Log("Journalling in-progress snapshot", dl.root, dl.genMarker)
+			stats.Log("Journalling in-progress snapshot", dl.root, dl.genMarker.get())
 		}
 	}
 	// Ensure the layer didn't get stale
@@ -213,9 +239,13 @@ func (dl *diskLayer) Journal(buffer *bytes.Buffer) (common.Hash, error) {
 		return common.Hash{}, ErrSnapshotStale
 	}
 	// Ensure the generator stats is written even if none was ran this cycle
-	journalProgress(dl.diskdb, dl.genMarker, stats)
+	journalProgress(dl.diskdb, dl.genMarker.get(), stats)
 
 	log.Debug("Journalled disk layer", "root", dl.root)
+	return dl.root, nil
+}
+
+func (dl *ckptDiskLayer) Journal(buffer *bytes.Buffer) (common.Hash, error) {
 	return dl.root, nil
 }
 
@@ -235,6 +265,9 @@ func (dl *diffLayer) Journal(buffer *bytes.Buffer) (common.Hash, error) {
 		return common.Hash{}, ErrSnapshotStale
 	}
 	// Everything below was journalled, persist this layer too
+	if err := rlp.Encode(buffer, dl.epoch); err != nil {
+		return common.Hash{}, err
+	}
 	if err := rlp.Encode(buffer, dl.root); err != nil {
 		return common.Hash{}, err
 	}
@@ -271,7 +304,7 @@ func (dl *diffLayer) Journal(buffer *bytes.Buffer) (common.Hash, error) {
 
 // journalCallback is a function which is invoked by iterateJournal, every
 // time a difflayer is loaded from disk.
-type journalCallback = func(parent common.Hash, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error
+type journalCallback = func(parent common.Hash, epoch uint32, root common.Hash, destructs map[common.Hash]struct{}, accounts map[common.Hash][]byte, storage map[common.Hash]map[common.Hash][]byte) error
 
 // iterateJournal iterates through the journalled difflayers, loading them from
 // the database, and invoking the callback for each loaded layer.
@@ -299,16 +332,35 @@ func iterateJournal(db ethdb.KeyValueReader, callback journalCallback) error {
 	// Secondly, resolve the disk layer root, ensure it's continuous
 	// with disk layer. Note now we can ensure it's the snapshot journal
 	// correct version, so we expect everything can be resolved properly.
+	var parentEpoch uint32
+	if err := r.Decode(&parentEpoch); err != nil {
+		return errors.New("missing disk layer epoch")
+	}
+	if baseEpoch := rawdb.ReadSnapshotEpoch(db); *baseEpoch != parentEpoch {
+		log.Warn("Loaded snapshot journal", "diskroot", baseEpoch, "diffs", "unmatched")
+		return errors.New("mismatched disk and diff layers")
+	}
 	var parent common.Hash
 	if err := r.Decode(&parent); err != nil {
 		return errors.New("missing disk layer root")
 	}
-	if baseRoot := rawdb.ReadSnapshotRoot(db); baseRoot != parent {
+	if baseRoot := rawdb.ReadSnapshotRoot(db, parentEpoch); baseRoot != parent {
 		log.Warn("Loaded snapshot journal", "diskroot", baseRoot, "diffs", "unmatched")
 		return errors.New("mismatched disk and diff layers")
 	}
+
+	if parentEpoch > 0 {
+		var ckptParent common.Hash
+		if err := r.Decode(&ckptParent); err != nil {
+			return errors.New("missing checkpoint layer root")
+		}
+		if ckptBaseRoot := rawdb.ReadSnapshotRoot(db, parentEpoch-1); ckptBaseRoot != ckptParent {
+			return errors.New("mismatched checkpoint and diff layers")
+		}
+	}
 	for {
 		var (
+			epoch       uint32
 			root        common.Hash
 			destructs   []journalDestruct
 			accounts    []journalAccount
@@ -318,11 +370,14 @@ func iterateJournal(db ethdb.KeyValueReader, callback journalCallback) error {
 			storageData = make(map[common.Hash]map[common.Hash][]byte)
 		)
 		// Read the next diff journal entry
-		if err := r.Decode(&root); err != nil {
+		if err := r.Decode(&epoch); err != nil {
 			// The first read may fail with EOF, marking the end of the journal
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
+			return fmt.Errorf("load diff epoch: %v", err)
+		}
+		if err := r.Decode(&root); err != nil {
 			return fmt.Errorf("load diff root: %v", err)
 		}
 		if err := r.Decode(&destructs); err != nil {
@@ -355,7 +410,7 @@ func iterateJournal(db ethdb.KeyValueReader, callback journalCallback) error {
 			}
 			storageData[entry.Hash] = slots
 		}
-		if err := callback(parent, root, destructSet, accountData, storageData); err != nil {
+		if err := callback(parent, epoch, root, destructSet, accountData, storageData); err != nil {
 			return err
 		}
 		parent = root

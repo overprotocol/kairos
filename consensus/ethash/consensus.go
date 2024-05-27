@@ -270,6 +270,20 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	if header.WithdrawalsHash != nil {
 		return fmt.Errorf("invalid withdrawalsHash: have %x, expected nil", header.WithdrawalsHash)
 	}
+	// validate checkpoint root
+	// if the parent is a checkpoint, checkpoint root of the header must be equal to the root of the parent.
+	// otherwise, checkpoint root of the header must be equal to the checkpoint root of the parent.
+	if chain.Config().IsAlpaca(header.Number) {
+		if chain.Config().IsCheckpoint(parent.Number.Uint64()) {
+			if header.CheckpointRoot != parent.Root {
+				return fmt.Errorf("invalid checkpoint root: have %x, expected %x", header.CheckpointRoot, parent.Root)
+			}
+		} else {
+			if header.CheckpointRoot != parent.CheckpointRoot {
+				return fmt.Errorf("invalid checkpoint root: have %x, expected %x", header.CheckpointRoot, parent.CheckpointRoot)
+			}
+		}
+	}
 	if chain.Config().IsCancun(header.Number, header.Time) {
 		return errors.New("ethash does not support cancun fork")
 	}
@@ -516,6 +530,7 @@ func (ethash *Ethash) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
+	header.CheckpointRoot = state.GetLastCheckpointRoot()
 
 	// Header seems complete, assemble into a block and return
 	return types.NewBlock(header, txs, uncles, receipts, trie.NewStackTrie(nil)), nil

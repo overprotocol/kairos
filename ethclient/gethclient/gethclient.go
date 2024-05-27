@@ -62,13 +62,16 @@ func (ec *Client) CreateAccessList(ctx context.Context, msg ethereum.CallMsg) (*
 
 // AccountResult is the result of a GetProof operation.
 type AccountResult struct {
-	Address      common.Address  `json:"address"`
-	AccountProof []string        `json:"accountProof"`
-	Balance      *big.Int        `json:"balance"`
-	CodeHash     common.Hash     `json:"codeHash"`
-	Nonce        uint64          `json:"nonce"`
-	StorageHash  common.Hash     `json:"storageHash"`
-	StorageProof []StorageResult `json:"storageProof"`
+	Address       common.Address  `json:"address"`
+	AccountProof  []string        `json:"accountProof"`
+	Balance       *big.Int        `json:"balance"`
+	CodeHash      common.Hash     `json:"codeHash"`
+	UiHash        common.Hash     `json:"uiHash"`
+	Nonce         uint32          `json:"nonce"`
+	EpochCoverage uint32          `json:"epochCoverage"`
+	StorageCount  uint64          `json:"storageCount"`
+	StorageHash   common.Hash     `json:"storageHash"`
+	StorageProof  []StorageResult `json:"storageProof"`
 }
 
 // StorageResult provides a proof for a key-value pair.
@@ -88,13 +91,16 @@ func (ec *Client) GetProof(ctx context.Context, account common.Address, keys []s
 	}
 
 	type accountResult struct {
-		Address      common.Address  `json:"address"`
-		AccountProof []string        `json:"accountProof"`
-		Balance      *hexutil.Big    `json:"balance"`
-		CodeHash     common.Hash     `json:"codeHash"`
-		Nonce        hexutil.Uint64  `json:"nonce"`
-		StorageHash  common.Hash     `json:"storageHash"`
-		StorageProof []storageResult `json:"storageProof"`
+		Address       common.Address  `json:"address"`
+		AccountProof  []string        `json:"accountProof"`
+		Balance       *hexutil.Big    `json:"balance"`
+		CodeHash      common.Hash     `json:"codeHash"`
+		UiHash        common.Hash     `json:"uiHash"`
+		Nonce         hexutil.Uint64  `json:"nonce"`
+		EpochCoverage hexutil.Uint64  `json:"epochCoverage"`
+		StorageCount  hexutil.Uint64  `json:"storageCount"`
+		StorageHash   common.Hash     `json:"storageHash"`
+		StorageProof  []storageResult `json:"storageProof"`
 	}
 
 	// Avoid keys being 'null'.
@@ -114,13 +120,47 @@ func (ec *Client) GetProof(ctx context.Context, account common.Address, keys []s
 		})
 	}
 	result := AccountResult{
-		Address:      res.Address,
-		AccountProof: res.AccountProof,
-		Balance:      res.Balance.ToInt(),
-		Nonce:        uint64(res.Nonce),
-		CodeHash:     res.CodeHash,
-		StorageHash:  res.StorageHash,
-		StorageProof: storageResults,
+		Address:       res.Address,
+		AccountProof:  res.AccountProof,
+		Balance:       res.Balance.ToInt(),
+		CodeHash:      res.CodeHash,
+		UiHash:        res.UiHash,
+		Nonce:         uint32(res.Nonce),
+		EpochCoverage: uint32(res.EpochCoverage),
+		StorageCount:  uint64(res.StorageCount),
+		StorageHash:   res.StorageHash,
+		StorageProof:  storageResults,
+	}
+	return &result, err
+}
+
+// RestorationProofResult is the result of a GetRestorationProof operation.
+type RestorationProofResult struct {
+	Proof           []byte   `json:"proof"`
+	EpochCoverage   uint32   `json:"epochCoverage"`
+	RestoredBalance *big.Int `json:"restoredBalance"`
+}
+
+// GetRestorationProof returns the restoration proof for the specified account and epoch.
+func (ec *Client) GetRestorationProof(ctx context.Context, account common.Address, epoch uint32) (*RestorationProofResult, error) {
+	type restorationProofResult struct {
+		Proof           hexutil.Bytes  `json:"proof"`
+		EpochCoverage   hexutil.Uint64 `json:"epochCoverage"`
+		RestoredBalance *hexutil.Big   `json:"restoredBalance"`
+	}
+
+	var res restorationProofResult
+	err := ec.c.CallContext(ctx, &res, "ethanos_getRestorationProof", account, epoch)
+
+	// This can not happen normally, but just in case.
+	if res.RestoredBalance == nil {
+		return nil, fmt.Errorf("restored balance should not nil")
+	}
+	// Turn hexutils back to normal datatypes
+	result := RestorationProofResult{
+		Proof:           res.Proof,
+		EpochCoverage:   uint32(res.EpochCoverage),
+		RestoredBalance: res.RestoredBalance.ToInt(),
 	}
 	return &result, err
 }
@@ -226,6 +266,32 @@ func toCallArg(msg ethereum.CallMsg) interface{} {
 	}
 	if len(msg.Data) > 0 {
 		arg["input"] = hexutil.Bytes(msg.Data)
+	}
+	if msg.RestoreData != nil {
+		restoreData := map[string]interface{}{
+			"target":      msg.RestoreData.Target,
+			"sourceEpoch": hexutil.Uint64(msg.RestoreData.SourceEpoch),
+			"targetEpoch": hexutil.Uint64(msg.RestoreData.TargetEpoch),
+		}
+		if msg.RestoreData.ChainID != nil {
+			restoreData["chainId"] = (*hexutil.Big)(msg.RestoreData.ChainID)
+		}
+		if msg.RestoreData.Fee != nil {
+			restoreData["fee"] = (*hexutil.Big)(msg.RestoreData.Fee)
+		}
+		if msg.RestoreData.FeeRecipient != nil {
+			restoreData["feeRecipient"] = msg.RestoreData.FeeRecipient
+		}
+		if msg.RestoreData.V != nil {
+			restoreData["v"] = (*hexutil.Big)(msg.RestoreData.V)
+		}
+		if msg.RestoreData.R != nil {
+			restoreData["r"] = (*hexutil.Big)(msg.RestoreData.R)
+		}
+		if msg.RestoreData.S != nil {
+			restoreData["s"] = (*hexutil.Big)(msg.RestoreData.S)
+		}
+		arg["restoreData"] = restoreData
 	}
 	if msg.Value != nil {
 		arg["value"] = (*hexutil.Big)(msg.Value)

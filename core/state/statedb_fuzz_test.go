@@ -67,7 +67,7 @@ func newStateTestAction(addr common.Address, r *rand.Rand, index int) testAction
 		{
 			name: "SetNonce",
 			fn: func(a testAction, s *StateDB) {
-				s.SetNonce(addr, uint64(a.args[0]))
+				s.SetNonce(addr, uint32(a.args[0]))
 			},
 			args: make([]int64, 1),
 		},
@@ -90,6 +90,15 @@ func newStateTestAction(addr common.Address, r *rand.Rand, index int) testAction
 				s.SetCode(addr, code)
 			},
 			args: make([]int64, 2),
+		},
+		{
+			name: "SetUiHash",
+			fn: func(a testAction, s *StateDB) {
+				var uiHash common.Hash
+				binary.BigEndian.PutUint64(uiHash[:], uint64(a.args[0]))
+				s.SetUiHash(addr, uiHash)
+			},
+			args: make([]int64, 1),
 		},
 		{
 			name: "CreateAccount",
@@ -195,14 +204,14 @@ func (test *stateTest) run() bool {
 			Recovery:   false,
 			NoBuild:    false,
 			AsyncBuild: false,
-		}, disk, tdb, types.EmptyRootHash)
+		}, disk, tdb, 0, types.EmptyRootHash, types.EmptyRootHash)
 	}
 	for i, actions := range test.actions {
 		root := types.EmptyRootHash
 		if i != 0 {
 			root = roots[len(roots)-1]
 		}
-		state, err := New(root, sdb, snaps)
+		state, err := New(root, types.EmptyRootHash, 0, 1, sdb, snaps)
 		if err != nil {
 			panic(err)
 		}
@@ -283,7 +292,7 @@ func (test *stateTest) verifyAccountCreation(next common.Hash, db *trie.Database
 		return nil
 	}
 	// Account has slots, ensure all new slots are contained
-	st, err := trie.New(trie.StorageTrieID(next, addrHash, nAcct.Root), db)
+	st, err := trie.New(trie.StorageTrieID(next, 0, addrHash, nAcct.Root), db)
 	if err != nil {
 		return err
 	}
@@ -344,7 +353,7 @@ func (test *stateTest) verifyAccountUpdate(next common.Hash, db *trie.Database, 
 	}
 
 	// Verify storage
-	st, err := trie.New(trie.StorageTrieID(next, addrHash, nRoot), db)
+	st, err := trie.New(trie.StorageTrieID(next, 0, addrHash, nRoot), db)
 	if err != nil {
 		return err
 	}
@@ -358,11 +367,11 @@ func (test *stateTest) verifyAccountUpdate(next common.Hash, db *trie.Database, 
 }
 
 func (test *stateTest) verify(root common.Hash, next common.Hash, db *trie.Database, accountsOrigin map[common.Address][]byte, storagesOrigin map[common.Address]map[common.Hash][]byte) error {
-	otr, err := trie.New(trie.StateTrieID(root), db)
+	otr, err := trie.New(trie.StateTrieID(root, 0), db)
 	if err != nil {
 		return err
 	}
-	ntr, err := trie.New(trie.StateTrieID(next), db)
+	ntr, err := trie.New(trie.StateTrieID(next, 0), db)
 	if err != nil {
 		return err
 	}
@@ -381,7 +390,7 @@ func (test *stateTest) verify(root common.Hash, next common.Hash, db *trie.Datab
 }
 
 func TestStateChanges(t *testing.T) {
-	config := &quick.Config{MaxCount: 1000}
+	config := &quick.Config{MaxCount: 10000}
 	err := quick.Check((*stateTest).run, config)
 	if cerr, ok := err.(*quick.CheckError); ok {
 		test := cerr.In[0].(*stateTest)

@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // noncer is a tiny virtual state database to manage the executable nonces of
@@ -28,64 +29,103 @@ import (
 // an account is unknown.
 type noncer struct {
 	fallback *state.StateDB
-	nonces   map[common.Address]uint64
+	txNonces map[common.Address]nonceEpochCoverage
 	lock     sync.Mutex
+}
+
+type nonceEpochCoverage struct {
+	epochCoverage uint32
+	nonce         uint32
 }
 
 // newNoncer creates a new virtual state database to track the pool nonces.
 func newNoncer(statedb *state.StateDB) *noncer {
 	return &noncer{
 		fallback: statedb.Copy(),
-		nonces:   make(map[common.Address]uint64),
+		txNonces: make(map[common.Address]nonceEpochCoverage),
 	}
 }
 
-// get returns the current nonce of an account, falling back to a real state
+// getNonce returns the current nonce of an account, falling back to a real state
 // database if the account is unknown.
-func (txn *noncer) get(addr common.Address) uint64 {
+func (txn *noncer) getNonce(addr common.Address) uint32 {
 	// We use mutex for get operation is the underlying
 	// state will mutate db even for read access.
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	if _, ok := txn.nonces[addr]; !ok {
-		if nonce := txn.fallback.GetNonce(addr); nonce != 0 {
-			txn.nonces[addr] = nonce
+	if _, ok := txn.txNonces[addr]; !ok {
+		if nonce := txn.fallback.GetTxNonce(addr); nonce != 0 {
+			txn.txNonces[addr] = nonceEpochCoverage{
+				epochCoverage: types.TxNonceToMsgEpochCoverage(nonce),
+				nonce:         types.TxNonceToMsgNonce(nonce),
+			}
 		}
 	}
-	return txn.nonces[addr]
+	return txn.txNonces[addr].nonce
+}
+
+// getEpochCoverage returns the current epochCoverage of an account, falling back to a real state
+// database if the account is unknown.
+func (txn *noncer) getEpochCoverage(addr common.Address) uint32 {
+	// We use mutex for get operation is the underlying
+	// state will mutate db even for read access.
+	txn.lock.Lock()
+	defer txn.lock.Unlock()
+
+	if _, ok := txn.txNonces[addr]; !ok {
+		if nonce := txn.fallback.GetTxNonce(addr); nonce != 0 {
+			txn.txNonces[addr] = nonceEpochCoverage{
+				epochCoverage: types.TxNonceToMsgEpochCoverage(nonce),
+				nonce:         types.TxNonceToMsgNonce(nonce),
+			}
+		}
+	}
+	return txn.txNonces[addr].epochCoverage
 }
 
 // set inserts a new virtual nonce into the virtual state database to be returned
 // whenever the pool requests it instead of reaching into the real state database.
-func (txn *noncer) set(addr common.Address, nonce uint64) {
+func (txn *noncer) set(addr common.Address, txNonce nonceEpochCoverage) {
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	txn.nonces[addr] = nonce
+	txn.txNonces[addr] = nonceEpochCoverage{
+		epochCoverage: txNonce.epochCoverage,
+		nonce:         txNonce.nonce,
+	}
 }
 
 // setIfLower updates a new virtual nonce into the virtual state database if the
 // new one is lower.
-func (txn *noncer) setIfLower(addr common.Address, nonce uint64) {
+func (txn *noncer) setIfLower(addr common.Address, txNonce nonceEpochCoverage) {
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	if _, ok := txn.nonces[addr]; !ok {
-		if nonce := txn.fallback.GetNonce(addr); nonce != 0 {
-			txn.nonces[addr] = nonce
+	if _, ok := txn.txNonces[addr]; !ok {
+		if nonce := txn.fallback.GetTxNonce(addr); nonce != 0 {
+			txn.txNonces[addr] = nonceEpochCoverage{
+				epochCoverage: types.TxNonceToMsgEpochCoverage(nonce),
+				nonce:         types.TxNonceToMsgNonce(nonce),
+			}
 		}
 	}
-	if txn.nonces[addr] <= nonce {
+	if txNonce.epochCoverage != txn.txNonces[addr].epochCoverage {
 		return
 	}
-	txn.nonces[addr] = nonce
+	if txn.txNonces[addr].nonce <= txNonce.nonce {
+		return
+	}
+	txn.txNonces[addr] = nonceEpochCoverage{
+		nonce:         txNonce.nonce,
+		epochCoverage: txNonce.epochCoverage,
+	}
 }
 
 // setAll sets the nonces for all accounts to the given map.
-func (txn *noncer) setAll(all map[common.Address]uint64) {
+func (txn *noncer) setAll(all map[common.Address]nonceEpochCoverage) {
 	txn.lock.Lock()
 	defer txn.lock.Unlock()
 
-	txn.nonces = all
+	txn.txNonces = all
 }

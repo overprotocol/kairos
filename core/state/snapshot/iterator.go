@@ -171,7 +171,7 @@ func (dl *diskLayer) AccountIterator(seek common.Hash) AccountIterator {
 	pos := common.TrimRightZeroes(seek[:])
 	return &diskAccountIterator{
 		layer: dl,
-		it:    dl.diskdb.NewIterator(rawdb.SnapshotAccountPrefix, pos),
+		it:    dl.diskdb.NewIterator(append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(dl.epoch)...), pos),
 	}
 }
 
@@ -188,7 +188,8 @@ func (it *diskAccountIterator) Next() bool {
 			it.it = nil
 			return false
 		}
-		if len(it.it.Key()) == len(rawdb.SnapshotAccountPrefix)+common.HashLength {
+
+		if len(it.it.Key()) == len(rawdb.SnapshotAccountPrefix)+rawdb.EpochBytes+common.HashLength {
 			break
 		}
 	}
@@ -219,6 +220,73 @@ func (it *diskAccountIterator) Account() []byte {
 
 // Release releases the database snapshot held during iteration.
 func (it *diskAccountIterator) Release() {
+	// The iterator is auto-released on exhaustion, so make sure it's still alive
+	if it.it != nil {
+		it.it.Release()
+		it.it = nil
+	}
+}
+
+// diskAccountIterator is an account iterator that steps over the live accounts
+// contained within a disk layer.
+type ckptDiskAccountIterator struct {
+	layer *ckptDiskLayer
+	it    ethdb.Iterator
+}
+
+// AccountIterator creates an account iterator over a disk layer.
+func (dl *ckptDiskLayer) AccountIterator(seek common.Hash) AccountIterator {
+	pos := common.TrimRightZeroes(seek[:])
+	return &ckptDiskAccountIterator{
+		layer: dl,
+		it:    dl.diskdb.NewIterator(append(rawdb.SnapshotAccountPrefix, common.Uint32ToBytes(dl.epoch)...), pos),
+	}
+}
+
+// Next steps the iterator forward one element, returning false if exhausted.
+func (it *ckptDiskAccountIterator) Next() bool {
+	// If the iterator was already exhausted, don't bother
+	if it.it == nil {
+		return false
+	}
+	// Try to advance the iterator and release it if we reached the end
+	for {
+		if !it.it.Next() {
+			it.it.Release()
+			it.it = nil
+			return false
+		}
+		if len(it.it.Key()) == len(rawdb.SnapshotAccountPrefix)+rawdb.EpochBytes+common.HashLength {
+			break
+		}
+	}
+	return true
+}
+
+// Error returns any failure that occurred during iteration, which might have
+// caused a premature iteration exit (e.g. snapshot stack becoming stale).
+//
+// A diff layer is immutable after creation content wise and can always be fully
+// iterated without error, so this method always returns nil.
+func (it *ckptDiskAccountIterator) Error() error {
+	if it.it == nil {
+		return nil // Iterator is exhausted and released
+	}
+	return it.it.Error()
+}
+
+// Hash returns the hash of the account the iterator is currently at.
+func (it *ckptDiskAccountIterator) Hash() common.Hash {
+	return common.BytesToHash(it.it.Key()) // The prefix will be truncated
+}
+
+// Account returns the RLP encoded slim account the iterator is currently at.
+func (it *ckptDiskAccountIterator) Account() []byte {
+	return it.it.Value()
+}
+
+// Release releases the database snapshot held during iteration.
+func (it *ckptDiskAccountIterator) Release() {
 	// The iterator is auto-released on exhaustion, so make sure it's still alive
 	if it.it != nil {
 		it.it.Release()
@@ -392,6 +460,78 @@ func (it *diskStorageIterator) Slot() []byte {
 
 // Release releases the database snapshot held during iteration.
 func (it *diskStorageIterator) Release() {
+	// The iterator is auto-released on exhaustion, so make sure it's still alive
+	if it.it != nil {
+		it.it.Release()
+		it.it = nil
+	}
+}
+
+// diskStorageIterator is a storage iterator that steps over the live storage
+// contained within a disk layer.
+type ckptDiskStorageIterator struct {
+	layer   *ckptDiskLayer
+	account common.Hash
+	it      ethdb.Iterator
+}
+
+// StorageIterator creates a storage iterator over a disk layer.
+// If the whole storage is destructed, then all entries in the disk
+// layer are deleted already. So the "destructed" flag returned here
+// is always false.
+func (dl *ckptDiskLayer) StorageIterator(account common.Hash, seek common.Hash) (StorageIterator, bool) {
+	pos := common.TrimRightZeroes(seek[:])
+	return &ckptDiskStorageIterator{
+		layer:   dl,
+		account: account,
+		it:      dl.diskdb.NewIterator(append(rawdb.SnapshotStoragePrefix, account.Bytes()...), pos),
+	}, false
+}
+
+// Next steps the iterator forward one element, returning false if exhausted.
+func (it *ckptDiskStorageIterator) Next() bool {
+	// If the iterator was already exhausted, don't bother
+	if it.it == nil {
+		return false
+	}
+	// Try to advance the iterator and release it if we reached the end
+	for {
+		if !it.it.Next() {
+			it.it.Release()
+			it.it = nil
+			return false
+		}
+		if len(it.it.Key()) == len(rawdb.SnapshotStoragePrefix)+common.HashLength+common.HashLength {
+			break
+		}
+	}
+	return true
+}
+
+// Error returns any failure that occurred during iteration, which might have
+// caused a premature iteration exit (e.g. snapshot stack becoming stale).
+//
+// A diff layer is immutable after creation content wise and can always be fully
+// iterated without error, so this method always returns nil.
+func (it *ckptDiskStorageIterator) Error() error {
+	if it.it == nil {
+		return nil // Iterator is exhausted and released
+	}
+	return it.it.Error()
+}
+
+// Hash returns the hash of the storage slot the iterator is currently at.
+func (it *ckptDiskStorageIterator) Hash() common.Hash {
+	return common.BytesToHash(it.it.Key()) // The prefix will be truncated
+}
+
+// Slot returns the raw storage slot content the iterator is currently at.
+func (it *ckptDiskStorageIterator) Slot() []byte {
+	return it.it.Value()
+}
+
+// Release releases the database snapshot held during iteration.
+func (it *ckptDiskStorageIterator) Release() {
 	// The iterator is auto-released on exhaustion, so make sure it's still alive
 	if it.it != nil {
 		it.it.Release()

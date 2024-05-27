@@ -269,6 +269,23 @@ func (beacon *Beacon) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	if !shanghai && header.WithdrawalsHash != nil {
 		return fmt.Errorf("invalid withdrawalsHash: have %x, expected nil", header.WithdrawalsHash)
 	}
+
+	// validate checkpoint root
+	// if the parent is a checkpoint, checkpoint root of the header must be equal to the root of the parent.
+	// otherwise, checkpoint root of the header must be equal to the checkpoint root of the parent.
+	alpaca := chain.Config().IsAlpaca(header.Number)
+	if alpaca {
+		if chain.Config().IsCheckpoint(parent.Number.Uint64()) {
+			if header.CheckpointRoot != parent.Root {
+				return fmt.Errorf("invalid checkpoint root: have %x, expected %x", header.CheckpointRoot, parent.Root)
+			}
+		} else {
+			if header.CheckpointRoot != parent.CheckpointRoot {
+				return fmt.Errorf("invalid checkpoint root: have %x, expected %x", header.CheckpointRoot, parent.CheckpointRoot)
+			}
+		}
+	}
+
 	// Verify the existence / non-existence of cancun-specific header fields
 	cancun := chain.Config().IsCancun(header.Number, header.Time)
 	if !cancun {
@@ -384,6 +401,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
+	header.CheckpointRoot = state.GetLastCheckpointRoot()
 
 	// Assemble and return the final block.
 	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil)), nil
