@@ -807,7 +807,7 @@ func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.Res
 	var rawProofs [][][]byte
 	err = rlp.DecodeBytes(input, &rawProofs)
 	if err != nil {
-		return nil, gas, err
+		return nil, 0, err
 	}
 
 	if restoreDataGas := params.RestorePerEpochGas * uint64(len(rawProofs)); restoreDataGas <= gas {
