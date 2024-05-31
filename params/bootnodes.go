@@ -20,4 +20,8 @@ package params
 // the main Ethereum network.
 var MainnetBootnodes = []string{}
 
-var V5Bootnodes = []string{}
+var MainnetV5Bootnodes = []string{}
+
+var DolphinV5Bootnodes = []string{
+	"enr:-JS4QATEoKyFz8Y0G2SFdoaVbqINmJ-fmq_36LD1oNkH2Z4sInB6i-qf80c-7UsPbdA5lXQ6vrfTb2yCX7ZYHQq5H-mGAY_NUtGQgmlkgnY0gmlwhCJAVH-Eb3ZlcoQAAAAAiXNlY3AyNTZrMaEDqd2m2sERO693fSo5-6iqwczDKnOafAFaW-2vNfzGJHGDdWRwgsc4",
+}

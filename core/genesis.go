@@ -424,6 +424,10 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
+	case ghash == params.CreeperGenesisHash:
+		return params.CreeperChainConfig
+	case ghash == params.DolphinGenesisHash:
+		return params.DolphinChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -568,6 +572,17 @@ func DefaultCreeperGenesisBlock() *Genesis {
 		GasLimit:   8000000,
 		Difficulty: big.NewInt(1),
 		Alloc:      decodePrealloc(creeperAllocData),
+	}
+}
+
+func DefaultDolphinGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.DolphinChainConfig,
+		Timestamp:  1717494618,
+		ExtraData:  hexutil.MustDecode("0x000000000000000000000000000000000000000000000000000000000000000089ddd128c326eeac46be6c63ac1812828c4ef5e92c3dd2ffb6f7bf6acc3d2a91ea7289add5cb51e429f15d16b96db3b226c0fe24c5958351c34eb121cbaa8c583b3b34909f3b36b65990f2ee5a17301f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   8000000,
+		Difficulty: big.NewInt(1),
+		Alloc:      decodePrealloc(dolphinAllocData),
 	}
 }
 

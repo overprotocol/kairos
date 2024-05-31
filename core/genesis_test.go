@@ -172,6 +172,8 @@ func TestGenesisHashes(t *testing.T) {
 		want    common.Hash
 	}{
 		{DefaultGenesisBlock(), params.MainnetGenesisHash},
+		{DefaultCreeperGenesisBlock(), params.CreeperGenesisHash},
+		{DefaultDolphinGenesisBlock(), params.DolphinGenesisHash},
 	} {
 		// Test via MustCommit
 		db := rawdb.NewMemoryDatabase()

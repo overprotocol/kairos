@@ -27,6 +27,7 @@ import (
 var (
 	MainnetGenesisHash = common.HexToHash("0x03a0a86dfb0bb3c527e3a758dea724df388c3bf0e3c075ad75f84f2838cad6f4")
 	CreeperGenesisHash = common.HexToHash("0x0a917e2b2f7544209d6b5fd1729f3e390434ffa82398c66ba76c6f22b8a13afc")
+	DolphinGenesisHash = common.HexToHash("0xf3567ecf4872eb8def07c07ad4e219040a5b54d8da3b567a05b7b41a5ef5c55f")
 )
 
 var (
@@ -66,7 +67,7 @@ var (
 		SweepEpoch: 648000, // about 90 days
 	}
 
-	// MainnetChainConfig is the chain parameters to run a node on the main network.
+	// CreeperChainConfig is the chain parameters to run a node on the main network.
 	CreeperChainConfig = &ChainConfig{
 		ChainID:                       big.NewInt(27882),
 		HomesteadBlock:                big.NewInt(0),
@@ -93,6 +94,35 @@ var (
 			Epoch:  30000,
 		},
 		SweepEpoch: 100800,
+	}
+
+	// CreeperChainConfig is the chain parameters to run a node on the main network.
+	DolphinChainConfig = &ChainConfig{
+		ChainID:                       big.NewInt(541762),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ArrowGlacierBlock:             big.NewInt(0),
+		GrayGlacierBlock:              big.NewInt(0),
+		AlpacaBlock:                   big.NewInt(0),
+		TerminalTotalDifficulty:       big.NewInt(500),
+		TerminalTotalDifficultyPassed: true,
+		ShanghaiTime:                  newUint64(1717498753),
+		Clique: &CliqueConfig{
+			Period: 12,
+			Epoch:  30000,
+		},
+		SweepEpoch: 648000,
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
@@ -258,6 +288,7 @@ func (c *ChainConfig) SetTestSweepEpoch(epoch uint64) *ChainConfig {
 var NetworkNames = map[string]string{
 	MainnetChainConfig.ChainID.String(): "mainnet",
 	CreeperChainConfig.ChainID.String(): "creeper",
+	DolphinChainConfig.ChainID.String(): "dolphin",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.

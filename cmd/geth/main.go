@@ -284,6 +284,9 @@ func prepare(ctx *cli.Context) {
 
 	case ctx.IsSet(utils.CreeperFlag.Name):
 		log.Info("Starting Geth on Creeper testnet...")
+
+	case ctx.IsSet(utils.DolphinFlag.Name):
+		log.Info("Starting Geth on Dolphin testnet...")
 		log.Warn(`You are running Geth in --dev mode. Please note the following:		
 
   1. This mode is only intended for fast, iterative development without assumptions on
@@ -307,6 +310,7 @@ func prepare(ctx *cli.Context) {
 	if !ctx.IsSet(utils.CacheFlag.Name) && !ctx.IsSet(utils.NetworkIdFlag.Name) {
 		// Make sure we're not on any supported preconfigured testnet either
 		if !ctx.IsSet(utils.CreeperFlag.Name) &&
+			!ctx.IsSet(utils.DolphinFlag.Name) &&
 			!ctx.IsSet(utils.DeveloperFlag.Name) {
 			// Nope, we're really on mainnet. Bump that cache up!
 			log.Info("Bumping default cache on mainnet", "provided", ctx.Int(utils.CacheFlag.Name), "updated", 1024)
