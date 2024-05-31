@@ -30,7 +30,7 @@ var (
 )
 
 var (
-	DepositContractAddress    = common.HexToAddress("0x000000000000000000000000000000000000beef")
+	DepositContractAddress    = common.HexToAddress("0x000000000000000000000000000000000beac017")
 	FoundationTreasuryAddress = common.HexToAddress("0x000000000000000000000000000000000000cafe")
 )
 
