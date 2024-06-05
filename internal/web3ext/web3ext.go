@@ -672,7 +672,7 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'getRestorationProof',
 			call: 'ethanos_getRestorationProof',
-			params: 3,
+			params: 2,
 			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null]
 		}),
 	],
