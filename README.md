@@ -1,5 +1,5 @@
 ## Kairos
-Official golang implementation of the Over protocol execution layer, based off of [official golang implementation of the over protocol](https://github.com/overprotocol/kairos).
+Official golang implementation of the Over protocol execution layer, based off of [official golang implementation of the Ethereum protocol](https://github.com/ethereum/go-ethereum).
 
 ## Building the source
 
