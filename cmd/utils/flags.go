@@ -255,7 +255,7 @@ var (
 	}
 	StateSchemeFlag = &cli.StringFlag{
 		Name:     "state.scheme",
-		Usage:    "Scheme to use for storing ethereum state ('hash' or 'path')",
+		Usage:    "Scheme to use for storing state ('hash' or 'path')",
 		Category: flags.StateCategory,
 	}
 	StateHistoryFlag = &cli.Uint64Flag{
