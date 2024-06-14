@@ -94,7 +94,7 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 		return core.ErrTipAboveFeeCap
 	}
 	// Ensure to and value is nil when restoreData is non-nil.
-	if tx.IsRestoration() && (tx.To() != nil || tx.Value().Sign() != 0) {
+	if tx.IsRestoration() && (tx.To() != nil || tx.Value().Sign() != 0 || len(tx.Data()) == 0) {
 		return core.ErrInvalidRestoration
 	}
 	// Make sure the transaction is signed properly

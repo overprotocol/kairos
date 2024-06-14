@@ -649,8 +649,7 @@ func (evm *EVM) createWithUi(caller ContractRef, codeAndUiHash *codeAndUiHash, g
 	contract := NewContract(caller, AccountRef(address), value, gas)
 	contract.SetCodeOptionalHash(&address, codeAndUiHash.codeAndHash)
 
-	debug := evm.Config.Tracer != nil
-	if debug {
+	if evm.Config.Tracer != nil {
 		if evm.depth == 0 {
 			evm.Config.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndUiHash.input, gas, value)
 		} else {
@@ -683,7 +682,9 @@ func (evm *EVM) createWithUi(caller ContractRef, codeAndUiHash *codeAndUiHash, g
 		}
 	}
 
-	evm.StateDB.SetUiHash(address, codeAndUiHash.uiHash)
+	if evm.StateDB.Exist(address) {
+		evm.StateDB.SetUiHash(address, codeAndUiHash.uiHash)
+	}
 
 	// When an error was returned by the EVM or when setting the creation code
 	// above we revert to the snapshot and consume any gas remaining. Additionally
@@ -695,7 +696,7 @@ func (evm *EVM) createWithUi(caller ContractRef, codeAndUiHash *codeAndUiHash, g
 		}
 	}
 
-	if debug {
+	if evm.Config.Tracer != nil {
 		if evm.depth == 0 {
 			evm.Config.Tracer.CaptureEnd(ret, gas-contract.Gas, err)
 		} else {
@@ -876,8 +877,11 @@ func (evm *EVM) verifyRestorationProof(target common.Address, targetEpoch uint32
 			return 0, 0, nil, ErrZeroEpochCoverage
 		}
 
-		rootHash := evm.Context.GetHeaderByNumber(lastCkptBn).Root
-		leafNode, err := trie.VerifyProof(rootHash, targetKey, proofDB)
+		header := evm.Context.GetHeaderByNumber(lastCkptBn)
+		if header == nil {
+			return 0, 0, nil, ErrHeaderIsNil
+		}
+		leafNode, err := trie.VerifyProof(header.Root, targetKey, proofDB)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf("merkle proof verification failed: %v", err)
 		}

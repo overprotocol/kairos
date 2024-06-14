@@ -21,9 +21,9 @@ import "github.com/ethereum/go-ethereum/common"
 // ID is the identifier for uniquely identifying a trie.
 type ID struct {
 	StateRoot common.Hash // The root of the corresponding state(block.root)
+	Epoch     uint32      // The epoch number of the trie
 	Owner     common.Hash // The contract address hash which the trie belongs to
 	Root      common.Hash // The root hash of trie
-	Epoch     uint32
 }
 
 // StateTrieID constructs an identifier for state trie with the provided state root.
@@ -52,8 +52,8 @@ func StorageTrieID(stateRoot common.Hash, epoch uint32, owner common.Hash, root 
 func TrieID(root common.Hash) *ID {
 	return &ID{
 		StateRoot: root,
+		Epoch:     0,
 		Owner:     common.Hash{},
 		Root:      root,
-		Epoch:     0,
 	}
 }

@@ -41,12 +41,12 @@ var (
 	ErrCreate2NotAvailable      = errors.New("create2 is not available")
 	ErrCreate2EOA               = errors.New("EOA can not create contract with create2")
 
-	ErrInsufficientFee     = errors.New("insufficient balance for restoration fee")
 	ErrZeroEpochCoverage   = errors.New("epochCoverage of account is already zero")
 	ErrEpochProofMismatch  = errors.New("mismatch between the epoch to restore and proofs")
 	ErrInvalidSourceEpoch  = errors.New("invalid source epoch")
 	ErrInvalidTargetEpoch  = errors.New("invalid target epoch")
 	ErrContractRestoration = errors.New("restoration of contract account")
+	ErrHeaderIsNil         = errors.New("header is nil")
 
 	// errStopToken is an internal token indicating interpreter loop termination,
 	// never returned to outside callers.
