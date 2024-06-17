@@ -675,43 +675,43 @@ web3._extend({
 			name: 'getBalance',
 			call: 'over_getBalance',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'exist',
 			call: 'over_exist',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getCode',
 			call: 'over_getCode',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getTransactionCount',
 			call: 'over_getTransactionCount',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getNonce',
 			call: 'over_getNonce',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getEpochCoverage',
 			call: 'over_getEpochCoverage',
 			params: 3,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'expireInfo',
 			call: 'over_expireInfo',
 			params: 2,
-			inputFormatter: [web3._extend.formatters.inputAddressFormatter, formatters.inputDefaultBlockNumberFormatter]
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, web3._extend.formatters.inputDefaultBlockNumberFormatter]
 		}),
 	],
 	properties: [
