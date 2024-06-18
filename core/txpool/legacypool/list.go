@@ -349,7 +349,7 @@ func (l *list) Forward(threshold uint32) types.Transactions {
 }
 
 // Filter removes all transactions from the list with a cost or gas limit higher
-// than the provided thresholds or with a epochCoverage outdated. Every removed transaction
+// than the provided thresholds or with an outdated epochCoverage. Every removed transaction
 // is returned for any post-removal maintenance. Strict-mode invalidated transactions are
 // also returned.
 //

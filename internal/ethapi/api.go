@@ -1019,6 +1019,7 @@ func (diff *StateOverride) Apply(state *state.StateDB) error {
 		if account.Balance != nil {
 			state.SetBalance(addr, (*big.Int)(*account.Balance))
 		}
+		// Override account storage count.
 		if account.StorageCount != nil {
 			state.SetStorageCount(addr, uint64(*account.StorageCount))
 		}

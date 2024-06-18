@@ -448,23 +448,26 @@ func (db *Database) Recoverable(epoch uint32, root, ckptRoot common.Hash) bool {
 		return false
 	}
 
-	// If epoch to recover is same as the epoch of the disk layer,
-	// Recovery is started from the disk layer.
-	// Else if epoch to recover is less than the epoch of the disk layer,
-	// Recovery is started from last state of the epoch to recover.
+	// Recoverable state must below the disk layer. The epoch of
+	// recoverable state must be the same as the disk layer's epoch.
+	// The recoverable state only refers the state that is currently
+	// not available, but can be restored by applying state history.
 	dl := db.tree.bottom()
-	restoreStateId := dl.stateID()
-	if *id >= restoreStateId {
+	if *id >= dl.stateID() {
 		return false
 	}
 	if dl.epochNumber() != epoch {
+		return false
+	}
+	ckptDl := db.tree.ckptBottom()
+	if ckptDl != nil && ckptDl.rootHash() != types.TrieRootHash(ckptRoot) {
 		return false
 	}
 
 	// Ensure the requested state is a canonical state and all state
 	// histories in range [id+1, disklayer.ID] are present and complete.
 	parent := root
-	return checkHistories(db.freezer, *id+1, restoreStateId-*id, func(m *meta) error {
+	return checkHistories(db.freezer, *id+1, dl.stateID()-*id, func(m *meta) error {
 		if m.parent != parent {
 			return errors.New("unexpected state history")
 		}

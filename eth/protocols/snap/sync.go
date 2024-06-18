@@ -786,7 +786,7 @@ func (s *Syncer) loadSyncStatus() {
 				task.genTrie = trie.NewStackTrie(options)
 				for accountHash, subtasks := range task.SubTasks {
 					if checkpoint {
-						// Removes tasks for accounts that are already existed in current state
+						// Removes tasks for accounts that exist in current state.
 						// This can happen when the pivot changed.
 						if rawdb.ReadAccountSnapshot(s.db, syncEpoch+1, accountHash) != nil {
 							// task.res can be nil if the task is already done
@@ -1960,7 +1960,7 @@ func (s *Syncer) processAccountResponse(res *accountResponse) {
 	res.task.pend = 0
 	for i, account := range res.accounts {
 		if checkpoint {
-			// Don't add tasks for accounts that are already existed in current state
+			// Don't add tasks for accounts that exist in current state
 			if rawdb.ReadAccountSnapshot(s.db, syncEpoch+1, res.hashes[i]) != nil {
 				continue
 			}
@@ -3137,6 +3137,7 @@ func (s *Syncer) reportSyncProgress(force bool) {
 	}
 	// Don't report anything until we have a meaningful progress
 	synced := s.accountBytes + s.bytecodeBytes + s.storageBytes
+	s.logTime = time.Now()
 	estBytes := s.estimateStateBytes()
 	if estBytes == 0 {
 		return
@@ -3187,7 +3188,6 @@ func (s *Syncer) estimateStateBytes() float64 {
 	if accountFills.BitLen() == 0 {
 		return 0
 	}
-	s.logTime = time.Now()
 	estBytes := float64(new(big.Int).Div(
 		new(big.Int).Mul(new(big.Int).SetUint64(uint64(synced)), hashSpace),
 		accountFills,
