@@ -92,8 +92,8 @@ func (h *Handler) HandleFeeRecipient() string {
 }
 
 func (h *Handler) checkRestoreData(ctx context.Context, restoreData *types.RestoreData) error {
-	if restoreData.ChainID != h.chainId {
-		return fmt.Errorf("chain ID mismatch")
+	if restoreData.ChainID.Cmp(h.chainId) != 0 {
+		return fmt.Errorf("chain ID mismatch %s, %s", h.chainId.String(), restoreData.ChainID.String())
 	}
 	if restoreData.FeeRecipient == nil || *restoreData.FeeRecipient != h.signer {
 		return fmt.Errorf("fee recipient must be %s", h.signer.Hex())
