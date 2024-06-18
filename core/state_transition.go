@@ -433,7 +433,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		if msg.To != nil || msg.Value.Sign() != 0 {
 			return nil, ErrInvalidRestoration
 		}
-		if msg.Data == nil {
+		if len(msg.Data) == 0 {
 			return nil, ErrEmptyRestorationProof
 		}
 	}
@@ -479,7 +479,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	} else {
 		fee := new(big.Int).SetUint64(st.gasUsed())
 		if rules.IsLondon {
-			// BaseFee is burned and sent to the foundation's treasury
+			// BaseFee is sent to the foundation's treasury
 			burn := new(big.Int).Mul(fee, st.evm.Context.BaseFee)
 			st.state.AddBalance(params.FoundationTreasuryAddress, burn)
 		}

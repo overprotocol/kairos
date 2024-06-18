@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
 )
@@ -251,6 +252,7 @@ func (tree *layerTree) ckptBottom() *ckptDiskLayer {
 	defer tree.lock.RUnlock()
 
 	if tree.diskLayer == nil {
+		log.Error("disk layer is empty")
 		return nil // Shouldn't happen, empty tree
 	}
 	return tree.diskLayer.ckptLayer

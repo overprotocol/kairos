@@ -169,8 +169,8 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, reexec u
 		// to prevent accumulating too many nodes in memory.
 		triedb.Reference(root, common.Hash{})
 		if parent != (common.Hash{}) {
-			epoch := eth.blockchain.Config().CalcEpoch(current.NumberU64() - 1)
-			triedb.Dereference(epoch, parent)
+			parentEpoch := eth.blockchain.Config().CalcEpoch(current.NumberU64() - 1)
+			triedb.Dereference(parentEpoch, parent)
 		}
 		parent = root
 	}

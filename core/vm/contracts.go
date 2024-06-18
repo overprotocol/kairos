@@ -93,8 +93,8 @@ var PrecompiledContractsBerlin = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{9}): &blake2F{},
 }
 
-// PrecompiledContractsBerlin contains the default set of pre-compiled Ethereum
-// contracts used in the Berlin release.
+// PrecompiledContractsAlpaca contains the default set of pre-compiled Ethereum
+// contracts used in the Alpaca release.
 var PrecompiledContractsAlpaca = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{1}): &ecrecover{},
 	common.BytesToAddress([]byte{2}): &sha256hash{},
@@ -693,10 +693,17 @@ func (c *createContractWithUiHash) RequiredGas(input []byte) uint64 {
 func (c *createContractWithUiHash) Run(input []byte, caller ContractRef, value *big.Int, suppliedGas uint64, evm *EVM) ([]byte, uint64, error) {
 	res, addr, returnGas, suberr := evm.CreateWithUiHash(caller, input, suppliedGas, value)
 	if suberr != nil {
-		return nil, 0, suberr
+		// return ErrExecutionReverted for remaining gas to be refunded
+		return nil, returnGas, ErrExecutionReverted
 	}
-	addressType, _ := abi.NewType("address", "", nil)
-	bytesType, _ := abi.NewType("bytes", "", nil)
+	addressType, err := abi.NewType("address", "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	bytesType, err := abi.NewType("bytes", "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
 	arguments := abi.Arguments{
 		{Type: bytesType},
 		{Type: addressType},
@@ -725,10 +732,17 @@ func (c *create2ContractWithUiHash) Run(input []byte, caller ContractRef, value 
 	}
 	res, addr, returnGas, suberr := evm.Create2WithUiHash(caller, input, suppliedGas, value)
 	if suberr != nil {
-		return nil, 0, suberr
+		// return ErrExecutionReverted for remaining gas to be refunded
+		return nil, returnGas, ErrExecutionReverted
 	}
-	addressType, _ := abi.NewType("address", "", nil)
-	bytesType, _ := abi.NewType("bytes", "", nil)
+	addressType, err := abi.NewType("address", "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	bytesType, err := abi.NewType("bytes", "", nil)
+	if err != nil {
+		return nil, 0, err
+	}
 	arguments := abi.Arguments{
 		{Type: bytesType},
 		{Type: addressType},
