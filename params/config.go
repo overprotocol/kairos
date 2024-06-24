@@ -25,14 +25,9 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash = common.HexToHash("0x03a0a86dfb0bb3c527e3a758dea724df388c3bf0e3c075ad75f84f2838cad6f4")
+	MainnetGenesisHash = common.HexToHash("0x7af3b3e876208a7f50c2cd1822b0f1fab3972d535ed42db4375c341b1c5dcfa0")
 	CreeperGenesisHash = common.HexToHash("0x0a917e2b2f7544209d6b5fd1729f3e390434ffa82398c66ba76c6f22b8a13afc")
 	DolphinGenesisHash = common.HexToHash("0xf3567ecf4872eb8def07c07ad4e219040a5b54d8da3b567a05b7b41a5ef5c55f")
-)
-
-var (
-	DepositContractAddress    = common.HexToAddress("0x000000000000000000000000000000000beac017")
-	FoundationTreasuryAddress = common.HexToAddress("0x000000000000000000000000000000000000cafe")
 )
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -51,20 +46,18 @@ var (
 		ConstantinopleBlock:           big.NewInt(0),
 		PetersburgBlock:               big.NewInt(0),
 		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
+		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
 		AlpacaBlock:                   big.NewInt(0),
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		ShanghaiTime:                  nil,
-		Clique: &CliqueConfig{
-			Period: 12,
-			Epoch:  30000,
-		},
-		SweepEpoch: 648000, // about 90 days
+		TerminalTotalDifficulty:       big.NewInt(0),
+		TerminalTotalDifficultyPassed: true,
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1718971440),
+		Ethash:                        new(EthashConfig),
+		SweepEpoch:                    259200000,
 	}
 
 	// CreeperChainConfig is the chain parameters to run a node on the main network.

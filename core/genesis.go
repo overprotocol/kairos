@@ -556,8 +556,7 @@ func (g *Genesis) MustCommit(db ethdb.Database, triedb *trie.Database) *types.Bl
 func DefaultGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
-		Timestamp:  1548854791,
-		ExtraData:  hexutil.MustDecode("0x00000000000000000000000000000000000000000000000000000000000000003f44c14e26a12884da7ff545ed4328de6f50f5a4d9b6fa15e8ae1374333015bff6ed41f62977234c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		Timestamp:  1718967600,
 		GasLimit:   30000000,
 		Difficulty: big.NewInt(1),
 		Alloc:      decodePrealloc(mainnetAllocData),

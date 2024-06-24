@@ -481,7 +481,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		if rules.IsLondon {
 			// BaseFee is sent to the foundation's treasury
 			burn := new(big.Int).Mul(fee, st.evm.Context.BaseFee)
-			st.state.AddBalance(params.FoundationTreasuryAddress, burn)
+			st.state.AddBalance(params.DaoTreasuryAddress, burn)
 		}
 		fee.Mul(fee, effectiveTip)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee)
