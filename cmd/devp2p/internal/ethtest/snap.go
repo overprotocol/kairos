@@ -229,7 +229,7 @@ server to return no data because genesis is older than 127 blocks.`,
 			limitHash:    ffHash,
 			expAccounts:  67,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x8a6021a625f50bcf4ccbb37df2815038b1ae04fa09220c846942f79a254cd804"),
+			expLast:      common.HexToHash("0x878040f46b1b4a065e6b82abd35421eb69eededc0c9598b82e3587ae47c8a651"),
 			desc: `This test requests data at a state root that is 127 blocks old.
 We expect the server to have this state available.`,
 		},
@@ -363,7 +363,7 @@ func (s *Suite) TestSnapGetStorageRanges(t *utesting.T) {
 				"balance": "1",
 				"nonce": 1,
 				"root": "0xe318dff15b33aa7f2f12d5567d58628e3e3f2e8859e46b56981a4083b391da17",
-				"codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+				"codeHash": "0xdcd325be87fd78a9f5ad78fb21c1b0ee96316df7b323163fc47849c1a191909f",
 				"storage": {
 					// Note: keys below are hashed!!!
 					"0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace": "02",
