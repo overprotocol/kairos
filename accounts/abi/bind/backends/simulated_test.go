@@ -1490,7 +1490,7 @@ func TestBaseFeeToTreasury(t *testing.T) {
 	bgCtx := context.Background()
 
 	// check balance at Treasury account is zero
-	initbal, err := sim.BalanceAt(bgCtx, params.FoundationTreasuryAddress, nil)
+	initbal, err := sim.BalanceAt(bgCtx, params.DaoTreasuryAddress, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1523,7 +1523,7 @@ func TestBaseFeeToTreasury(t *testing.T) {
 	}
 
 	// check balance at Treasury account
-	bal, err := sim.BalanceAt(bgCtx, params.FoundationTreasuryAddress, nil)
+	bal, err := sim.BalanceAt(bgCtx, params.DaoTreasuryAddress, nil)
 	if err != nil {
 		t.Error(err)
 	}

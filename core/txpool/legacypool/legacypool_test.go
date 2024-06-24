@@ -134,7 +134,7 @@ func dynamicFeeTx(epoch, nonce uint32, gaslimit uint64, gasFee *big.Int, tip *bi
 	return tx
 }
 
-func restorationTx(epoch, nonce uint32, to *common.Address, value *big.Int, gaslimit uint64, gasFee *big.Int, tip *big.Int, restoreData *types.RestoreData, key *ecdsa.PrivateKey) *types.Transaction {
+func restorationTx(epoch, nonce uint32, to *common.Address, value *big.Int, gaslimit uint64, gasFee *big.Int, tip *big.Int, data []byte, restoreData *types.RestoreData, key *ecdsa.PrivateKey) *types.Transaction {
 	tx, _ := types.SignNewTx(key, types.LatestSigner(alpacaConfig), &types.RestorationTx{
 		ChainID:     params.TestChainConfig.ChainID,
 		Nonce:       types.MsgToTxNonce(epoch, nonce),
@@ -143,7 +143,7 @@ func restorationTx(epoch, nonce uint32, to *common.Address, value *big.Int, gasl
 		Gas:         gaslimit,
 		To:          to,
 		Value:       value,
-		Data:        nil,
+		Data:        data,
 		AccessList:  nil,
 		RestoreData: restoreData,
 	})
@@ -2668,18 +2668,24 @@ func TestInvalidRestorationTx(t *testing.T) {
 
 	nonEmptyTo := &common.Address{}
 	nonEmptyValue := big.NewInt(1e18)
+	nonEmptyData := []byte{1, 2, 3, 4}
 	nonEmptyRestoreData := &types.RestoreData{}
-	tx := restorationTx(currentEpoch-1, 0, nonEmptyTo, nil, 37000, big.NewInt(1), big.NewInt(1), nonEmptyRestoreData, key)
+	tx := restorationTx(currentEpoch-1, 0, nil, nonEmptyValue, 38000, big.NewInt(1), big.NewInt(1), nonEmptyData, nonEmptyRestoreData, key)
 	if err := pool.addRemote(tx); err != core.ErrInvalidRestoration {
 		t.Error("expected", core.ErrInvalidRestoration, "got", err)
 	}
 
-	tx = restorationTx(currentEpoch-1, 0, nil, nonEmptyValue, 37000, big.NewInt(1), big.NewInt(1), nonEmptyRestoreData, key)
+	tx = restorationTx(currentEpoch-1, 0, nonEmptyTo, nil, 38000, big.NewInt(1), big.NewInt(1), nonEmptyData, nonEmptyRestoreData, key)
 	if err := pool.addRemote(tx); err != core.ErrInvalidRestoration {
 		t.Error("expected", core.ErrInvalidRestoration, "got", err)
 	}
 
-	tx = restorationTx(currentEpoch-1, 0, nil, nil, 37000, big.NewInt(1), big.NewInt(1), nonEmptyRestoreData, key)
+	tx = restorationTx(currentEpoch-1, 0, nil, nil, 38000, big.NewInt(1), big.NewInt(1), nil, nonEmptyRestoreData, key)
+	if err := pool.addRemote(tx); err != core.ErrInvalidRestoration {
+		t.Error("expected", core.ErrInvalidRestoration, "got", err)
+	}
+
+	tx = restorationTx(currentEpoch-1, 0, nil, nil, 38000, big.NewInt(1), big.NewInt(1), nonEmptyData, nonEmptyRestoreData, key)
 	if err := pool.addRemote(tx); err != nil {
 		t.Error(err)
 	}

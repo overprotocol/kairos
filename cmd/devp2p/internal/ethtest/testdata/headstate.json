@@ -1,5 +1,5 @@
 {
-  "root": "324c4954a9f72e248ac9ecd60312a2c510fc98fa5ebbc5638743d577378550b0",
+  "root": "a76f0cfa099f34029ca4a536dc7886e64e3af9e274d6b133670574dc7e310d91",
   "accounts": {
     "0x0000000000000000000000000000000000000000": {
       "balance": "219843750000025977098",
@@ -10,16 +10,6 @@
       "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
       "address": "0x0000000000000000000000000000000000000000",
       "key": "0x5380c7b7ae81a58eb98d9c78de4a1fd7fd9535fc953ed2be602daaa41767312a"
-    },
-    "0x000000000000000000000000000000000000cafE": {
-      "balance": "407707626382466",
-      "nonce": 0,
-      "epochCoverage": 0,
-      "root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
-      "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-      "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-      "address": "0x000000000000000000000000000000000000cafe",
-      "key": "0xb76a38a3edfb85c840ab991523b25f02558cd65ce946fab0e77bfd6848ffef7c"
     },
     "0x000758CafdCaed52730DcA830B9FEd9B496Adf56": {
       "balance": "0",
@@ -2447,6 +2437,16 @@
       "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
       "address": "0xa8f9007ffeb086178c80f34ae7ba557521d4eb9e",
       "key": "0xdcddbd921764ee945ab233a3d18681960c44d5bc4a5ba32da76fbe0c403dd690"
+    },
+    "0xA90F275e33EB6253723CaB7F3B9Fb9dEba1Ee0Bc": {
+      "balance": "407707626382466",
+      "nonce": 0,
+      "epochCoverage": 0,
+      "root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "codeHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+      "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+      "address": "0xa90f275e33eb6253723cab7f3b9fb9deba1ee0bc",
+      "key": "0x7c18f713b14f18d6e9d1593e2e2e5328ff6d9be72c0ce6e26ae0e9755939ef73"
     },
     "0xA96DC35B51cd1359f3CF93e0Ec564062852Ff299": {
       "balance": "0",
