@@ -27,7 +27,7 @@ import (
 var (
 	MainnetGenesisHash = common.HexToHash("0x7af3b3e876208a7f50c2cd1822b0f1fab3972d535ed42db4375c341b1c5dcfa0")
 	CreeperGenesisHash = common.HexToHash("0x0a917e2b2f7544209d6b5fd1729f3e390434ffa82398c66ba76c6f22b8a13afc")
-	DolphinGenesisHash = common.HexToHash("0xf3567ecf4872eb8def07c07ad4e219040a5b54d8da3b567a05b7b41a5ef5c55f")
+	DolphinGenesisHash = common.HexToHash("0xe5b5b2e8ad664b618436d629deaf08b5cc484838a55205433fccc515d5fe1a84")
 )
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -102,20 +102,18 @@ var (
 		ConstantinopleBlock:           big.NewInt(0),
 		PetersburgBlock:               big.NewInt(0),
 		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
+		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
 		AlpacaBlock:                   big.NewInt(0),
-		TerminalTotalDifficulty:       big.NewInt(500),
+		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1717498753),
-		Clique: &CliqueConfig{
-			Period: 12,
-			Epoch:  30000,
-		},
-		SweepEpoch: 648000,
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1719223097),
+		Ethash:                        new(EthashConfig),
+		SweepEpoch:                    259200000,
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.

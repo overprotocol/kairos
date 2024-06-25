@@ -26,5 +26,5 @@ var MainnetV5Bootnodes = []string{
 }
 
 var DolphinV5Bootnodes = []string{
-	"enr:-JS4QATEoKyFz8Y0G2SFdoaVbqINmJ-fmq_36LD1oNkH2Z4sInB6i-qf80c-7UsPbdA5lXQ6vrfTb2yCX7ZYHQq5H-mGAY_NUtGQgmlkgnY0gmlwhCJAVH-Eb3ZlcoQAAAAAiXNlY3AyNTZrMaEDqd2m2sERO693fSo5-6iqwczDKnOafAFaW-2vNfzGJHGDdWRwgsc4",
+	"enr:-JS4QGsU5h_Wr2ow_JozOVnKcaygOwgCbFy83521kkrcPvm4FwDIppadBbSxA-9LOcf4LXBgj6I00dtanHS5FbtP8X2GAZBJSMjzgmlkgnY0gmlwhCJAVH-Eb3ZlcoQAAAAAiXNlY3AyNTZrMaEDmhB4BCT1IVWg3JbTaFmBUQhOxnGXHKHAb-hFurl9TNiDdWRwgsc4",
 }
