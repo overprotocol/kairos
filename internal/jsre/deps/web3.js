@@ -5293,13 +5293,6 @@ var methods = function () {
         outputFormatter: formatters.outputBigNumberFormatter
     });
     
-    var existWithoutCkpt = new Method({
-        name: 'existWithoutCkpt',
-        call: 'eth_existWithoutCkpt',
-        params: 2,
-        inputFormatter: [formatters.inputAddressFormatter, formatters.inputDefaultBlockNumberFormatter]
-    });
-
     var getStorageAt = new Method({
         name: 'getStorageAt',
         call: 'eth_getStorageAt',
@@ -5458,7 +5451,6 @@ var methods = function () {
 
     return [
         getBalance,
-        existWithoutCkpt,
         getStorageAt,
         getCode,
         getBlock,

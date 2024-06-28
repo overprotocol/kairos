@@ -632,10 +632,6 @@ func (api *BlockChainAPI) ChainId() *hexutil.Big {
 	return (*hexutil.Big)(api.b.ChainConfig().ChainID)
 }
 
-func (api *BlockChainAPI) SweepEpoch() hexutil.Uint64 {
-	return hexutil.Uint64(api.b.ChainConfig().SweepEpoch)
-}
-
 // BlockNumber returns the block number of the chain head.
 func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
@@ -651,17 +647,6 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 		return nil, err
 	}
 	return (*hexutil.Big)(state.GetBalance(address)), state.Error()
-}
-
-// ExistWithoutCkpt returns the existence of the given address in the state of the
-// given block number without checkpoint state. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
-// block numbers are also allowed.
-func (s *BlockChainAPI) ExistWithoutCkpt(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash, true)
-	if state == nil || err != nil {
-		return false, err
-	}
-	return state.Exist(address), state.Error()
 }
 
 // Result structs for GetProof
@@ -826,17 +811,6 @@ func (s *BlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.Hash) m
 		return s.rpcMarshalHeader(ctx, header)
 	}
 	return nil
-}
-
-// GetHeaderByNumber returns the requested canonical block header.
-// * When blockNr is -1 the chain head is returned.
-// * When blockNr is -2 the pending chain head is returned.
-func (s *BlockChainAPI) GetEpochByNumber(ctx context.Context, number rpc.BlockNumber) (uint32, error) {
-	header, err := s.b.HeaderByNumber(ctx, number)
-	if header != nil && err == nil {
-		return s.b.CalcEpoch(header.Number.Uint64())
-	}
-	return 0, err
 }
 
 // GetBlockByNumber returns the requested canonical block.

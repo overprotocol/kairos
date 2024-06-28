@@ -270,7 +270,7 @@ func testGetProof(t *testing.T, client *rpc.Client, addr common.Address) {
 func testGetRestorationProof(t *testing.T, client *rpc.Client) {
 	ec := New(client)
 	ethcl := ethclient.NewClient(client)
-	currentEpoch, err := ethcl.EpochByNumber(context.Background(), nil)
+	currentEpoch, err := ethcl.EpochAt(context.Background(), nil)
 	epochCoverage := currentEpoch - 2
 	if err != nil {
 		t.Fatal(err)
