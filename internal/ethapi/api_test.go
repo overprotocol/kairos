@@ -56,12 +56,20 @@ import (
 func testTransactionMarshal(t *testing.T, tests []txData, config *params.ChainConfig) {
 	t.Parallel()
 	var (
-		signer = types.LatestSigner(config)
-		key, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		signer        = types.LatestSigner(config)
+		restoreSigner = types.LatestRestoreDataSigner(config)
+		key, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 	)
 
 	for i, tt := range tests {
 		var tx2 types.Transaction
+		if restorationTx, exist := tt.Tx.(*types.RestorationTx); exist {
+			restoreData, err := types.SignRestoreData(restorationTx.RestoreData, restoreSigner, key)
+			if err != nil {
+				t.Fatalf("test %d: signing failed: %v", i, err)
+			}
+			restorationTx.RestoreData = restoreData
+		}
 		tx, err := types.SignNewTx(key, signer, tt.Tx)
 		if err != nil {
 			t.Fatalf("test %d: signing failed: %v", i, err)
@@ -351,6 +359,78 @@ func allTransactionTypes(addr common.Address, config *params.ChainConfig) []txDa
 				"v": "0x0",
 				"r": "0x6446b8a682db7e619fc6b4f6d1f708f6a17351a41c7fbd63665f469bc78b41b9",
 				"s": "0x7626abc15834f391a117c63450047309dbf84c5ce3e8e609b607062641e2de43",
+				"yParity": "0x0"
+			}`,
+		},
+		{
+			Tx: &types.RestorationTx{
+				ChainID:   config.ChainID,
+				Nonce:     5,
+				GasTipCap: big.NewInt(6),
+				GasFeeCap: big.NewInt(9),
+				Gas:       7,
+				To:        &addr,
+				Value:     big.NewInt(8),
+				Data:      []byte{0, 1, 2, 3, 4},
+				AccessList: types.AccessList{
+					types.AccessTuple{
+						Address:     common.Address{0x2},
+						StorageKeys: []common.Hash{types.EmptyRootHash},
+					},
+				},
+				RestoreData: &types.RestoreData{
+					ChainID:      config.ChainID,
+					Target:       addr,
+					SourceEpoch:  2,
+					TargetEpoch:  3,
+					Fee:          big.NewInt(4),
+					FeeRecipient: &addr,
+					V:            big.NewInt(5),
+					R:            big.NewInt(6),
+					S:            big.NewInt(7),
+				},
+				V: big.NewInt(32),
+				R: big.NewInt(10),
+				S: big.NewInt(11),
+			},
+			Want: `{
+				"blockHash": null,
+				"blockNumber": null,
+				"from": "0x71562b71999873db5b286df957af199ec94617f7",
+				"gas": "0x7",
+				"gasPrice": "0x9",
+				"maxFeePerGas": "0x9",
+				"maxPriorityFeePerGas": "0x6",
+				"hash": "0xbc5dd2947e031787db1e2eee0fb85cb55fec6385dda5a7207753a354551b1189",
+				"input": "0x0001020304",
+				"nonce": "0x5",
+				"to": "0xdead000000000000000000000000000000000000",
+				"transactionIndex": null,
+				"value": "0x8",
+				"type": "0x46",
+				"accessList": [
+					{
+						"address": "0x0200000000000000000000000000000000000000",
+						"storageKeys": [
+							"0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
+						]
+					}
+				],
+				"restoreData": {
+					"chainId": "0x539",
+					"target": "0xdead000000000000000000000000000000000000",
+					"sourceEpoch": "0x2",
+					"targetEpoch": "0x3",
+					"fee": "0x4",
+					"feeRecipient": "0xdead000000000000000000000000000000000000",
+					"v": "0x1",
+					"r": "0x81eea940480b744bd5c6e02b5e076665b4d9cbf54c3538907956aa982e22566",
+					"s": "0x69d99803d28c6801f345ac4e79f3a815ae5ff2a8dd4ff85018f9973950ce3c1a"
+				},
+				"chainId": "0x539",
+				"v": "0x0",
+				"r": "0x8e631aafcae9cf908b4739b9666a7aba6a839321c3b6307488fb7eba37f54208",
+				"s": "0x8f7766a1e184e45526a85b73c225b088b9efa8ba2ef53d7a8543e2bba5979a1",
 				"yParity": "0x0"
 			}`,
 		},
