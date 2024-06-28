@@ -917,3 +917,13 @@ func (c *ChainConfig) CalcLastCheckpointBlockNumber(epoch uint32) (bn uint64, ex
 		return 0, false
 	}
 }
+
+// CalcNextCheckpointBlockNumber calculates the next checkpoint block number of the given epoch.
+func (c *ChainConfig) CalcNextCheckpointBlockNumber(epoch uint32) (bn uint64) {
+	return uint64(epoch+1)*c.SweepEpoch - 1
+}
+
+// CalcNextCheckpointBlockNumberByNumber calculates the next checkpoint block number of the given block number.
+func (c *ChainConfig) CalcNextCheckpointBlockNumberByNumber(number uint64) (bn uint64) {
+	return c.CalcNextCheckpointBlockNumber(c.CalcEpoch(number))
+}
