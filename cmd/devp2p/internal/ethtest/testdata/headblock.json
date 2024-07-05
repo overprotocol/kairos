@@ -1,8 +1,8 @@
 {
-  "parentHash": "0x02e14137096454f18568f1230f98756d0cc7518225aac7b8eacb322ad7f89f5c",
+  "parentHash": "0x488e9d117536a82a0b6c43d3db4b3b97c2d34b0cdaf3bd7bf8a83c92ef41d85c",
   "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
   "miner": "0x0000000000000000000000000000000000000000",
-  "stateRoot": "0xa76f0cfa099f34029ca4a536dc7886e64e3af9e274d6b133670574dc7e310d91",
+  "stateRoot": "0xb93543153726b694a41620e41a1e37274a513cff82cb7bc022fa60ef3cf30994",
   "checkpointRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
   "transactionsRoot": "0x5df1810ff52aa6c5b349232e9e88ad8f4d4bd25bd630bfc7e7bc842c571264e0",
   "receiptsRoot": "0xd3a6acf9a244d78b33831df95d472c4128ea85bf079a1d41e32ed0b7d2244c9e",
@@ -20,5 +20,5 @@
   "blobGasUsed": "0x0",
   "excessBlobGas": "0x0",
   "parentBeaconBlockRoot": "0xf653da50cdff4733f13f7a5e338290e883bdf04adf3f112709728063ea965d6c",
-  "hash": "0x76e4ebbe981c2c1dcabf72fb16a5646dc33c49e0fefdbb9c0a0f97689ef4eae7"
+  "hash": "0xcea3f1fe8474da9442ff6f14ac09a75d5ab0fcb431fe695c97162df4f7ad631e"
 }
