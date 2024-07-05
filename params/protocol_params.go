@@ -186,7 +186,7 @@ var Bls12381MultiExpDiscountTable = [128]uint64{1200, 888, 764, 641, 594, 547, 5
 
 var (
 	DepositContractAddress common.Address = common.HexToAddress("0x000000000000000000000000000000000beAC017")
-	DaoTreasuryAddress     common.Address = common.HexToAddress("0xA90F275e33EB6253723CaB7F3B9Fb9dEba1Ee0Bc")
+	DaoTreasuryAddress     common.Address = common.HexToAddress("0xf8De282b3f23f2378D2994043c9Fb65658B1c62B")
 )
 
 var (
