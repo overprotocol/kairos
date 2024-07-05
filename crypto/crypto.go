@@ -104,8 +104,8 @@ func Keccak512(data ...[]byte) []byte {
 }
 
 // CreateAddress creates an ethereum address given the bytes, epoch coverage and the nonce
-func CreateAddress(b common.Address, epochCoverage, nonce uint32) common.Address {
-	data, _ := rlp.EncodeToBytes([]interface{}{b, epochCoverage, nonce})
+func CreateAddress(b common.Address, txNonce uint64) common.Address {
+	data, _ := rlp.EncodeToBytes([]interface{}{b, txNonce})
 	return common.BytesToAddress(Keccak256(data)[12:])
 }
 

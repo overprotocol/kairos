@@ -4029,7 +4029,7 @@ func testCreateThenDelete(t *testing.T, config *params.ChainConfig) {
 		// A sender who makes transactions, has some funds
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
-		destAddress = crypto.CreateAddress(address, 0, 0)
+		destAddress = crypto.CreateAddress(address, 0)
 		funds       = big.NewInt(1000000000000000)
 	)
 
@@ -4103,7 +4103,7 @@ func TestDeleteThenCreate(t *testing.T) {
 		engine      = ethash.NewFaker()
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
-		factoryAddr = crypto.CreateAddress(address, 0, 0)
+		factoryAddr = crypto.CreateAddress(address, 0)
 		funds       = big.NewInt(1000000000000000)
 	)
 	/*
@@ -4215,7 +4215,7 @@ func TestTransientStorageReset(t *testing.T) {
 		engine      = ethash.NewFaker()
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
-		destAddress = crypto.CreateAddress(address, 0, 0)
+		destAddress = crypto.CreateAddress(address, 0)
 		funds       = big.NewInt(1000000000000000)
 		vmConfig    = vm.Config{
 			ExtraEips: []int{1153}, // Enable transient storage EIP

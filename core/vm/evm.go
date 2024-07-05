@@ -708,7 +708,7 @@ func (evm *EVM) createWithUi(caller ContractRef, codeAndUiHash *codeAndUiHash, g
 
 // Create creates a new contract using code as deployment code.
 func (evm *EVM) Create(caller ContractRef, code []byte, gas uint64, value *big.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
-	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetEpochCoverage(caller.Address()), evm.StateDB.GetNonce(caller.Address()))
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetTxNonce(caller.Address()))
 	return evm.create(caller, &codeAndHash{code: code}, gas, value, contractAddr, CREATE)
 }
 
@@ -740,7 +740,7 @@ func (evm *EVM) CreateWithUiHash(caller ContractRef, input []byte, gas uint64, v
 	// Nonce of caller can not be zero
 	// In case of EOA, nonce is incremented by 1 before calling CreateWithUiHash
 	// In case of CA, nonce is incremented by 1 inside of CreateWithUiHash
-	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetEpochCoverage(caller.Address()), evm.StateDB.GetNonce(caller.Address())-1)
+	contractAddr = crypto.CreateAddress(caller.Address(), evm.StateDB.GetTxNonce(caller.Address())-1)
 	return evm.createWithUi(caller, &codeAndUiHash, gas, value, contractAddr, CREATE)
 }
 

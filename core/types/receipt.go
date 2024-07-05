@@ -351,7 +351,7 @@ func (rs Receipts) DeriveFields(config *params.ChainConfig, hash common.Hash, nu
 		if txs[i].IsContractCreation() || txs[i].IsPrecompiledContractCreation() {
 			// Deriving the signer is expensive, only do if it's actually needed
 			from, _ := Sender(signer, txs[i])
-			rs[i].ContractAddress = crypto.CreateAddress(from, txs[i].MsgEpochCoverage(), txs[i].MsgNonce())
+			rs[i].ContractAddress = crypto.CreateAddress(from, txs[i].Nonce())
 		} else {
 			rs[i].ContractAddress = common.Address{}
 		}

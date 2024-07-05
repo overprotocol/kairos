@@ -90,7 +90,7 @@ func TestEOACreateWithUI(t *testing.T) {
 		}
 		tx := types.NewTransaction(gen.TxNonce(addr1), common.CreateWithUiHashAddress, big.NewInt(10000), 3000000, nil, input)
 		gen.AddTx(signTx(tx, key1))
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}
@@ -203,7 +203,7 @@ func TestCACreateWithUI(t *testing.T) {
 		}
 		tx := types.NewTransaction(gen.TxNonce(addr1), common.CreateWithUiHashAddress, big.NewInt(10000), 3000000, nil, input)
 		gen.AddTx(signTx(tx, key1))
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}
@@ -222,11 +222,10 @@ func TestCACreateWithUI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		epochCoverage := gen.statedb.GetEpochCoverage(contractAddr)
-		nonce := gen.statedb.GetNonce(contractAddr)
+		txNonce := gen.statedb.GetTxNonce(contractAddr)
 		tx := types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(10000), 3000000, nil, input)
 		gen.AddTx(signTx(tx, key1))
-		contractAddr2 = crypto.CreateAddress(contractAddr, epochCoverage, nonce)
+		contractAddr2 = crypto.CreateAddress(contractAddr, txNonce)
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}
@@ -265,7 +264,7 @@ func TestCACreate2WithUI(t *testing.T) {
 		}
 		tx := types.NewTransaction(gen.TxNonce(addr1), common.CreateWithUiHashAddress, big.NewInt(10000), 3000000, nil, input)
 		gen.AddTx(signTx(tx, key1))
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}
@@ -325,7 +324,7 @@ func TestCAChangeUi(t *testing.T) {
 		}
 		tx := types.NewTransaction(gen.TxNonce(addr1), common.CreateWithUiHashAddress, big.NewInt(10000), 3000000, nil, input)
 		gen.AddTx(signTx(tx, key1))
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}
