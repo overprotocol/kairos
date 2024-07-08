@@ -309,23 +309,24 @@ func (dl *diskLayer) journal(w io.Writer) error {
 		return errSnapshotStale
 	}
 
-	// journal checkpoint disk layer first
+	// Step one, write the checkpoint disk layer into the journal.
 	if err := dl.ckptLayer.journal(w); err != nil {
 		return err
 	}
 
-	// Step one, write the disk root into the journal.
+	// Step two, write the disk root into the journal.
 	if err := rlp.Encode(w, dl.root); err != nil {
 		return err
 	}
-	// Step two, write the corresponding state id into the journal
+	// Step three, write the corresponding state id into the journal
 	if err := rlp.Encode(w, dl.id); err != nil {
 		return err
 	}
+	// Step four, write the epoch number into the journal
 	if err := rlp.Encode(w, dl.epoch); err != nil {
 		return err
 	}
-	// Step three, write all unwritten nodes into the journal
+	// Step five, write all unwritten nodes into the journal
 	nodes := make([]journalNodes, 0, len(dl.buffer.nodes))
 	for owner, subset := range dl.buffer.nodes {
 		entry := journalNodes{Owner: owner}
@@ -337,7 +338,7 @@ func (dl *diskLayer) journal(w io.Writer) error {
 	if err := rlp.Encode(w, nodes); err != nil {
 		return err
 	}
-	log.Debug("Journaled pathdb disk layer", "root", dl.root, "nodes", len(dl.buffer.nodes))
+	log.Debug("Journaled pathdb disk layer", "root", dl.root, "epoch", dl.epoch, "nodes", len(dl.buffer.nodes))
 	return nil
 }
 
@@ -401,6 +402,8 @@ func (dl *diffLayer) journal(w io.Writer) error {
 	return nil
 }
 
+// journal implements the layer interface, marshaling checkpoint layer meta data
+// into provided byte buffer.
 func (dl *ckptDiskLayer) journal(w io.Writer) error {
 	dl.lock.RLock()
 	defer dl.lock.RUnlock()
@@ -409,10 +412,13 @@ func (dl *ckptDiskLayer) journal(w io.Writer) error {
 	if dl.stale {
 		return errSnapshotStale
 	}
-	// Step one, write the disk root into the journal.
+	// Write the checkpoint disk root into the journal.
 	if err := rlp.Encode(w, dl.root); err != nil {
 		return err
 	}
+	// Don't need to write the state id of checkpoint disk layer since it's always 0.
+	// Don't nned to write the epoch number of checkpoint disk layer, since it's always
+	// the previous epoch of disk layer.
 	log.Debug("Journaled pathdb checkpoint disk layer", "ckptRoot", dl.root)
 	return nil
 }

@@ -130,7 +130,7 @@ func (dl *diffLayer) node(owner common.Hash, path []byte, hash common.Hash, dept
 		}
 	}
 
-	// In case of account node, If parent epoch is different,
+	// In case of account node, if parent epoch is different,
 	// the account doesn't exist in this epoch
 	if owner == (common.Hash{}) && dl.epochNumber() != dl.parent.epochNumber() {
 		return nil, nil

@@ -92,7 +92,7 @@ var (
 			Period: 12,
 			Epoch:  30000,
 		},
-		SweepEpoch: 100800,
+		SweepEpoch: 100800, // 2 weeks
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
