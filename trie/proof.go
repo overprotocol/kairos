@@ -140,6 +140,35 @@ func VerifyProof(rootHash common.Hash, key []byte, proofDb ethdb.KeyValueReader)
 	}
 }
 
+// VerifyProofUnsafe is the faster version of VerifyProof. It doesn't copy the
+// node data when decoding the node. It's safe to use only if the proof data is
+// not modified during verifying merkle proof.
+func VerifyProofUnsafe(rootHash common.Hash, key []byte, proofDb ethdb.KeyValueReader) (value []byte, err error) {
+	key = keybytesToHex(key)
+	wantHash := rootHash
+	for i := 0; ; i++ {
+		buf, _ := proofDb.Get(wantHash[:])
+		if buf == nil {
+			return nil, fmt.Errorf("proof node %d (hash %064x) missing", i, wantHash)
+		}
+		n, err := decodeNodeUnsafe(wantHash[:], buf)
+		if err != nil {
+			return nil, fmt.Errorf("bad proof node %d: %v", i, err)
+		}
+		keyrest, cld := get(n, key, true)
+		switch cld := cld.(type) {
+		case nil:
+			// The trie doesn't contain the key.
+			return nil, nil
+		case hashNode:
+			key = keyrest
+			copy(wantHash[:], cld)
+		case valueNode:
+			return cld, nil
+		}
+	}
+}
+
 // proofToPath converts a merkle proof to trie node path. The main purpose of
 // this function is recovering a node path from the merkle proof stream. All
 // necessary nodes will be resolved and leave the remaining as hashnode.
