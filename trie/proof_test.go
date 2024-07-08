@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"golang.org/x/exp/slices"
 )
@@ -74,6 +75,11 @@ func makeProvers(trie *Trie) []func(key []byte) *memorydb.Database {
 }
 
 func TestProof(t *testing.T) {
+	testProof(t, VerifyProof)
+	testProof(t, VerifyProofUnsafe)
+}
+
+func testProof(t *testing.T, verifyProof func(common.Hash, []byte, ethdb.KeyValueReader) ([]byte, error)) {
 	trie, vals := randomTrie(500)
 	root := trie.Hash()
 	for i, prover := range makeProvers(trie) {
@@ -82,7 +88,7 @@ func TestProof(t *testing.T) {
 			if proof == nil {
 				t.Fatalf("prover %d: missing key %x while constructing proof", i, kv.k)
 			}
-			val, err := VerifyProof(root, kv.k, proof)
+			val, err := verifyProof(root, kv.k, proof)
 			if err != nil {
 				t.Fatalf("prover %d: failed to verify proof for key %x: %v\nraw proof: %x", i, kv.k, err, proof)
 			}
@@ -94,6 +100,10 @@ func TestProof(t *testing.T) {
 }
 
 func TestOneElementProof(t *testing.T) {
+	testOneElementProof(t, VerifyProof)
+	testOneElementProof(t, VerifyProofUnsafe)
+}
+func testOneElementProof(t *testing.T, verifyProof func(common.Hash, []byte, ethdb.KeyValueReader) ([]byte, error)) {
 	trie := NewEmpty(NewDatabase(rawdb.NewMemoryDatabase(), nil))
 	updateString(trie, "k", "v")
 	for i, prover := range makeProvers(trie) {
@@ -104,7 +114,7 @@ func TestOneElementProof(t *testing.T) {
 		if proof.Len() != 1 {
 			t.Errorf("prover %d: proof should have one element", i)
 		}
-		val, err := VerifyProof(trie.Hash(), []byte("k"), proof)
+		val, err := verifyProof(trie.Hash(), []byte("k"), proof)
 		if err != nil {
 			t.Fatalf("prover %d: failed to verify proof: %v\nraw proof: %x", i, err, proof)
 		}
@@ -115,6 +125,10 @@ func TestOneElementProof(t *testing.T) {
 }
 
 func TestBadProof(t *testing.T) {
+	testBadProof(t, VerifyProof)
+	testBadProof(t, VerifyProofUnsafe)
+}
+func testBadProof(t *testing.T, verifyProof func(common.Hash, []byte, ethdb.KeyValueReader) ([]byte, error)) {
 	trie, vals := randomTrie(800)
 	root := trie.Hash()
 	for i, prover := range makeProvers(trie) {
@@ -135,7 +149,7 @@ func TestBadProof(t *testing.T) {
 			mutateByte(val)
 			proof.Put(crypto.Keccak256(val), val)
 
-			if _, err := VerifyProof(root, kv.k, proof); err == nil {
+			if _, err := verifyProof(root, kv.k, proof); err == nil {
 				t.Fatalf("prover %d: expected proof to fail for key %x", i, kv.k)
 			}
 		}
@@ -145,6 +159,10 @@ func TestBadProof(t *testing.T) {
 // Tests that missing keys can also be proven. The test explicitly uses a single
 // entry trie and checks for missing keys both before and after the single entry.
 func TestMissingKeyProof(t *testing.T) {
+	testMissingKeyProof(t, VerifyProof)
+	testMissingKeyProof(t, VerifyProofUnsafe)
+}
+func testMissingKeyProof(t *testing.T, verifyProof func(common.Hash, []byte, ethdb.KeyValueReader) ([]byte, error)) {
 	trie := NewEmpty(NewDatabase(rawdb.NewMemoryDatabase(), nil))
 	updateString(trie, "k", "v")
 
@@ -155,7 +173,7 @@ func TestMissingKeyProof(t *testing.T) {
 		if proof.Len() != 1 {
 			t.Errorf("test %d: proof should have one element", i)
 		}
-		val, err := VerifyProof(trie.Hash(), []byte(key), proof)
+		val, err := verifyProof(trie.Hash(), []byte(key), proof)
 		if err != nil {
 			t.Fatalf("test %d: failed to verify proof: %v\nraw proof: %x", i, err, proof)
 		}
@@ -863,6 +881,27 @@ func BenchmarkVerifyProof(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		im := i % len(keys)
 		if _, err := VerifyProof(root, []byte(keys[im]), proofs[im]); err != nil {
+			b.Fatalf("key %x: %v", keys[im], err)
+		}
+	}
+}
+
+func BenchmarkVerifyProofUnsafe(b *testing.B) {
+	trie, vals := randomTrie(100)
+	root := trie.Hash()
+	var keys []string
+	var proofs []*memorydb.Database
+	for k := range vals {
+		keys = append(keys, k)
+		proof := memorydb.New()
+		trie.Prove([]byte(k), proof)
+		proofs = append(proofs, proof)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		im := i % len(keys)
+		if _, err := VerifyProofUnsafe(root, []byte(keys[im]), proofs[im]); err != nil {
 			b.Fatalf("key %x: %v", keys[im], err)
 		}
 	}
