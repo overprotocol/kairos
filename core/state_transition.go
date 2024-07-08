@@ -155,8 +155,9 @@ func (m *Message) IsContractCreation() bool {
 	return m.RestoreData == nil && m.To == nil
 }
 
+// IsPrecompiledContractCreation returns true if the message is a precompiled contract creation message.
 func (m *Message) IsPrecompiledContractCreation() bool {
-	return m.To != nil && common.IsCreationPrecompiled(*m.To)
+	return m.RestoreData == nil && m.To != nil && common.IsCreationPrecompiled(*m.To)
 }
 
 // IsRestoration returns true if the message is a restoration message.

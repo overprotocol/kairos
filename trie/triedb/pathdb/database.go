@@ -597,6 +597,9 @@ func (db *Database) DeleteEpochData(newEpoch uint32) {
 		// The new epoch is within the epoch limit, no need to delete epoch data.
 		return
 	}
+	// If newEpoch is 4 and EpochLimit is 3 then untilEpoch will be 1.
+	// At epoch 4, there are 5 epochs (0, 1, 2, 3, 4) so (0, 1) must be deleted
+	// so there are only 3 epochs.
 	untilEpoch := newEpoch - db.config.EpochLimit
 	log.Info("Deleting epoch data in pathdb", "epoch", untilEpoch)
 	rawdb.DeleteRangeAccountTrieNode(db.diskdb, untilEpoch)

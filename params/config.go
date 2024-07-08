@@ -86,7 +86,7 @@ var (
 			Period: 12,
 			Epoch:  30000,
 		},
-		SweepEpoch: 100800,
+		SweepEpoch: 100800, // 2 weeks
 	}
 
 	// CreeperChainConfig is the chain parameters to run a node on the main network.
