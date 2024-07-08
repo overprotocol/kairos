@@ -793,6 +793,32 @@ func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.Res
 	if restoreData.TargetEpoch >= restoreData.SourceEpoch {
 		return nil, 0, ErrInvalidTargetEpoch
 	}
+
+	// Retrieve the sender from the restore data using restore data signer
+	restoreDataSigner := types.LatestRestoreDataSigner(evm.chainConfig)
+	sender, err := restoreDataSigner.Sender(restoreData)
+	if err != nil {
+		return nil, 0, err
+	}
+	// Retrieve and get the current state of the target account
+	target := restoreData.Target
+	// Check sender can pay the restoration fee first.
+	if sender != target {
+		if !evm.Context.CanTransfer(evm.StateDB, sender, restoreData.Fee) {
+			return nil, gas, ErrInsufficientBalance
+		}
+	}
+	epochCoverage := evm.StateDB.GetEpochCoverage(target)
+	nonce := evm.StateDB.GetNonce(target)
+	// Disable restoration if the target account is contract
+	if codeHash := evm.StateDB.GetCodeHash(target); codeHash != types.EmptyCodeHash && codeHash != (common.Hash{}) {
+		return nil, 0, ErrContractRestoration
+	}
+
+	if restoreData.SourceEpoch != epochCoverage {
+		return nil, gas, ErrInvalidSourceEpoch
+	}
+
 	memoryCost, err := memoryGasCost(NewMemory(), uint64(len(input)))
 	if err != nil {
 		return nil, gas, err
@@ -817,25 +843,6 @@ func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.Res
 		return nil, gas, ErrRestoreDataOutOfGas
 	}
 
-	// Retrieve the sender from the restore data using restore data signer
-	restoreDataSigner := types.LatestRestoreDataSigner(evm.chainConfig)
-	sender, err := restoreDataSigner.Sender(restoreData)
-	if err != nil {
-		return nil, 0, err
-	}
-	// Retrieve and get the current state of the target account
-	target := restoreData.Target
-	epochCoverage := evm.StateDB.GetEpochCoverage(target)
-	nonce := evm.StateDB.GetNonce(target)
-	// Disable restoration if the target account is contract
-	if codeHash := evm.StateDB.GetCodeHash(target); codeHash != types.EmptyCodeHash && codeHash != (common.Hash{}) {
-		return nil, 0, ErrContractRestoration
-	}
-
-	if restoreData.SourceEpoch != epochCoverage {
-		return nil, 0, ErrInvalidSourceEpoch
-	}
-
 	epochCoverage, nonce, restoredBalance, err := evm.verifyRestorationProof(target, restoreData.TargetEpoch, rawProofs, epochCoverage, nonce)
 	if err != nil {
 		return nil, 0, err
@@ -849,7 +856,8 @@ func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.Res
 	}
 	// The sender of the restore data has to have enough balance to send the restoration fee
 	if restoreData.FeeRecipient != nil && restoreData.Fee.Sign() != 0 {
-		if !evm.Context.CanTransfer(evm.StateDB, sender, restoreData.Fee) {
+		// the case where the sender is not the target account already checked above
+		if sender == target && !evm.Context.CanTransfer(evm.StateDB, sender, restoreData.Fee) {
 			err = ErrInsufficientBalance
 		} else {
 			evm.Context.Transfer(evm.StateDB, sender, *restoreData.FeeRecipient, restoreData.Fee)
@@ -857,9 +865,6 @@ func (evm *EVM) Restore(caller ContractRef, input []byte, restoreData *types.Res
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
-		if err != ErrExecutionReverted {
-			gas = 0
-		}
 	}
 	return nil, gas, err
 }
@@ -881,7 +886,7 @@ func (evm *EVM) verifyRestorationProof(target common.Address, targetEpoch uint32
 		if header == nil {
 			return 0, 0, nil, ErrHeaderIsNil
 		}
-		leafNode, err := trie.VerifyProof(header.Root, targetKey, proofDB)
+		leafNode, err := trie.VerifyProofUnsafe(header.Root, targetKey, proofDB)
 		if err != nil {
 			return 0, 0, nil, fmt.Errorf("merkle proof verification failed: %v", err)
 		}
@@ -895,7 +900,9 @@ func (evm *EVM) verifyRestorationProof(target common.Address, targetEpoch uint32
 				return 0, 0, nil, fmt.Errorf("failed to decode account: %v", err)
 			}
 			// Disable restoration if the target account is contract
-			// Don't need to check codeHash != (common.Hash{}) because the account already exist by the proof
+			// There is no need to check if codeHash != (common.Hash{}). The reason is that if codeHash is
+			// common.Hash, it represents an empty account. Since the Merkle proof for an empty account will
+			// be a void proof, common.Hash will not appear in the proof.
 			if common.BytesToHash(account.CodeHash) != types.EmptyCodeHash {
 				return 0, 0, nil, ErrContractRestoration
 			}
