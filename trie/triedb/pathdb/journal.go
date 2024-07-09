@@ -417,7 +417,7 @@ func (dl *ckptDiskLayer) journal(w io.Writer) error {
 		return err
 	}
 	// Don't need to write the state id of checkpoint disk layer since it's always 0.
-	// Don't nned to write the epoch number of checkpoint disk layer, since it's always
+	// Don't need to write the epoch number of checkpoint disk layer, since it's always
 	// the previous epoch of disk layer.
 	log.Debug("Journaled pathdb checkpoint disk layer", "ckptRoot", dl.root)
 	return nil
