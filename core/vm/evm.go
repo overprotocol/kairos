@@ -887,6 +887,7 @@ func (evm *EVM) verifyRestorationProof(target common.Address, targetEpoch uint32
 		}
 		if leafNode == nil {
 			// The account does not exist in this epoch
+			// This can not underflow since epochCoverage is checked above
 			epochCoverage = epochCoverage - 1
 		} else {
 			var account types.StateAccount
