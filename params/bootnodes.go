@@ -20,4 +20,11 @@ package params
 // the main Ethereum network.
 var MainnetBootnodes = []string{}
 
-var V5Bootnodes = []string{}
+var MainnetV5Bootnodes = []string{
+	"enr:-JS4QBaRk27TttN9D0vij9YkkT7STYXgX1iQ07TTINU_phASD57QuH9PDMgbBx6cdMH6pNzWCXaShr8t5rgC_q4fIwiGAZAqEgdRgmlkgnY0gmlwhCIvcHSEb3ZlcoQAAAAAiXNlY3AyNTZrMaECnyUVkolkDVgAuMhk9Gl4bbCvWtpx4FgrSmQ0m5hgGQ-DdWRwgsc4",
+	"enr:-JS4QGKJ8AGEjYcywPfkUHX-9V9k266ehWEymIITW0Pwf_IODjMtCNKrhcatGDkmms0-V8Z8R3rUpM8GUt7ehwGUqACGAZAqEgn4gmlkgnY0gmlwhCIgAWmEb3ZlcoQAAAAAiXNlY3AyNTZrMaEDLrakSImI4S-P2TAysmQQoVAO19ou0phMfz6ru6PPiziDdWRwgsc4",
+}
+
+var DolphinV5Bootnodes = []string{
+	"enr:-JS4QGsU5h_Wr2ow_JozOVnKcaygOwgCbFy83521kkrcPvm4FwDIppadBbSxA-9LOcf4LXBgj6I00dtanHS5FbtP8X2GAZBJSMjzgmlkgnY0gmlwhCJAVH-Eb3ZlcoQAAAAAiXNlY3AyNTZrMaEDmhB4BCT1IVWg3JbTaFmBUQhOxnGXHKHAb-hFurl9TNiDdWRwgsc4",
+}

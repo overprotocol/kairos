@@ -1,6 +1,6 @@
 {
   "alloc": {
-    "0x000000000000000000000000000000000000cafe": {
+    "0xa90f275e33eb6253723cab7f3b9fb9deba1ee0bc": {
       "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
       "balance": "0x166e300"
     },
@@ -19,7 +19,7 @@
     }
   },
   "result": {
-    "stateRoot": "0x10c3cf8a9c45198b6e86f012c064fb761135f02454976b8396c6e1c655b4f91e",
+    "stateRoot": "0x14727f331d0fb399af873c12349baa41bbad3f629f580dcf9be147a64a6ad202",
     "txRoot": "0x572690baf4898c2972446e56ecf0aa2a027c08a863927d2dce34472f0c5496fe",
     "receiptsRoot": "0x056b23fbba480696b65fe5a59b8f2148a1299103c4f57df839233af2cf4ca2d2",
     "logsHash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",

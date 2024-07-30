@@ -48,7 +48,7 @@ func TestCreation(t *testing.T) {
 			params.MainnetChainConfig,
 			core.DefaultGenesisBlock().ToBlock(),
 			[]testcase{
-				{0, 0, ID{Hash: checksumToBytes(0x1a4e067a), Next: 0}},
+				{0, 0, ID{Hash: checksumToBytes(0x879497f0), Next: 1718971440}},
 			},
 		},
 	}
@@ -80,11 +80,11 @@ func TestValidation(t *testing.T) {
 		//------------------
 
 		// Local is mainnet Alpaca, remote announces the same. No future fork is announced.
-		{&legacyConfig, 0, 0, ID{Hash: checksumToBytes(0x1a4e067a), Next: 0}, nil},
+		{&legacyConfig, 0, 0, ID{Hash: checksumToBytes(0x879497f0), Next: 1718971440}, nil},
 
 		// Local is mainnet Alpaca, remote announces the same. Remote also announces a next fork
 		// at block 0xffffffff, but that is uncertain.
-		{&legacyConfig, 0, 0, ID{Hash: checksumToBytes(0x1a4e067a), Next: math.MaxUint64}, nil},
+		{&legacyConfig, 0, 0, ID{Hash: checksumToBytes(0x879497f0), Next: math.MaxUint64}, nil},
 	}
 	genesis := core.DefaultGenesisBlock().ToBlock()
 	for i, tt := range tests {

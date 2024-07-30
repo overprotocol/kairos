@@ -23,6 +23,7 @@ var Modules = map[string]string{
 	"ethash":   EthashJs,
 	"debug":    DebugJs,
 	"eth":      EthJs,
+	"over":     OverJs,
 	"ethanos":  EthanosJs,
 	"miner":    MinerJs,
 	"net":      NetJs,
@@ -525,11 +526,6 @@ web3._extend({
 			params: 0
 		}),
 		new web3._extend.Method({
-			name: 'sweepEpoch',
-			call: 'eth_sweepEpoch',
-			params: 0
-		}),
-		new web3._extend.Method({
 			name: 'sign',
 			call: 'eth_sign',
 			params: 2,
@@ -636,12 +632,6 @@ web3._extend({
 			call: 'eth_getBlockReceipts',
 			params: 1,
 		}),
-		new web3._extend.Method({
-			name: 'getEpochByNumber',
-			call: 'eth_getEpochByNumber',
-			params: 1,
-			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
-		}),
 	],
 	properties: [
 		new web3._extend.Property({
@@ -665,6 +655,74 @@ web3._extend({
 });
 `
 
+const OverJs = `
+web3._extend({
+	property: 'over',
+	methods: [
+		new web3._extend.Method({
+			name: 'nextCheckpointBlockNumber',
+			call: 'over_nextCheckpointBlockNumber',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getEpoch',
+			call: 'over_getEpoch',
+			params: 1,
+			inputFormatter: [web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getBalance',
+			call: 'over_getBalance',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'exist',
+			call: 'over_exist',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getCode',
+			call: 'over_getCode',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getTransactionCount',
+			call: 'over_getTransactionCount',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getNonce',
+			call: 'over_getNonce',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'getEpochCoverage',
+			call: 'over_getEpochCoverage',
+			params: 3,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+		new web3._extend.Method({
+			name: 'expireInfo',
+			call: 'over_expireInfo',
+			params: 2,
+			inputFormatter: [web3._extend.formatters.inputAddressFormatter, web3._extend.formatters.inputDefaultBlockNumberFormatter]
+		}),
+	],
+	properties: [
+		new web3._extend.Property({
+			name: 'sweepEpoch',
+			getter: 'over_sweepEpoch'
+		}),
+	]
+});
+`
+
 const EthanosJs = `
 web3._extend({
 	property: 'ethanos',
@@ -672,7 +730,7 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'getRestorationProof',
 			call: 'ethanos_getRestorationProof',
-			params: 3,
+			params: 2,
 			inputFormatter: [web3._extend.formatters.inputAddressFormatter, null]
 		}),
 	],

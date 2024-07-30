@@ -194,14 +194,6 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 	return types.NewBlockWithHeader(head).WithBody(txs, uncles).WithWithdrawals(body.Withdrawals), nil
 }
 
-// EpochByNumber returns epoch of the given block number.
-// If number is nil, the latest known epoch is returned.
-func (ec *Client) EpochByNumber(ctx context.Context, number *big.Int) (uint32, error) {
-	var epoch uint32
-	err := ec.c.CallContext(ctx, &epoch, "eth_getEpochByNumber", toBlockNumArg(number))
-	return epoch, err
-}
-
 // HeaderByHash returns the block header with the given hash.
 func (ec *Client) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
 	var head *types.Header
@@ -378,19 +370,26 @@ func (ec *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 	return (*big.Int)(&result), err
 }
 
-// ExistWithoutCkptAt returns the existence of the given account.
-// The block number can be nil, in which case the balance is taken from the latest known block.
-func (ec *Client) ExistWithoutCkptAt(ctx context.Context, account common.Address, blockNumber *big.Int) (bool, error) {
-	var result bool
-	err := ec.c.CallContext(ctx, &result, "eth_existWithoutCkpt", account, toBlockNumArg(blockNumber))
-	return result, err
-}
-
 // BalanceAtHash returns the wei balance of the given account.
 func (ec *Client) BalanceAtHash(ctx context.Context, account common.Address, blockHash common.Hash) (*big.Int, error) {
 	var result hexutil.Big
 	err := ec.c.CallContext(ctx, &result, "eth_getBalance", account, rpc.BlockNumberOrHashWithHash(blockHash, false))
 	return (*big.Int)(&result), err
+}
+
+// ExistAt returns the existence of the given account.
+// The block number can be nil, in which case the balance is taken from the latest known block.
+func (ec *Client) ExistAt(ctx context.Context, account common.Address, blockNumber *big.Int) (bool, error) {
+	var result bool
+	err := ec.c.CallContext(ctx, &result, "eth_exist", account, toBlockNumArg(blockNumber))
+	return result, err
+}
+
+// ExistAtHash returns the existence of the given account.
+func (ec *Client) ExistAtHash(ctx context.Context, account common.Address, blockHash common.Hash) (bool, error) {
+	var result bool
+	err := ec.c.CallContext(ctx, &result, "eth_exist", account, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return result, err
 }
 
 // StorageAt returns the value of key in the contract storage of the given account.
@@ -762,4 +761,148 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		SyncMode:               p.SyncMode,
 		Committed:              p.Committed,
 	}
+}
+
+// Over
+
+// SweepEpoch returns the sweep epoch.
+func (ec *Client) SweepEpoch(ctx context.Context) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_sweepEpoch")
+	if err != nil {
+		return 0, err
+	}
+	return uint64(result), err
+}
+
+// NextCheckpointBlockNumber returns the next checkpoint block number.
+func (ec *Client) NextCheckpointBlockNumber(ctx context.Context, blockNumber *big.Int) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_nextCheckpointBlockNumber", toBlockNumArg(blockNumber))
+	if err != nil {
+		return 0, err
+	}
+	return uint64(result), err
+}
+
+// EpochAt returns the epoch of the given block number
+func (ec *Client) EpochAt(ctx context.Context, blockNumber *big.Int) (uint32, error) {
+	var result uint32
+	err := ec.c.CallContext(ctx, &result, "over_getEpoch", toBlockNumArg(blockNumber))
+	return result, err
+}
+
+// EpochAtHash returns the epoch of the given block hash
+func (ec *Client) EpochAtHash(ctx context.Context, blockHash common.Hash) (uint32, error) {
+	var result uint32
+	err := ec.c.CallContext(ctx, &result, "over_getEpoch", rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return result, err
+}
+
+// BalanceAtOver returns the wei balance of the given account.
+// The block number can be nil, in which case the balance is taken from the latest known block.
+func (ec *Client) BalanceAtOver(ctx context.Context, address common.Address, withoutCkpt bool, blockNumber *big.Int) (*big.Int, error) {
+	var result hexutil.Big
+	err := ec.c.CallContext(ctx, &result, "over_getBalance", address, withoutCkpt, toBlockNumArg(blockNumber))
+	return (*big.Int)(&result), err
+}
+
+// BalanceAtHashOver returns the wei balance of the given account.
+func (ec *Client) BalanceAtHashOver(ctx context.Context, address common.Address, withoutCkpt bool, blockHash common.Hash) (*big.Int, error) {
+	var result hexutil.Big
+	err := ec.c.CallContext(ctx, &result, "over_getBalance", address, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return (*big.Int)(&result), err
+}
+
+// ExistAtOver returns the existence of the given account.
+// The block number can be nil, in which case the balance is taken from the latest known block.
+func (ec *Client) ExistAtOver(ctx context.Context, account common.Address, withoutCkpt bool, blockNumber *big.Int) (bool, error) {
+	var result bool
+	err := ec.c.CallContext(ctx, &result, "over_exist", account, withoutCkpt, toBlockNumArg(blockNumber))
+	return result, err
+}
+
+// ExistAtHashOver returns the existence of the given account.
+func (ec *Client) ExistAtHashOver(ctx context.Context, account common.Address, withoutCkpt bool, blockHash common.Hash) (bool, error) {
+	var result bool
+	err := ec.c.CallContext(ctx, &result, "over_exist", account, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return result, err
+}
+
+// CodeAt returns the contract code of the given account.
+// The block number can be nil, in which case the code is taken from the latest known block.
+func (ec *Client) CodeAtOver(ctx context.Context, account common.Address, withoutCkpt bool, blockNumber *big.Int) ([]byte, error) {
+	var result hexutil.Bytes
+	err := ec.c.CallContext(ctx, &result, "over_getCode", account, withoutCkpt, toBlockNumArg(blockNumber))
+	return result, err
+}
+
+// CodeAtHash returns the contract code of the given account.
+func (ec *Client) CodeAtHashOver(ctx context.Context, account common.Address, withoutCkpt bool, blockHash common.Hash) ([]byte, error) {
+	var result hexutil.Bytes
+	err := ec.c.CallContext(ctx, &result, "over_getCode", account, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return result, err
+}
+
+// TransactionCountAt returns the account epoch coverage and nonce of the given account.
+// The block number can be nil, in which case the nonce is taken from the latest known block.
+func (ec *Client) TransactionCountAt(ctx context.Context, account common.Address, withoutCkpt bool, blockNumber *big.Int) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getTransactionCount", account, withoutCkpt, toBlockNumArg(blockNumber))
+	return uint64(result), err
+}
+
+// TransactionCountAtHash returns the account epoch coverage and nonce of the given account.
+func (ec *Client) TransactionCountAtHash(ctx context.Context, account common.Address, withoutCkpt bool, blockHash common.Hash) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getTransactionCount", account, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return uint64(result), err
+}
+
+// NonceAtOver returns the account nonce of the given account.
+// The block number can be nil, in which case the nonce is taken from the latest known block.
+func (ec *Client) NonceAtOver(ctx context.Context, account common.Address, withoutCkpt bool, blockNumber *big.Int) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getNonce", account, withoutCkpt, toBlockNumArg(blockNumber))
+	return uint64(result), err
+}
+
+// NonceAtHashOver returns the account nonce of the given account.
+func (ec *Client) NonceAtHashOver(ctx context.Context, account common.Address, withoutCkpt bool, blockHash common.Hash) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getNonce", account, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return uint64(result), err
+}
+
+// EpochCoverageAt returns the account epoch coverage of the given account.
+// The block number can be nil, in which case the nonce is taken from the latest known block.
+func (ec *Client) EpochCoverageAt(ctx context.Context, account common.Address, withoutCkpt bool, blockNumber *big.Int) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getEpochCoverage", account, withoutCkpt, toBlockNumArg(blockNumber))
+	return uint64(result), err
+}
+
+// EpochCoverageAtHash returns the account epoch coverage of the given account.
+func (ec *Client) EpochCoverageAtHash(ctx context.Context, account common.Address, withoutCkpt bool, blockHash common.Hash) (uint64, error) {
+	var result hexutil.Uint64
+	err := ec.c.CallContext(ctx, &result, "over_getEpochCoverage", account, withoutCkpt, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return uint64(result), err
+}
+
+type expireInfoResult struct {
+	ExistCurrent        bool           `json:"existCurrent"`
+	ExistCheckpoint     bool           `json:"existCheckpoint"`
+	MaxExistBlockNumber hexutil.Uint64 `json:"maxExistBlockNumber"`
+}
+
+func (ec *Client) ExpireInfoAt(ctx context.Context, account common.Address, blockNumber *big.Int) (expireInfoResult, error) {
+	var result expireInfoResult
+	err := ec.c.CallContext(ctx, &result, "over_expireInfo", account, toBlockNumArg(blockNumber))
+	return result, err
+}
+
+func (ec *Client) ExpireInfoAtHash(ctx context.Context, account common.Address, blockHash common.Hash) (expireInfoResult, error) {
+	var result expireInfoResult
+	err := ec.c.CallContext(ctx, &result, "over_expireInfo", account, rpc.BlockNumberOrHashWithHash(blockHash, false))
+	return result, err
 }

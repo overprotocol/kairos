@@ -28,6 +28,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	godebug "runtime/debug"
 	"strconv"
 	"strings"
@@ -124,7 +125,7 @@ var (
 	}
 	NetworkIdFlag = &cli.Uint64Flag{
 		Name:     "networkid",
-		Usage:    "Explicitly set network id (integer)(For testnets: use --goerli, --sepolia, --holesky instead)",
+		Usage:    "Explicitly set network id (integer)(For testnets: use --creeper, --dolphin instead)",
 		Value:    ethconfig.Defaults.NetworkId,
 		Category: flags.EthCategory,
 	}
@@ -135,7 +136,12 @@ var (
 	}
 	CreeperFlag = &cli.BoolFlag{
 		Name:     "creeper",
-		Usage:    "Creeper network: pre-configured proof-of-authority test network",
+		Usage:    "Creeper test network",
+		Category: flags.EthCategory,
+	}
+	DolphinFlag = &cli.BoolFlag{
+		Name:     "dolphin",
+		Usage:    "Dolphin test network",
 		Category: flags.EthCategory,
 	}
 	// Dev mode
@@ -249,7 +255,7 @@ var (
 	}
 	StateSchemeFlag = &cli.StringFlag{
 		Name:     "state.scheme",
-		Usage:    "Scheme to use for storing ethereum state ('hash' or 'path')",
+		Usage:    "Scheme to use for storing state ('hash' or 'path')",
 		Category: flags.StateCategory,
 	}
 	StateHistoryFlag = &cli.Uint64Flag{
@@ -910,6 +916,7 @@ var (
 	// TestnetFlags is the flag group of all built-in supported testnets.
 	TestnetFlags = []cli.Flag{
 		CreeperFlag,
+		DolphinFlag,
 	}
 	// NetworkFlags is the flag group of all built-in supported networks.
 	NetworkFlags = append([]cli.Flag{MainnetFlag}, TestnetFlags...)
@@ -929,9 +936,12 @@ var (
 // then a subdirectory of the specified datadir will be used.
 func MakeDataDir(ctx *cli.Context) string {
 	if path := ctx.String(DataDirFlag.Name); path != "" {
-		// if ctx.Bool(CreeperFlag.Name) {
-		// 	return filepath.Join(path, "creeper")
-		// }
+		if ctx.Bool(CreeperFlag.Name) {
+			return filepath.Join(path, "creeper")
+		}
+		if ctx.Bool(DolphinFlag.Name) {
+			return filepath.Join(path, "dolphin")
+		}
 		return path
 	}
 	Fatalf("Cannot determine default data directory, please set manually (--datadir)")
@@ -1009,12 +1019,17 @@ func mustParseBootnodes(urls []string) []*enode.Node {
 // setBootstrapNodesV5 creates a list of bootstrap nodes from the command line
 // flags, reverting to pre-configured ones if none have been specified.
 func setBootstrapNodesV5(ctx *cli.Context, cfg *p2p.Config) {
-	urls := params.V5Bootnodes
+	urls := params.MainnetV5Bootnodes
 	switch {
 	case ctx.IsSet(BootnodesFlag.Name):
 		urls = SplitAndTrim(ctx.String(BootnodesFlag.Name))
 	case cfg.BootstrapNodesV5 != nil:
 		return // already set, don't apply defaults.
+	default:
+		switch {
+		case ctx.Bool(DolphinFlag.Name):
+			urls = params.DolphinV5Bootnodes
+		}
 	}
 
 	cfg.BootstrapNodesV5 = make([]*enode.Node, 0, len(urls))
@@ -1550,7 +1565,7 @@ func CheckExclusive(ctx *cli.Context, args ...interface{}) {
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Avoid conflicting network flags
-	CheckExclusive(ctx, MainnetFlag, DeveloperFlag, CreeperFlag)
+	CheckExclusive(ctx, MainnetFlag, DeveloperFlag, CreeperFlag, DolphinFlag)
 	CheckExclusive(ctx, DeveloperFlag, ExternalSignerFlag) // Can't use both ephemeral unlocked and external signer
 
 	// Set configurations from CLI flags
@@ -1717,6 +1732,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			cfg.NetworkId = 27882
 		}
 		cfg.Genesis = core.DefaultCreeperGenesisBlock()
+
+	case ctx.Bool(DolphinFlag.Name):
+		if !ctx.IsSet(NetworkIdFlag.Name) {
+			cfg.NetworkId = 541762
+		}
+		cfg.Genesis = core.DefaultDolphinGenesisBlock()
 
 	case ctx.Bool(DeveloperFlag.Name):
 		if !ctx.IsSet(NetworkIdFlag.Name) {
@@ -2006,6 +2027,8 @@ func MakeGenesis(ctx *cli.Context) *core.Genesis {
 		genesis = core.DefaultGenesisBlock()
 	case ctx.Bool(CreeperFlag.Name):
 		genesis = core.DefaultCreeperGenesisBlock()
+	case ctx.Bool(DolphinFlag.Name):
+		genesis = core.DefaultDolphinGenesisBlock()
 	case ctx.Bool(DeveloperFlag.Name):
 		Fatalf("Developer chains are ephemeral")
 	}

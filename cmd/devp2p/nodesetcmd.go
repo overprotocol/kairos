@@ -232,6 +232,8 @@ func ethFilter(args []string) (nodeFilter, error) {
 		filter = forkid.NewStaticFilter(params.MainnetChainConfig, core.DefaultGenesisBlock().ToBlock())
 	case "creeper":
 		filter = forkid.NewStaticFilter(params.CreeperChainConfig, core.DefaultCreeperGenesisBlock().ToBlock())
+	case "dolphin":
+		filter = forkid.NewStaticFilter(params.DolphinChainConfig, core.DefaultDolphinGenesisBlock().ToBlock())
 	default:
 		return nil, fmt.Errorf("unknown network %q", args[0])
 	}

@@ -25,13 +25,9 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash = common.HexToHash("0x03a0a86dfb0bb3c527e3a758dea724df388c3bf0e3c075ad75f84f2838cad6f4")
+	MainnetGenesisHash = common.HexToHash("0x7af3b3e876208a7f50c2cd1822b0f1fab3972d535ed42db4375c341b1c5dcfa0")
 	CreeperGenesisHash = common.HexToHash("0x0a917e2b2f7544209d6b5fd1729f3e390434ffa82398c66ba76c6f22b8a13afc")
-)
-
-var (
-	DepositContractAddress    = common.HexToAddress("0x000000000000000000000000000000000000beef")
-	FoundationTreasuryAddress = common.HexToAddress("0x000000000000000000000000000000000000cafe")
+	DolphinGenesisHash = common.HexToHash("0xe5b5b2e8ad664b618436d629deaf08b5cc484838a55205433fccc515d5fe1a84")
 )
 
 func newUint64(val uint64) *uint64 { return &val }
@@ -50,23 +46,21 @@ var (
 		ConstantinopleBlock:           big.NewInt(0),
 		PetersburgBlock:               big.NewInt(0),
 		IstanbulBlock:                 big.NewInt(0),
-		MuirGlacierBlock:              big.NewInt(0),
+		MuirGlacierBlock:              nil,
 		BerlinBlock:                   big.NewInt(0),
 		LondonBlock:                   big.NewInt(0),
-		ArrowGlacierBlock:             big.NewInt(0),
-		GrayGlacierBlock:              big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
 		AlpacaBlock:                   big.NewInt(0),
-		TerminalTotalDifficulty:       nil,
-		TerminalTotalDifficultyPassed: false,
-		ShanghaiTime:                  nil,
-		Clique: &CliqueConfig{
-			Period: 12,
-			Epoch:  30000,
-		},
-		SweepEpoch: 648000, // about 90 days
+		TerminalTotalDifficulty:       big.NewInt(0),
+		TerminalTotalDifficultyPassed: true,
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1718971440),
+		Ethash:                        new(EthashConfig),
+		SweepEpoch:                    259200000,
 	}
 
-	// MainnetChainConfig is the chain parameters to run a node on the main network.
+	// CreeperChainConfig is the chain parameters to run a node on the main network.
 	CreeperChainConfig = &ChainConfig{
 		ChainID:                       big.NewInt(27882),
 		HomesteadBlock:                big.NewInt(0),
@@ -93,6 +87,33 @@ var (
 			Epoch:  30000,
 		},
 		SweepEpoch: 100800, // 2 weeks
+	}
+
+	// CreeperChainConfig is the chain parameters to run a node on the main network.
+	DolphinChainConfig = &ChainConfig{
+		ChainID:                       big.NewInt(541762),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
+		DAOForkSupport:                false,
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              nil,
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
+		AlpacaBlock:                   big.NewInt(0),
+		TerminalTotalDifficulty:       big.NewInt(0),
+		TerminalTotalDifficultyPassed: true,
+		MergeNetsplitBlock:            nil,
+		ShanghaiTime:                  newUint64(1719223097),
+		Ethash:                        new(EthashConfig),
+		SweepEpoch:                    259200000,
 	}
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Ethash consensus.
@@ -258,6 +279,7 @@ func (c *ChainConfig) SetTestSweepEpoch(epoch uint64) *ChainConfig {
 var NetworkNames = map[string]string{
 	MainnetChainConfig.ChainID.String(): "mainnet",
 	CreeperChainConfig.ChainID.String(): "creeper",
+	DolphinChainConfig.ChainID.String(): "dolphin",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.
@@ -894,4 +916,14 @@ func (c *ChainConfig) CalcLastCheckpointBlockNumber(epoch uint32) (bn uint64, ex
 	} else {
 		return 0, false
 	}
+}
+
+// CalcNextCheckpointBlockNumber calculates the next checkpoint block number of the given epoch.
+func (c *ChainConfig) CalcNextCheckpointBlockNumber(epoch uint32) (bn uint64) {
+	return uint64(epoch+1)*c.SweepEpoch - 1
+}
+
+// CalcNextCheckpointBlockNumberByNumber calculates the next checkpoint block number of the given block number.
+func (c *ChainConfig) CalcNextCheckpointBlockNumberByNumber(number uint64) (bn uint64) {
+	return c.CalcNextCheckpointBlockNumber(c.CalcEpoch(number))
 }
