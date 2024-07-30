@@ -455,7 +455,7 @@ func testEthanosScenario2(t *testing.T, snapshots bool, scheme string) {
 			})
 			gen.AddTx(signTx(tx, key1))
 
-			contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 			gen.AddTx(signTx(
 				types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(5000), 3000000, nil, createWriteBalanceInput()),
 				key1,
@@ -543,7 +543,7 @@ func testEthanosScenario3(t *testing.T, snapshots bool, scheme string) {
 			})
 			gen.AddTx(signTx(tx, key1))
 
-			contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 			gen.AddTx(signTx(
 				types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(5000), 3000000, nil, createWriteAccountInput(addr2)),
 				key1,
@@ -614,7 +614,7 @@ func testEthanosScenario4(t *testing.T, snapshots bool, scheme string) {
 		})
 		gen.AddTx(signTx(tx, key1))
 
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 		gen.AddTx(signTx(
 			types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(0), 3000000, nil, createReadAccountInput(addr2)),
 			key1,
@@ -686,7 +686,7 @@ func testEthanosScenario5(t *testing.T, snapshots bool, scheme string) {
 			})
 			gen.AddTx(signTx(tx, key1))
 
-			contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 			gen.AddTx(signTx(
 				types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(0), 3000000, nil, createReadAccountInput(addr2)),
 				key1,
@@ -763,7 +763,7 @@ func testEthanosScenario6(t *testing.T, snapshots bool, scheme string) {
 			})
 			gen.AddTx(signTx(tx, key1))
 
-			contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 			gen.AddTx(signTx(
 				types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(5000), 3000000, nil, createWriteAccountInput(addr2)),
 				key1,
@@ -817,7 +817,7 @@ func testEthanosScenario7(t *testing.T, snapshots bool, scheme string) {
 			})
 			gen.AddTx(signTx(tx, key1))
 
-			contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 			tx = types.NewTransaction(
 				gen.TxNonce(addr1),
 				contractAddr,
@@ -899,7 +899,7 @@ func testEthanosScenario8(t *testing.T, snapshots bool, scheme string) {
 		})
 		gen.AddTx(signTx(tx, key1))
 
-		contractAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		contractAddr = crypto.CreateAddress(addr1, tx.Nonce())
 
 		// revert transaction
 		insufficientGas := uint64(21432)
@@ -2322,7 +2322,7 @@ func createStorageTrie(gen *BlockGen) common.Address {
 	})
 	gen.AddTx(signTx(tx, key1))
 
-	contractAddr := crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+	contractAddr := crypto.CreateAddress(addr1, tx.Nonce())
 	gen.AddTx(signTx(
 		types.NewTransaction(gen.TxNonce(addr1), contractAddr, big.NewInt(5000), 100000, nil, createWriteBalanceInput()),
 		key1,
@@ -2705,7 +2705,7 @@ func testCreate2(t *testing.T, snapshots bool, scheme string, lateEpoch, restora
 		})
 		gen.AddTx(signTx(tx, key1))
 
-		factoryAddr = crypto.CreateAddress(addr1, tx.MsgEpochCoverage(), tx.MsgNonce())
+		factoryAddr = crypto.CreateAddress(addr1, tx.Nonce())
 	})); err != nil {
 		t.Errorf("insert error (block index %d): %v\n", i, err)
 	}

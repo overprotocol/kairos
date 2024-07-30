@@ -242,7 +242,7 @@ func (tc *testChain) generate(config *params.ChainConfig, db ethdb.Database, n i
 			})
 			block.AddTx(signTx(tx, signer, testKey))
 
-			contractAddr := crypto.CreateAddress(testAddress, tx.MsgEpochCoverage(), tx.MsgNonce())
+			contractAddr := crypto.CreateAddress(testAddress, tx.Nonce())
 			tx = types.NewTransaction(
 				block.TxNonce(testAddress),
 				contractAddr,
@@ -267,7 +267,7 @@ func (tc *testChain) generate(config *params.ChainConfig, db ethdb.Database, n i
 		}
 
 		if block.Number().Uint64()%config.SweepEpoch == 7 {
-			overwriteContract = crypto.CreateAddress(testAddress, 0, 1)
+			overwriteContract = crypto.CreateAddress(testAddress, 1)
 			tx := types.NewTransaction(
 				block.TxNonce(testAddress),
 				overwriteContract,

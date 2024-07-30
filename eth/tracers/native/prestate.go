@@ -162,9 +162,8 @@ func (t *prestateTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64,
 		addr := common.Address(stackData[stackLen-2].Bytes20())
 		t.lookupAccount(addr)
 	case op == vm.CREATE:
-		epochCoverage := t.env.StateDB.GetEpochCoverage(caller)
-		nonce := t.env.StateDB.GetNonce(caller)
-		addr := crypto.CreateAddress(caller, epochCoverage, nonce)
+		txNonce := t.env.StateDB.GetTxNonce(caller)
+		addr := crypto.CreateAddress(caller, txNonce)
 		t.lookupAccount(addr)
 		t.created[addr] = true
 	case stackLen >= 4 && op == vm.CREATE2:

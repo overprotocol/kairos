@@ -1575,7 +1575,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 	if args.To != nil {
 		to = *args.To
 	} else {
-		to = crypto.CreateAddress(args.from(), types.TxNonceToMsgEpochCoverage(uint64(*args.Nonce)), types.TxNonceToMsgNonce(uint64(*args.Nonce)))
+		to = crypto.CreateAddress(args.from(), uint64(*args.Nonce))
 	}
 	isPostMerge := header.Difficulty.Cmp(common.Big0) == 0
 	// Retrieve the precompiles since they don't need to be added to the access list
@@ -1843,7 +1843,7 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 	}
 
 	if tx.IsContractCreation() {
-		addr := crypto.CreateAddress(from, tx.MsgEpochCoverage(), tx.MsgNonce())
+		addr := crypto.CreateAddress(from, tx.Nonce())
 		log.Info("Submitted contract creation", "hash", tx.Hash().Hex(), "from", from, "nonce", tx.Nonce(), "contract", addr.Hex(), "value", tx.Value())
 	} else if tx.IsRestoration() {
 		log.Info("Submitted restoration", "hash", tx.Hash().Hex(), "from", from, "nonce", tx.Nonce(), "target", tx.RestoreData().Target, "target epoch", tx.RestoreData().TargetEpoch)

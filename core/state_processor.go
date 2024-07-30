@@ -142,7 +142,7 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 
 	// If the transaction created a contract, store the creation address in the receipt.
 	if msg.IsContractCreation() || msg.IsPrecompiledContractCreation() {
-		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.MsgEpochCoverage(), tx.MsgNonce())
+		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
 	}
 
 	// Set the receipt logs and create the bloom filter.

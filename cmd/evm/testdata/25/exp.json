@@ -1,9 +1,5 @@
 {
   "alloc": {
-    "0xa90f275e33eb6253723cab7f3b9fb9deba1ee0bc": {
-      "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
-      "balance": "0x166e300"
-    },
     "0x8a8eafb1cf62bfbeb1741769dae1a9dd47996192": {
       "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
       "balance": "0x1"
@@ -16,10 +12,14 @@
     "0xc94f5374fce5edbc8e2a8697c15331677e6ebf0b": {
       "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
       "balance": "0x854d00"
+    },
+    "0xf8de282b3f23f2378d2994043c9fb65658b1c62b": {
+      "uiHash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+      "balance": "0x166e300"
     }
   },
   "result": {
-    "stateRoot": "0x14727f331d0fb399af873c12349baa41bbad3f629f580dcf9be147a64a6ad202",
+    "stateRoot": "0xac550c5d4065975fd4de56e9a2f7796629e68b501eafe0cdf2e9e3b3a8b0a8e6",
     "txRoot": "0x572690baf4898c2972446e56ecf0aa2a027c08a863927d2dce34472f0c5496fe",
     "receiptsRoot": "0x056b23fbba480696b65fe5a59b8f2148a1299103c4f57df839233af2cf4ca2d2",
     "logsHash": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",

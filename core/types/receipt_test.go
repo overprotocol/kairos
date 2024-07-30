@@ -184,7 +184,7 @@ var (
 			},
 			// derived fields:
 			TxHash:            txs[0].Hash(),
-			ContractAddress:   common.HexToAddress("0xaa2fcbaf3ce35091acb9394aa92b5f10882e9462"),
+			ContractAddress:   common.HexToAddress("0x5a443704dd4b594b382c22a083e2bd3090a6fef3"),
 			GasUsed:           1,
 			EffectiveGasPrice: big.NewInt(11),
 			BlockHash:         blockHash,

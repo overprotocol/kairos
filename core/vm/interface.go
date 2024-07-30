@@ -38,6 +38,8 @@ type StateDB interface {
 	GetEpochCoverage(common.Address) uint32
 	SetEpochCoverage(common.Address, uint32)
 
+	GetTxNonce(common.Address) uint64
+
 	GetCodeHash(common.Address) common.Hash
 	GetCode(common.Address) []byte
 	SetCode(common.Address, []byte)
