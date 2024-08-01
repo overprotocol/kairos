@@ -693,8 +693,7 @@ func (c *createContractWithUiHash) RequiredGas(input []byte) uint64 {
 func (c *createContractWithUiHash) Run(input []byte, caller ContractRef, value *big.Int, suppliedGas uint64, evm *EVM) ([]byte, uint64, error) {
 	res, addr, returnGas, suberr := evm.CreateWithUiHash(caller, input, suppliedGas, value)
 	if suberr != nil {
-		// return ErrExecutionReverted for remaining gas to be refunded
-		return nil, returnGas, ErrExecutionReverted
+		return nil, returnGas, suberr
 	}
 	addressType, err := abi.NewType("address", "", nil)
 	if err != nil {
@@ -732,8 +731,7 @@ func (c *create2ContractWithUiHash) Run(input []byte, caller ContractRef, value 
 	}
 	res, addr, returnGas, suberr := evm.Create2WithUiHash(caller, input, suppliedGas, value)
 	if suberr != nil {
-		// return ErrExecutionReverted for remaining gas to be refunded
-		return nil, returnGas, ErrExecutionReverted
+		return nil, returnGas, suberr
 	}
 	addressType, err := abi.NewType("address", "", nil)
 	if err != nil {

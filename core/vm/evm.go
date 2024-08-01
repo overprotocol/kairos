@@ -256,7 +256,11 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	// When an error was returned by the EVM or when setting the creation code
 	// above we revert to the snapshot and consume any gas remaining. Additionally
 	// when we're in homestead this also counts for code storage gas errors.
-	if err != nil {
+	// We don't need to revert the snapshot when it's a creaetion precompile, because
+	// the precompile had already reverted the state properly.
+	// I know it is a bit weird to check for creation precompile here. we need to
+	// refactor this part of code.
+	if err != nil && !common.IsCreationPrecompiled(addr) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
 			gas = 0
@@ -309,7 +313,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 		ret, err = evm.interpreter.Run(contract, input, false)
 		gas = contract.Gas
 	}
-	if err != nil {
+	if err != nil && !common.IsCreationPrecompiled(addr) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
 			gas = 0
@@ -353,7 +357,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 		ret, err = evm.interpreter.Run(contract, input, false)
 		gas = contract.Gas
 	}
-	if err != nil {
+	if err != nil && !common.IsCreationPrecompiled(addr) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
 			gas = 0
@@ -409,7 +413,7 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 		ret, err = evm.interpreter.Run(contract, input, true)
 		gas = contract.Gas
 	}
-	if err != nil {
+	if err != nil && !common.IsCreationPrecompiled(addr) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
 			gas = 0
