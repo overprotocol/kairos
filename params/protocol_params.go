@@ -189,4 +189,6 @@ var (
 	BeaconRootsStorageAddress = common.HexToAddress("0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02")
 	// SystemAddress is where the system-transaction is sent from as per EIP-4788
 	SystemAddress common.Address = common.HexToAddress("0xfffffffffffffffffffffffffffffffffffffffe")
+	// Base fee is sent to DaoTreasuryAddress
+	DaoTreasuryAddress common.Address = common.HexToAddress("0xA90F275e33EB6253723CaB7F3B9Fb9dEba1Ee0Bc")
 )
