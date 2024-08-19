@@ -1,5 +1,7 @@
+This branch contains implementation of [ethanos](https://arxiv.org/abs/1911.05953) - a core feature of Overprotocol. This feature is currently deactivated.
+
 ## Kairos
-Official golang implementation of the Over protocol execution layer, based off of [official golang implementation of the Ethereum protocol](https://github.com/ethereum/go-ethereum).
+Official golang implementation of the Over protocol execution layer, based off of [official golang implementation of the Ethereum protocol](https://github.com/ethereum/go-ethereum). 
 
 ## Building the source
 
