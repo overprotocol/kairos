@@ -439,6 +439,16 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// the coinbase when simulating calls.
 	} else {
 		fee := new(big.Int).SetUint64(st.gasUsed())
+		if rules.IsLondon {
+			// BaseFee is sent to the foundation's treasury
+			burn := new(big.Int).Mul(fee, st.evm.Context.BaseFee)
+			// Please fix this before open source = next week
+			if st.evm.ChainConfig().ChainID.Cmp(big.NewInt(541764)) == 0 {
+				st.state.AddBalance(params.DolphinDaoTreasuryAddress, burn)
+			} else {
+				st.state.AddBalance(params.DaoTreasuryAddress, burn)
+			}
+		}
 		fee.Mul(fee, effectiveTip)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee)
 	}

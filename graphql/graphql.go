@@ -1491,6 +1491,9 @@ func (s *SyncState) SyncedStorage() hexutil.Uint64 {
 func (s *SyncState) SyncedStorageBytes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.SyncedStorageBytes)
 }
+func (s *SyncState) EstimatedStateProgress() float64 {
+	return s.progress.EstimatedStateProgress
+}
 func (s *SyncState) HealedTrienodes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.HealedTrienodes)
 }
@@ -1508,6 +1511,12 @@ func (s *SyncState) HealingTrienodes() hexutil.Uint64 {
 }
 func (s *SyncState) HealingBytecode() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.HealingBytecode)
+}
+func (s *SyncState) SyncMode() string {
+	return s.progress.SyncMode
+}
+func (s *SyncState) Committed() bool {
+	return s.progress.Committed
 }
 
 // Syncing returns false in case the node is currently not syncing with the network. It can be up-to-date or has not

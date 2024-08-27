@@ -360,6 +360,8 @@ type SyncProgress struct {
 	TrienodeHealBytes  common.StorageSize // Number of state trie bytes persisted to disk
 	BytecodeHealSynced uint64             // Number of bytecodes downloaded
 	BytecodeHealBytes  common.StorageSize // Number of bytecodes persisted to disk
+
+	EstimatedStateProgress float64 // Estimated percentage of state synced
 }
 
 // SyncPending is analogous to SyncProgress, but it's used to report on pending
@@ -666,16 +668,17 @@ func (s *Syncer) Sync(root common.Hash, cancel chan struct{}) error {
 		// Update sync progress
 		s.lock.Lock()
 		s.extProgress = &SyncProgress{
-			AccountSynced:      s.accountSynced,
-			AccountBytes:       s.accountBytes,
-			BytecodeSynced:     s.bytecodeSynced,
-			BytecodeBytes:      s.bytecodeBytes,
-			StorageSynced:      s.storageSynced,
-			StorageBytes:       s.storageBytes,
-			TrienodeHealSynced: s.trienodeHealSynced,
-			TrienodeHealBytes:  s.trienodeHealBytes,
-			BytecodeHealSynced: s.bytecodeHealSynced,
-			BytecodeHealBytes:  s.bytecodeHealBytes,
+			AccountSynced:          s.accountSynced,
+			AccountBytes:           s.accountBytes,
+			BytecodeSynced:         s.bytecodeSynced,
+			BytecodeBytes:          s.bytecodeBytes,
+			StorageSynced:          s.storageSynced,
+			StorageBytes:           s.storageBytes,
+			TrienodeHealSynced:     s.trienodeHealSynced,
+			TrienodeHealBytes:      s.trienodeHealBytes,
+			BytecodeHealSynced:     s.bytecodeHealSynced,
+			BytecodeHealBytes:      s.bytecodeHealBytes,
+			EstimatedStateProgress: s.EstimatedStateProgress(),
 		}
 		s.lock.Unlock()
 		// Wait for something to happen
@@ -3039,23 +3042,7 @@ func (s *Syncer) reportSyncProgress(force bool) {
 		return
 	}
 	// Don't report anything until we have a meaningful progress
-	synced := s.accountBytes + s.bytecodeBytes + s.storageBytes
-	if synced == 0 {
-		return
-	}
-	accountGaps := new(big.Int)
-	for _, task := range s.tasks {
-		accountGaps.Add(accountGaps, new(big.Int).Sub(task.Last.Big(), task.Next.Big()))
-	}
-	accountFills := new(big.Int).Sub(hashSpace, accountGaps)
-	if accountFills.BitLen() == 0 {
-		return
-	}
-	s.logTime = time.Now()
-	estBytes := float64(new(big.Int).Div(
-		new(big.Int).Mul(new(big.Int).SetUint64(uint64(synced)), hashSpace),
-		accountFills,
-	).Uint64())
+	synced, estBytes := s.estimateStateBytes()
 	// Don't report anything until we have a meaningful progress
 	if estBytes < 1.0 {
 		return
@@ -3091,6 +3078,39 @@ func (s *Syncer) reportHealProgress(force bool) {
 	)
 	log.Info("Syncing: state healing in progress", "accounts", accounts, "slots", storage,
 		"codes", bytecode, "nodes", trienode, "pending", s.healer.scheduler.Pending())
+}
+
+func (s *Syncer) estimateStateBytes() (common.StorageSize, float64) {
+	synced := s.accountBytes + s.bytecodeBytes + s.storageBytes
+	if synced == 0 {
+		return 0, 0
+	}
+	accountGaps := new(big.Int)
+	for _, task := range s.tasks {
+		accountGaps.Add(accountGaps, new(big.Int).Sub(task.Last.Big(), task.Next.Big()))
+	}
+	accountFills := new(big.Int).Sub(hashSpace, accountGaps)
+	if accountFills.BitLen() == 0 {
+		return 0, 0
+	}
+	s.logTime = time.Now()
+	estBytes := float64(new(big.Int).Div(
+		new(big.Int).Mul(new(big.Int).SetUint64(uint64(synced)), hashSpace),
+		accountFills,
+	).Uint64())
+
+	return synced, estBytes
+}
+
+func (s *Syncer) EstimatedStateProgress() float64 {
+	if len(s.tasks) == 0 {
+		return 100
+	}
+	synced, estBytes := s.estimateStateBytes()
+	if estBytes == 0 {
+		return 0
+	}
+	return float64(synced) * 100 / estBytes
 }
 
 // estimateRemainingSlots tries to determine roughly how many slots are left in

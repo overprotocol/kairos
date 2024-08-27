@@ -268,21 +268,24 @@ func (d *Downloader) Progress() ethereum.SyncProgress {
 	progress, pending := d.SnapSyncer.Progress()
 
 	return ethereum.SyncProgress{
-		StartingBlock:       d.syncStatsChainOrigin,
-		CurrentBlock:        current,
-		HighestBlock:        d.syncStatsChainHeight,
-		SyncedAccounts:      progress.AccountSynced,
-		SyncedAccountBytes:  uint64(progress.AccountBytes),
-		SyncedBytecodes:     progress.BytecodeSynced,
-		SyncedBytecodeBytes: uint64(progress.BytecodeBytes),
-		SyncedStorage:       progress.StorageSynced,
-		SyncedStorageBytes:  uint64(progress.StorageBytes),
-		HealedTrienodes:     progress.TrienodeHealSynced,
-		HealedTrienodeBytes: uint64(progress.TrienodeHealBytes),
-		HealedBytecodes:     progress.BytecodeHealSynced,
-		HealedBytecodeBytes: uint64(progress.BytecodeHealBytes),
-		HealingTrienodes:    pending.TrienodeHeal,
-		HealingBytecode:     pending.BytecodeHeal,
+		StartingBlock:          d.syncStatsChainOrigin,
+		CurrentBlock:           current,
+		HighestBlock:           d.syncStatsChainHeight,
+		SyncedAccounts:         progress.AccountSynced,
+		SyncedAccountBytes:     uint64(progress.AccountBytes),
+		SyncedBytecodes:        progress.BytecodeSynced,
+		SyncedBytecodeBytes:    uint64(progress.BytecodeBytes),
+		SyncedStorage:          progress.StorageSynced,
+		SyncedStorageBytes:     uint64(progress.StorageBytes),
+		EstimatedStateProgress: progress.EstimatedStateProgress,
+		HealedTrienodes:        progress.TrienodeHealSynced,
+		HealedTrienodeBytes:    uint64(progress.TrienodeHealBytes),
+		HealedBytecodes:        progress.BytecodeHealSynced,
+		HealedBytecodeBytes:    uint64(progress.BytecodeHealBytes),
+		HealingTrienodes:       pending.TrienodeHeal,
+		HealingBytecode:        pending.BytecodeHeal,
+		SyncMode:               d.getMode().String(),
+		Committed:              d.committed.Load(),
 	}
 }
 
@@ -600,7 +603,7 @@ func (d *Downloader) syncWithPeer(p *peerConnection, hash common.Hash, td, ttd *
 
 		// If a part of blockchain data has already been written into active store,
 		// disable the ancient style insertion explicitly.
-		if origin >= frozen && frozen != 0 {
+		if origin >= frozen {
 			d.ancientLimit = 0
 			log.Info("Disabling direct-ancient mode", "origin", origin, "ancient", frozen-1)
 		} else if d.ancientLimit > 0 {

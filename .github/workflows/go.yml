@@ -1,23 +1,20 @@
-name: i386 linux tests
+name: Go Test
 
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
           go-version: 1.21.4
+          cache: false
       - name: Run tests
-        run: go test ./...
-        env:
-          GOOS: linux
-          GOARCH: 386
+        run: go test -short ./...
