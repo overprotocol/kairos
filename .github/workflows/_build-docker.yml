@@ -43,4 +43,4 @@ jobs:
 
       - name: Push image to Docker Hub
         run: |
-          docker push overfoundation/kairos:$DOCKER_TAG
+          docker push overfoundation/kairos:${{ steps.set-docker-tag.outputs.docker_tag }}
