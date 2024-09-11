@@ -110,6 +110,9 @@ jobs:
     with:
       tag_name: ${{ needs.extract-version.outputs.tag_name }}
       version_name: ${{ needs.extract-version.outputs.version_name }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   create-release:
     needs: [build, extract-version]
