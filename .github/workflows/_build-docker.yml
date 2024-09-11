@@ -1,0 +1,43 @@
+name: Build Docker images push to Docker Hub
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        required: true
+        type: string
+      version_name:
+        required: true
+        type: string
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    outputs:
+      docker_tag: ${{ steps.set-docker-tag.outputs.docker_tag }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Git config
+        run: |
+          git config --global --add safe.directory /__w/kairos/kairos
+
+      - name: Set Docker Tag
+        id: set-docker-tag
+        run: |
+          echo "docker_tag=${{ inputs.version_name }}_${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
+
+      - name: Build images
+        run: |
+          export DOCKER_TAG=${{ steps.set-docker-tag.outputs.docker_tag }}
+          docker build --tag kairos:$DOCKER_TAG .
+          docker image tag kairos:$DOCKER_TAG overfoundation/kairos:$DOCKER_TAG
+
+      - name: Login docker hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image to Docker Hub
+        run: |
+          docker push overfoundation/kairos:$DOCKER_TAG
