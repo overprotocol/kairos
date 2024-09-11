@@ -52,6 +52,11 @@ jobs:
         with:
           path: dist/${{ github.sha }}
 
+      - name: Flatten directory structure
+        run: |
+          find dist/${{ github.sha }} -name '*.zip' -exec mv {} dist/${{ github.sha }}/ \;
+          find dist/${{ github.sha }} -mindepth 1 -type d -delete
+
       - name: Upload to S3
         run: |
           aws s3 cp dist/${{ github.sha }} \
@@ -87,6 +92,11 @@ jobs:
       - name: Upload updated latest.yml to S3
         run: |
           aws s3 cp latest.yml s3://${{ secrets.AWS_BUCKET_NAME }}/latest/latest.yml --acl public-read
+
+      - name: Flatten directory structure
+        run: |
+          find dist/${{ github.sha }} -name '*.zip' -exec mv {} dist/${{ github.sha }}/ \;
+          find dist/${{ github.sha }} -mindepth 1 -type d -delete
 
       - name: Upload to S3
         run: |
