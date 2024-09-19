@@ -533,9 +533,17 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// the coinbase when simulating calls.
 	} else {
 		fee := new(uint256.Int).SetUint64(st.gasUsed())
-		fee.Mul(fee, effectiveTipU256)
-		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 
+		fee.Mul(fee, effectiveTipU256)
+		if rules.IsLondon {
+			// BaseFee is sent to the foundation's treasury
+			basefee := new(uint256.Int)
+			basefee.SetFromBig(st.evm.Context.BaseFee)
+			burn := new(uint256.Int).Mul(fee, basefee)
+			// Please fix this before open source = next week
+			st.state.AddBalance(params.DaoTreasuryAddress, burn, tracing.BalanceIncreaseBaseFee)
+		}
+		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)

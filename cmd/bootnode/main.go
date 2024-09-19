@@ -23,13 +23,14 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"time"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
@@ -46,6 +47,7 @@ func main() {
 		runv5       = flag.Bool("v5", false, "run a v5 topic discovery bootnode")
 		verbosity   = flag.Int("verbosity", 3, "log verbosity (0-5)")
 		vmodule     = flag.String("vmodule", "", "log verbosity pattern")
+		extIP       = flag.String("external-ip", "", "external ip of bootnode")
 
 		nodeKey *ecdsa.PrivateKey
 		err     error
@@ -93,6 +95,20 @@ func main() {
 		os.Exit(0)
 	}
 
+	var paddr *net.UDPAddr
+	if *extIP != "" {
+		ipForENR := fmt.Sprintf("%s%s", *extIP, *listenAddr)
+		fmt.Println("address for enr : ", ipForENR)
+
+		paddr, err = net.ResolveUDPAddr("udp", ipForENR)
+		if err != nil {
+			utils.Fatalf("-ResolveUDPAddr: %v", err)
+		}
+	} else {
+		fmt.Println("External IP for bootnode is needed")
+		os.Exit(0)
+	}
+
 	var restrictList *netutil.Netlist
 	if *netrestrict != "" {
 		restrictList, err = netutil.ParseNetlist(*netrestrict)
@@ -101,43 +117,107 @@ func main() {
 		}
 	}
 
-	addr, err := net.ResolveUDPAddr("udp", *listenAddr)
-	if err != nil {
-		utils.Fatalf("-ResolveUDPAddr: %v", err)
-	}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		utils.Fatalf("-ListenUDP: %v", err)
-	}
-	defer conn.Close()
-
-	db, _ := enode.OpenDB("")
-	ln := enode.NewLocalNode(db, nodeKey)
-
-	listenerAddr := conn.LocalAddr().(*net.UDPAddr)
-	if natm != nil && !listenerAddr.IP.IsLoopback() {
-		natAddr := doPortMapping(natm, ln, listenerAddr)
-		if natAddr != nil {
-			listenerAddr = natAddr
-		}
-	}
-
-	printNotice(&nodeKey.PublicKey, *listenerAddr)
 	cfg := discover.Config{
 		PrivateKey:  nodeKey,
 		NetRestrict: restrictList,
 	}
+
 	if *runv5 {
-		if _, err := discover.ListenV5(conn, ln, cfg); err != nil {
+		ipAddr, err := ExternalIP()
+		if err != nil {
 			utils.Fatalf("%v", err)
 		}
+		listener := createListener(ipAddr, paddr, cfg)
+
+		// Write the enr to a file.
+		err = os.WriteFile("./kairos_enr.txt", []byte(listener.Self().String()), 0600)
+		if err != nil {
+			utils.Fatalf("Failed to write to file: %v", err)
+		}
+		fmt.Println("kairos_enr.txt file written successfully!")
 	} else {
+		addr, err := net.ResolveUDPAddr("udp", *listenAddr)
+		if err != nil {
+			utils.Fatalf("-ResolveUDPAddr: %v", err)
+		}
+		conn, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			utils.Fatalf("-ListenUDP: %v", err)
+		}
+
+		realaddr := conn.LocalAddr().(*net.UDPAddr)
+		if natm != nil {
+			if !realaddr.IP.IsLoopback() {
+				go nat.Map(natm, nil, "udp", realaddr.Port, realaddr.Port, "ethereum discovery")
+			}
+			if ext, err := natm.ExternalIP(); err == nil {
+				realaddr = &net.UDPAddr{IP: ext, Port: realaddr.Port}
+			}
+		}
+
+		printNotice(&nodeKey.PublicKey, *realaddr)
+
+		db, _ := enode.OpenDB("")
+		ln := enode.NewLocalNode(db, nodeKey)
 		if _, err := discover.ListenUDP(conn, ln, cfg); err != nil {
 			utils.Fatalf("%v", err)
 		}
 	}
+	fmt.Println("Bootnode started")
 
 	select {}
+}
+
+func createListener(ipAddr string, addr *net.UDPAddr, cfg discover.Config) *discover.UDPv5 {
+	ip := net.ParseIP(ipAddr)
+	if ip.To4() == nil {
+		utils.Fatalf("IPV4 address not provided instead %s was provided", ipAddr)
+	}
+	var bindIP net.IP
+	var networkVersion string
+	switch {
+	case ip.To16() != nil && ip.To4() == nil:
+		bindIP = net.IPv6zero
+		networkVersion = "udp6"
+	case ip.To4() != nil:
+		bindIP = net.IPv4zero
+		networkVersion = "udp4"
+	default:
+		utils.Fatalf("Valid ip address not provided instead %s was provided", ipAddr)
+	}
+	udpAddr := &net.UDPAddr{
+		IP:   bindIP,
+		Port: addr.Port,
+	}
+	conn, err := net.ListenUDP(networkVersion, udpAddr)
+	if err != nil {
+		utils.Fatalf("%v", err)
+	}
+	localNode, err := createLocalNode(cfg.PrivateKey, addr)
+	if err != nil {
+		utils.Fatalf("%v", err)
+	}
+
+	listener, err := discover.ListenV5(conn, localNode, cfg)
+	if err != nil {
+		utils.Fatalf("%v", err)
+	}
+	return listener
+}
+
+func createLocalNode(privKey *ecdsa.PrivateKey, addr *net.UDPAddr) (*enode.LocalNode, error) {
+	db, err := enode.OpenDB("")
+	if err != nil {
+		return nil, fmt.Errorf("Could not open node's peer database %v", err)
+	}
+	external := net.ParseIP(addr.IP.String())
+
+	localNode := enode.NewLocalNode(db, privKey)
+	localNode.Set(enr.WithEntry("over", [4]byte{0}))
+	localNode.SetFallbackIP(external)
+	localNode.SetFallbackUDP(addr.Port)
+
+	return localNode, nil
 }
 
 func printNotice(nodeKey *ecdsa.PublicKey, addr net.UDPAddr) {
@@ -145,65 +225,70 @@ func printNotice(nodeKey *ecdsa.PublicKey, addr net.UDPAddr) {
 		addr.IP = net.IP{127, 0, 0, 1}
 	}
 	n := enode.NewV4(nodeKey, addr.IP, 0, addr.Port)
-	fmt.Println(n.URLv4())
+	enodeVal := n.URLv4()
+	fmt.Println(enodeVal)
+	// Write the enr to a file.
+	err := os.WriteFile("./enode.txt", []byte(enodeVal), 0600)
+	if err != nil {
+		utils.Fatalf("Failed to write to file: %v", err)
+	}
+	fmt.Println("enode.txt file written successfully!")
 	fmt.Println("Note: you're using cmd/bootnode, a developer tool.")
 	fmt.Println("We recommend using a regular node as bootstrap node for production deployments.")
 }
 
-func doPortMapping(natm nat.Interface, ln *enode.LocalNode, addr *net.UDPAddr) *net.UDPAddr {
-	const (
-		protocol = "udp"
-		name     = "ethereum discovery"
-	)
-	newLogger := func(external int, internal int) log.Logger {
-		return log.New("proto", protocol, "extport", external, "intport", internal, "interface", natm)
+// ExternalIP returns the first IPv4/IPv6 available.
+func ExternalIP() (string, error) {
+	ips, err := ipAddrs()
+	if err != nil {
+		return "", err
 	}
-
-	var (
-		intport    = addr.Port
-		extaddr    = &net.UDPAddr{IP: addr.IP, Port: addr.Port}
-		mapTimeout = nat.DefaultMapTimeout
-		log        = newLogger(addr.Port, intport)
-	)
-	addMapping := func() {
-		// Get the external address.
-		var err error
-		extaddr.IP, err = natm.ExternalIP()
-		if err != nil {
-			log.Debug("Couldn't get external IP", "err", err)
-			return
-		}
-		// Create the mapping.
-		p, err := natm.AddMapping(protocol, extaddr.Port, intport, name, mapTimeout)
-		if err != nil {
-			log.Debug("Couldn't add port mapping", "err", err)
-			return
-		}
-		if p != uint16(extaddr.Port) {
-			extaddr.Port = int(p)
-			log = newLogger(extaddr.Port, intport)
-			log.Info("NAT mapped alternative port")
-		} else {
-			log.Info("NAT mapped port")
-		}
-		// Update IP/port information of the local node.
-		ln.SetStaticIP(extaddr.IP)
-		ln.SetFallbackUDP(extaddr.Port)
+	if len(ips) == 0 {
+		return "127.0.0.1", nil
 	}
+	return ips[0].String(), nil
+}
 
-	// Perform mapping once, synchronously.
-	log.Info("Attempting port mapping")
-	addMapping()
-
-	// Refresh the mapping periodically.
-	go func() {
-		refresh := time.NewTimer(mapTimeout)
-		defer refresh.Stop()
-		for range refresh.C {
-			addMapping()
-			refresh.Reset(mapTimeout)
+// ipAddrs returns all the valid IPs available.
+func ipAddrs() ([]net.IP, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var ipAddrs []net.IP
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue // interface down
 		}
-	}()
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue // loopback interface
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return nil, err
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			ipAddrs = append(ipAddrs, ip)
+		}
+	}
+	return SortAddresses(ipAddrs), nil
+}
 
-	return extaddr
+// SortAddresses sorts a set of addresses in the order of
+// ipv4 -> ipv6.
+func SortAddresses(ipAddrs []net.IP) []net.IP {
+	sort.Slice(ipAddrs, func(i, j int) bool {
+		return ipAddrs[i].To4() != nil && ipAddrs[j].To4() == nil
+	})
+	return ipAddrs
 }

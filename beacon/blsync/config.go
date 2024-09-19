@@ -43,30 +43,15 @@ var (
 			AddFork("DENEB", 269568, []byte{4, 0, 0, 0}),
 		Checkpoint: common.HexToHash("0x388be41594ec7d6a6894f18c73f3469f07e2c19a803de4755d335817ed8e2e5a"),
 	}
-
-	SepoliaConfig = lightClientConfig{
-		ChainConfig: (&types.ChainConfig{
-			GenesisValidatorsRoot: common.HexToHash("0xd8ea171f3c94aea21ebc42a1ed61052acf3f9209c00e4efbaaddac09ed9b8078"),
-			GenesisTime:           1655733600,
-		}).
-			AddFork("GENESIS", 0, []byte{144, 0, 0, 105}).
-			AddFork("ALTAIR", 50, []byte{144, 0, 0, 112}).
-			AddFork("BELLATRIX", 100, []byte{144, 0, 0, 113}).
-			AddFork("CAPELLA", 56832, []byte{144, 0, 0, 114}).
-			AddFork("DENEB", 132608, []byte{144, 0, 0, 115}),
-		Checkpoint: common.HexToHash("0x1005a6d9175e96bfbce4d35b80f468e9bff0b674e1e861d16e09e10005a58e81"),
-	}
 )
 
 func makeChainConfig(ctx *cli.Context) lightClientConfig {
 	var config lightClientConfig
 	customConfig := ctx.IsSet(utils.BeaconConfigFlag.Name)
-	utils.CheckExclusive(ctx, utils.MainnetFlag, utils.SepoliaFlag, utils.BeaconConfigFlag)
+	utils.CheckExclusive(ctx, utils.MainnetFlag, utils.BeaconConfigFlag)
 	switch {
 	case ctx.Bool(utils.MainnetFlag.Name):
 		config = MainnetConfig
-	case ctx.Bool(utils.SepoliaFlag.Name):
-		config = SepoliaConfig
 	default:
 		if !customConfig {
 			config = MainnetConfig
