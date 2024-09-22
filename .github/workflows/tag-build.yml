@@ -1,0 +1,172 @@
+name: Build with tag
+
+on:
+  push:
+    tags:
+      - "v*_*" # Format: v<major>.<minor>.<patch>[_<stable|beta|dev>]
+
+permissions:
+  contents: write
+
+jobs:
+  extract-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.extract.outputs.tag_name }}
+      version_name: ${{ steps.extract.outputs.version_name }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Extract tag name, version
+        id: extract
+        run: |
+          full_tag="${{ github.ref_name }}"
+          version_name="${full_tag%%_*}"
+          tag_name="${full_tag#*_}"
+          echo "tag_name=$tag_name" >> $GITHUB_OUTPUT
+          echo "version_name=$version_name" >> $GITHUB_OUTPUT
+
+  build:
+    needs: extract-version
+    strategy:
+      matrix:
+        symbol-list: [darwin_amd64, darwin_arm64, windows_amd64, linux_amd64]
+    uses: ./.github/workflows/_build.yml
+    with:
+      build-type: ${{ matrix.symbol-list }}
+      tag_name: ${{ needs.extract-version.outputs.tag_name }}
+      version_name: ${{ needs.extract-version.outputs.version_name }}
+
+  upload-aws:
+    needs: [build, extract-version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/${{ github.sha }}
+
+      - name: Flatten directory structure
+        run: |
+          find dist/${{ github.sha }} -name '*.zip' -exec mv {} dist/${{ github.sha }}/ \;
+          find dist/${{ github.sha }} -mindepth 1 -type d -delete
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp dist/${{ github.sha }} \
+            s3://${{ secrets.AWS_BUCKET_NAME }}/${{ needs.extract-version.outputs.version_name }}/${{ needs.extract-version.outputs.tag_name }} \
+            --recursive --exclude "*" --include "*.zip" --acl public-read
+
+  upload-aws-latest:
+    needs: [build, extract-version]
+    runs-on: ubuntu-latest
+    if: ${{ needs.extract-version.outputs.tag_name == 'stable' }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/${{ github.sha }}
+
+      - name: Download latest.yml from S3
+        run: |
+          aws s3 cp s3://${{ secrets.AWS_BUCKET_NAME }}/latest/latest.yml latest.yml
+
+      - name: Update latest.yml file for kairos
+        run: |
+          echo "Updating kairos version and tag in latest.yml"
+          yq eval '.kairos.version = "${{ needs.extract-version.outputs.version_name }}" | .kairos.tag = "${{ needs.extract-version.outputs.tag_name }}"' -i latest.yml
+
+      - name: Upload updated latest.yml to S3
+        run: |
+          aws s3 cp latest.yml s3://${{ secrets.AWS_BUCKET_NAME }}/latest/latest.yml --acl public-read
+
+      - name: Flatten directory structure
+        run: |
+          find dist/${{ github.sha }} -name '*.zip' -exec mv {} dist/${{ github.sha }}/ \;
+          find dist/${{ github.sha }} -mindepth 1 -type d -delete
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp dist/${{ github.sha }} \
+            s3://${{ secrets.AWS_BUCKET_NAME }}/latest/kairos \
+            --recursive --exclude "*" --include "*.zip" --acl public-read
+
+  docker:
+    needs: [extract-version]
+    uses: ./.github/workflows/_build-docker.yml
+    with:
+      tag_name: ${{ needs.extract-version.outputs.tag_name }}
+      version_name: ${{ needs.extract-version.outputs.version_name }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  create-release:
+    needs: [build, extract-version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: "Generate release changelog"
+        id: changelog
+        run: |
+          git fetch --tags
+          prev_tag=$(git tag --sort=-version:refname | grep -e "^v[0-9.]*$" | head -n 1)
+          echo "previous release: $prev_tag"
+          if [ "$prev_tag" ]; then
+            changelog=$(git log --oneline --no-decorate $prev_tag..HEAD)
+          else
+            changelog=$(git log --oneline --no-decorate)
+          fi
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo " - ${changelog//$'\n'/$'\n' - }" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*.zip
+          draft: true
+          prerelease: false
+          body: |
+            ### Changes
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### Release Artifacts
+            Please read through our official [documentation](https://docs.over.network/) for setup instructions.
+            | Release File  | Description |
+            | ------------- | ------------- |
+            | [kairos_windows_amd64.zip](https://github.com/overprotocol/kairos/releases/download/${{ github.ref_name }}/kairos_windows_amd64.zip) | kairos executables for windows/amd64 |
+            | [kairos_linux_amd64.zip](https://github.com/overprotocol/kairos/releases/download/${{ github.ref_name }}/kairos_linux_amd64.zip) | kairos executables for linux/amd64 |
+            | [kairos_darwin_amd64.zip](https://github.com/overprotocol/kairos/releases/download/${{ github.ref_name }}/kairos_darwin_amd64.zip) | kairos executables for macos/amd64 |
+            | [kairos_darwin_arm64.zip](https://github.com/overprotocol/kairos/releases/download/${{ github.ref_name }}/kairos_darwin_arm64.zip) | kairos executables for macos/arm64 |
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  clean:
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean up
+        run: |
+          rm -rf dist
+          rm -rf build/bin
