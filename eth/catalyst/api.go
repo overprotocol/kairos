@@ -876,8 +876,8 @@ func (api *ConsensusAPI) GetPayloadBodiesByHashV1(hashes []common.Hash) []*engin
 		// after Prague.
 		if body != nil {
 			body.Deposits = nil
-			bodies[i].WithdrawalRequests = nil
-			bodies[i].ConsolidationRequests = nil
+			body.WithdrawalRequests = nil
+			body.ConsolidationRequests = nil
 			bodies[i] = body
 		}
 	}
