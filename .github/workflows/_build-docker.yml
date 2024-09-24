@@ -48,4 +48,5 @@ jobs:
       - name: Push latest image to Docker Hub
         if: ${{ inputs.tag_name == 'stable' }}
         run: |
+          docker tag overfoundation/kairos:${{ steps.set-docker-tag.outputs.docker_tag }} overfoundation/kairos:latest
           docker push overfoundation/kairos:latest
