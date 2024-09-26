@@ -877,7 +877,6 @@ func (api *ConsensusAPI) GetPayloadBodiesByHashV1(hashes []common.Hash) []*engin
 		if body != nil {
 			body.Deposits = nil
 			body.WithdrawalRequests = nil
-			body.ConsolidationRequests = nil
 			bodies[i] = body
 		}
 	}
@@ -908,7 +907,6 @@ func (api *ConsensusAPI) GetPayloadBodiesByRangeV1(start, count hexutil.Uint64) 
 		if bodies[i] != nil {
 			bodies[i].Deposits = nil
 			bodies[i].WithdrawalRequests = nil
-			bodies[i].ConsolidationRequests = nil
 		}
 	}
 	return bodies, nil
@@ -947,12 +945,11 @@ func getBody(block *types.Block) *engine.ExecutionPayloadBody {
 	}
 
 	var (
-		body                  = block.Body()
-		txs                   = make([]hexutil.Bytes, len(body.Transactions))
-		withdrawals           = body.Withdrawals
-		depositRequests       types.Deposits
-		withdrawalRequests    types.WithdrawalRequests
-		consolidationRequests types.ConsolidationRequests
+		body               = block.Body()
+		txs                = make([]hexutil.Bytes, len(body.Transactions))
+		withdrawals        = body.Withdrawals
+		depositRequests    types.Deposits
+		withdrawalRequests types.WithdrawalRequests
 	)
 
 	for j, tx := range body.Transactions {
@@ -970,24 +967,19 @@ func getBody(block *types.Block) *engine.ExecutionPayloadBody {
 		// only the block.
 		depositRequests = make(types.Deposits, 0)
 		withdrawalRequests = make(types.WithdrawalRequests, 0)
-		consolidationRequests = make(types.ConsolidationRequests, 0)
-
 		for _, req := range block.Requests() {
 			switch v := req.Inner().(type) {
 			case *types.Deposit:
 				depositRequests = append(depositRequests, v)
 			case *types.WithdrawalRequest:
 				withdrawalRequests = append(withdrawalRequests, v)
-			case *types.ConsolidationRequest:
-				consolidationRequests = append(consolidationRequests, v)
 			}
 		}
 	}
 	return &engine.ExecutionPayloadBody{
-		TransactionData:       txs,
-		Withdrawals:           withdrawals,
-		Deposits:              depositRequests,
-		WithdrawalRequests:    withdrawalRequests,
-		ConsolidationRequests: consolidationRequests,
+		TransactionData:    txs,
+		Withdrawals:        withdrawals,
+		Deposits:           depositRequests,
+		WithdrawalRequests: withdrawalRequests,
 	}
 }
