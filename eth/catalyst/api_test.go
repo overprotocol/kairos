@@ -1328,10 +1328,8 @@ func setupBodies(t *testing.T) (*node.Node, *eth.Ethereum, []*types.Block) {
 			tx2, _ = types.SignTx(types.NewTransaction(statedb.GetNonce(testAddr)+1, ethservice.APIBackend.ChainConfig().DepositContractAddress, new(big.Int), 500000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 			// Create tx to trigger withdrawal request.
 			tx3, _ = types.SignTx(types.NewTransaction(statedb.GetNonce(testAddr)+2, params.WithdrawalRequestsAddress, big.NewInt(42), 500000, big.NewInt(2*params.InitialBaseFee), make([]byte, 56)), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-			// Create tx to trigger consolidation request.
-			tx4, _ = types.SignTx(types.NewTransaction(statedb.GetNonce(testAddr)+3, params.ConsolidationRequestsAddress, big.NewInt(42), 500000, big.NewInt(2*params.InitialBaseFee), make([]byte, 96)), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 		)
-		ethservice.TxPool().Add([]*types.Transaction{tx1, tx2, tx3, tx4}, false, false)
+		ethservice.TxPool().Add([]*types.Transaction{tx1, tx2, tx3}, false, false)
 	}
 
 	// Make some withdrawals to include.
