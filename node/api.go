@@ -322,6 +322,17 @@ func (api *adminAPI) Datadir() string {
 	return api.node.DataDir()
 }
 
+// StopNode shuts down the node.
+func (api *adminAPI) StopNode() error {
+	api.node.Close()
+	return nil
+}
+
+// ClientVersion returns the node name
+func (api *adminAPI) ClientVersion() string {
+	return api.node.Server().Name
+}
+
 // web3API offers helper utils
 type web3API struct {
 	stack *Node
