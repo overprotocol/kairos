@@ -113,6 +113,10 @@ type SyncProgress struct {
 	SyncedStorage       uint64 // Number of storage slots downloaded
 	SyncedStorageBytes  uint64 // Number of storage trie bytes persisted to disk
 
+	// EstimatedStateProgress represents the estimated percentage (0 to 100)
+	// of overall progress in downloading state.
+	EstimatedStateProgress float64
+
 	HealedTrienodes     uint64 // Number of state trie nodes downloaded
 	HealedTrienodeBytes uint64 // Number of state trie bytes persisted to disk
 	HealedBytecodes     uint64 // Number of bytecodes downloaded
@@ -120,7 +124,8 @@ type SyncProgress struct {
 
 	HealingTrienodes uint64 // Number of state trie nodes pending
 	HealingBytecode  uint64 // Number of bytecodes pending
-
+	SyncMode         string // Sync mode: full, snap, light
+	Committed        bool   // Whether the sync is committed
 	// "transaction indexing" fields
 	TxIndexFinishedBlocks  uint64 // Number of blocks whose transactions are already indexed
 	TxIndexRemainingBlocks uint64 // Number of blocks whose transactions are not indexed yet
