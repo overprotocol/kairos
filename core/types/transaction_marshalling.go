@@ -155,7 +155,7 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 			enc.Proofs = itx.Sidecar.Proofs
 		}
 	case *SetCodeTx:
-		enc.ChainID = (*hexutil.Big)(itx.ChainID.ToBig())
+		enc.ChainID = (*hexutil.Big)(new(big.Int).SetUint64(itx.ChainID))
 		enc.Nonce = (*hexutil.Uint64)(&itx.Nonce)
 		enc.To = tx.To()
 		enc.Gas = (*hexutil.Uint64)(&itx.Gas)
@@ -433,7 +433,7 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		if dec.ChainID == nil {
 			return errors.New("missing required field 'chainId' in transaction")
 		}
-		itx.ChainID = uint256.MustFromBig((*big.Int)(dec.ChainID))
+		itx.ChainID = dec.ChainID.ToInt().Uint64()
 		if dec.Nonce == nil {
 			return errors.New("missing required field 'nonce' in transaction")
 		}

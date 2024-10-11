@@ -141,19 +141,19 @@ type stTransactionMarshaling struct {
 // Authorization is an authorization from an account to deploy code at it's
 // address.
 type stAuthorization struct {
-	ChainID *big.Int
+	ChainID uint64
 	Address common.Address `json:"address" gencodec:"required"`
 	Nonce   uint64         `json:"nonce" gencodec:"required"`
-	V       *big.Int       `json:"v" gencodec:"required"`
+	V       uint8          `json:"v" gencodec:"required"`
 	R       *big.Int       `json:"r" gencodec:"required"`
 	S       *big.Int       `json:"s" gencodec:"required"`
 }
 
 // field type overrides for gencodec
 type stAuthorizationMarshaling struct {
-	ChainID *math.HexOrDecimal256
+	ChainID math.HexOrDecimal64
 	Nonce   math.HexOrDecimal64
-	V       *math.HexOrDecimal256
+	V       math.HexOrDecimal64
 	R       *math.HexOrDecimal256
 	S       *math.HexOrDecimal256
 }
@@ -444,12 +444,8 @@ func (tx *stTransaction) toMessage(ps stPostState, baseFee *big.Int) (*core.Mess
 	if tx.AuthorizationList != nil {
 		authList = make(types.AuthorizationList, 0)
 		for _, auth := range tx.AuthorizationList {
-			chainID := auth.ChainID
-			if chainID == nil {
-				chainID = big.NewInt(0)
-			}
 			authList = append(authList, &types.Authorization{
-				ChainID: chainID,
+				ChainID: auth.ChainID,
 				Address: auth.Address,
 				Nonce:   auth.Nonce,
 				V:       auth.V,

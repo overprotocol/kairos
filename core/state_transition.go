@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -308,7 +307,7 @@ func (st *StateTransition) preCheck() error {
 	if !msg.SkipFromEOACheck {
 		// Make sure the sender is an EOA
 		code := st.state.GetCode(msg.From)
-		if 0 < len(code) && !bytes.HasPrefix(code, []byte{0xef, 0x01, 0x00}) {
+		if 0 < len(code) && !bytes.HasPrefix(code, types.DelegationPrefix) {
 			return fmt.Errorf("%w: address %v, codehash: %s", ErrSenderNoEOA,
 				msg.From.Hex(), st.state.GetCodeHash(msg.From))
 		}
@@ -370,27 +369,6 @@ func (st *StateTransition) preCheck() error {
 			}
 		}
 	}
-
-	// Check that auth list isn't empty.
-	if msg.AuthList != nil && len(msg.AuthList) == 0 {
-		return fmt.Errorf("%w: address %v", ErrEmptyAuthList, msg.From.Hex())
-	}
-
-	// TODO: remove after this spec change is merged:
-	// https://github.com/ethereum/EIPs/pull/8845
-	if msg.AuthList != nil {
-		var (
-			secp256k1N     = secp256k1.S256().Params().N
-			secp256k1halfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
-		)
-		for _, auth := range msg.AuthList {
-			if auth.V.Cmp(common.Big1) > 0 || auth.S.Cmp(secp256k1halfN) > 0 {
-				w := fmt.Errorf("set code transaction with invalid auth signature")
-				return fmt.Errorf("%w: address %v", w, msg.From.Hex())
-			}
-		}
-	}
-
 	return st.buyGas()
 }
 
@@ -476,7 +454,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if msg.AuthList != nil {
 		for _, auth := range msg.AuthList {
 			// Verify chain ID is 0 or equal to current chain ID.
-			if auth.ChainID.Sign() != 0 && st.evm.ChainConfig().ChainID.Cmp(auth.ChainID) != 0 {
+			if auth.ChainID != 0 && st.evm.ChainConfig().ChainID.Uint64() != auth.ChainID {
 				continue
 			}
 			authority, err := auth.Authority()
@@ -490,7 +468,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			if _, ok := types.ParseDelegation(code); len(code) != 0 && !ok {
 				continue
 			}
-			if have := st.state.GetNonce(authority); have != auth.Nonce {
+			if have := st.state.GetNonce(authority); have != auth.Nonce || auth.Nonce+1 < auth.Nonce {
 				continue
 			}
 			// If the account already exists in state, refund the new account cost
@@ -499,7 +477,13 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 				st.state.AddRefund(params.CallNewAccountGas - params.TxAuthTupleGas)
 			}
 			st.state.SetNonce(authority, auth.Nonce+1)
-			st.state.SetCode(authority, types.AddressToDelegation(auth.Address))
+			delegation := types.AddressToDelegation(auth.Address)
+			if auth.Address == common.ZeroAddress {
+				// If the delegation is for the zero address, completely clear all
+				// delegations from the account.
+				delegation = []byte{}
+			}
+			st.state.SetCode(authority, delegation)
 		}
 	}
 
