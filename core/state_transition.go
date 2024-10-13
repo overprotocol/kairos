@@ -369,6 +369,16 @@ func (st *StateTransition) preCheck() error {
 			}
 		}
 	}
+	// Check that EIP-7702 authorization list signatures are well formed.
+	for i, auth := range msg.AuthList {
+		switch {
+		case auth.R.BitLen() > 256:
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
+		case auth.S.BitLen() > 256:
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
+		}
+
+	}
 	return st.buyGas()
 }
 
@@ -440,6 +450,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
 	}
 
+	// Verify authorization list is not empty.
+	if msg.AuthList != nil && len(msg.AuthList) == 0 {
+		return nil, fmt.Errorf("%w: address %v", ErrEmptyAuthList, msg.From.Hex())
+	}
+
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
@@ -457,6 +472,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			if auth.ChainID != 0 && st.evm.ChainConfig().ChainID.Uint64() != auth.ChainID {
 				continue
 			}
+			// Limit nonce to 2^64-1 per EIP-2681.
+			if auth.Nonce+1 < auth.Nonce {
+				continue
+			}
+			// Validate signature values and recover authority.
 			authority, err := auth.Authority()
 			if err != nil {
 				continue
@@ -468,7 +488,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			if _, ok := types.ParseDelegation(code); len(code) != 0 && !ok {
 				continue
 			}
-			if have := st.state.GetNonce(authority); have != auth.Nonce || auth.Nonce+1 < auth.Nonce {
+			if have := st.state.GetNonce(authority); have != auth.Nonce {
 				continue
 			}
 			// If the account already exists in state, refund the new account cost
