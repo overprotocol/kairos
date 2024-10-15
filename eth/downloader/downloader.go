@@ -84,8 +84,9 @@ type headerTask struct {
 }
 
 type Downloader struct {
-	mode atomic.Uint32  // Synchronisation mode defining the strategy used (per sync cycle), use d.getMode() to get the SyncMode
-	mux  *event.TypeMux // Event multiplexer to announce sync operation events
+	mode    atomic.Uint32  // Synchronisation mode defining the strategy used (per sync cycle), use d.getMode() to get the SyncMode
+	modeSet atomic.Bool    // Flag to indicate if the mode has been set
+	mux     *event.TypeMux // Event multiplexer to announce sync operation events
 
 	queue *queue   // Scheduler for selecting the hashes to download
 	peers *peerSet // Set of active peers from which download can proceed
@@ -256,7 +257,7 @@ func (d *Downloader) Progress() ethereum.SyncProgress {
 		HealedBytecodeBytes:    uint64(progress.BytecodeHealBytes),
 		HealingTrienodes:       pending.TrienodeHeal,
 		HealingBytecode:        pending.BytecodeHeal,
-		SyncMode:               d.getMode().String(),
+		SyncMode:               d.getModeString(),
 		Committed:              d.committed.Load(),
 	}
 }
@@ -372,6 +373,7 @@ func (d *Downloader) synchronise(mode SyncMode, beaconPing chan struct{}) error 
 
 	// Atomically set the requested sync mode
 	d.mode.Store(uint32(mode))
+	d.modeSet.Store(true)
 
 	if beaconPing != nil {
 		close(beaconPing)
@@ -381,6 +383,20 @@ func (d *Downloader) synchronise(mode SyncMode, beaconPing chan struct{}) error 
 
 func (d *Downloader) getMode() SyncMode {
 	return SyncMode(d.mode.Load())
+}
+
+func (d *Downloader) getModeString() string {
+	if !d.modeSet.Load() {
+		return "syncModeUnset"
+	}
+	switch SyncMode(d.mode.Load()) {
+	case FullSync:
+		return "full"
+	case SnapSync:
+		return "snap"
+	default:
+		return "unknown"
+	}
 }
 
 // syncToHead starts a block synchronization based on the hash chain from
