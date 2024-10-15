@@ -132,6 +132,7 @@ var (
 		GrayGlacierBlock:              big.NewInt(0),
 		ShanghaiTime:                  newUint64(0),
 		CancunTime:                    newUint64(0),
+		PragueTime:                    newUint64(0),
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
 	}
@@ -218,7 +219,7 @@ var (
 		MergeNetsplitBlock:            big.NewInt(0),
 		ShanghaiTime:                  newUint64(0),
 		CancunTime:                    newUint64(0),
-		PragueTime:                    nil,
+		PragueTime:                    newUint64(0),
 		VerkleTime:                    nil,
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,

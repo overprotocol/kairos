@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -308,7 +307,7 @@ func (st *StateTransition) preCheck() error {
 	if !msg.SkipFromEOACheck {
 		// Make sure the sender is an EOA
 		code := st.state.GetCode(msg.From)
-		if 0 < len(code) && !bytes.HasPrefix(code, []byte{0xef, 0x01, 0x00}) {
+		if 0 < len(code) && !bytes.HasPrefix(code, types.DelegationPrefix) {
 			return fmt.Errorf("%w: address %v, codehash: %s", ErrSenderNoEOA,
 				msg.From.Hex(), st.state.GetCodeHash(msg.From))
 		}
@@ -370,27 +369,16 @@ func (st *StateTransition) preCheck() error {
 			}
 		}
 	}
-
-	// Check that auth list isn't empty.
-	if msg.AuthList != nil && len(msg.AuthList) == 0 {
-		return fmt.Errorf("%w: address %v", ErrEmptyAuthList, msg.From.Hex())
-	}
-
-	// TODO: remove after this spec change is merged:
-	// https://github.com/ethereum/EIPs/pull/8845
-	if msg.AuthList != nil {
-		var (
-			secp256k1N     = secp256k1.S256().Params().N
-			secp256k1halfN = new(big.Int).Div(secp256k1N, big.NewInt(2))
-		)
-		for _, auth := range msg.AuthList {
-			if auth.V.Cmp(common.Big1) > 0 || auth.S.Cmp(secp256k1halfN) > 0 {
-				w := fmt.Errorf("set code transaction with invalid auth signature")
-				return fmt.Errorf("%w: address %v", w, msg.From.Hex())
-			}
+	// Check that EIP-7702 authorization list signatures are well formed.
+	for i, auth := range msg.AuthList {
+		switch {
+		case auth.R.BitLen() > 256:
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
+		case auth.S.BitLen() > 256:
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
 		}
-	}
 
+	}
 	return st.buyGas()
 }
 
@@ -462,6 +450,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
 	}
 
+	// Verify authorization list is not empty.
+	if msg.AuthList != nil && len(msg.AuthList) == 0 {
+		return nil, fmt.Errorf("%w: address %v", ErrEmptyAuthList, msg.From.Hex())
+	}
+
 	// Execute the preparatory steps for state transition which includes:
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
@@ -476,9 +469,14 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if msg.AuthList != nil {
 		for _, auth := range msg.AuthList {
 			// Verify chain ID is 0 or equal to current chain ID.
-			if auth.ChainID.Sign() != 0 && st.evm.ChainConfig().ChainID.Cmp(auth.ChainID) != 0 {
+			if auth.ChainID != 0 && st.evm.ChainConfig().ChainID.Uint64() != auth.ChainID {
 				continue
 			}
+			// Limit nonce to 2^64-1 per EIP-2681.
+			if auth.Nonce+1 < auth.Nonce {
+				continue
+			}
+			// Validate signature values and recover authority.
 			authority, err := auth.Authority()
 			if err != nil {
 				continue
@@ -499,7 +497,20 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 				st.state.AddRefund(params.CallNewAccountGas - params.TxAuthTupleGas)
 			}
 			st.state.SetNonce(authority, auth.Nonce+1)
-			st.state.SetCode(authority, types.AddressToDelegation(auth.Address))
+			delegation := types.AddressToDelegation(auth.Address)
+			if auth.Address == common.ZeroAddress {
+				// If the delegation is for the zero address, completely clear all
+				// delegations from the account.
+				delegation = []byte{}
+			}
+			st.state.SetCode(authority, delegation)
+
+			// Usually the transation destination and delegation target are added to
+			// the access list in statedb.Prepare(..), however if the delegation is in
+			// the same transaction we need add here as Prepare already happened.
+			if *msg.To == authority {
+				st.state.AddAddressToAccessList(auth.Address)
+			}
 		}
 	}
 
@@ -533,17 +544,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// the coinbase when simulating calls.
 	} else {
 		fee := new(uint256.Int).SetUint64(st.gasUsed())
-
 		fee.Mul(fee, effectiveTipU256)
-		if rules.IsLondon {
-			// BaseFee is sent to the foundation's treasury
-			basefee := new(uint256.Int)
-			basefee.SetFromBig(st.evm.Context.BaseFee)
-			burn := new(uint256.Int).Mul(fee, basefee)
-			// Please fix this before open source = next week
-			st.state.AddBalance(params.DaoTreasuryAddress, burn, tracing.BalanceIncreaseBaseFee)
-		}
 		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
+
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)

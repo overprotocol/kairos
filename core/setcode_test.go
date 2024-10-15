@@ -76,13 +76,13 @@ func TestEIP7702(t *testing.T) {
 	signer := types.LatestSigner(gspec.Config)
 
 	auth1, _ := types.SignAuth(&types.Authorization{
-		ChainID: new(big.Int).Set(gspec.Config.ChainID),
+		ChainID: gspec.Config.ChainID.Uint64(),
 		Address: aa,
 		Nonce:   1,
 	}, key1)
 
 	auth2, _ := types.SignAuth(&types.Authorization{
-		ChainID: new(big.Int),
+		ChainID: 0,
 		Address: bb,
 		Nonce:   0,
 	}, key2)
@@ -90,7 +90,7 @@ func TestEIP7702(t *testing.T) {
 	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, 1, func(i int, b *BlockGen) {
 		b.SetCoinbase(aa)
 		txdata := &types.SetCodeTx{
-			ChainID:   uint256.MustFromBig(gspec.Config.ChainID),
+			ChainID:   gspec.Config.ChainID.Uint64(),
 			Nonce:     0,
 			To:        addr1,
 			Gas:       500000,

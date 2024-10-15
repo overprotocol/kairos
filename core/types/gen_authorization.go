@@ -16,18 +16,18 @@ var _ = (*authorizationMarshaling)(nil)
 // MarshalJSON marshals as JSON.
 func (a Authorization) MarshalJSON() ([]byte, error) {
 	type Authorization struct {
-		ChainID *hexutil.Big   `json:"chainId" gencodec:"required"`
+		ChainID hexutil.Uint64 `json:"chainId" gencodec:"required"`
 		Address common.Address `json:"address" gencodec:"required"`
 		Nonce   hexutil.Uint64 `json:"nonce" gencodec:"required"`
-		V       *hexutil.Big   `json:"v" gencodec:"required"`
+		V       hexutil.Uint64 `json:"v" gencodec:"required"`
 		R       *hexutil.Big   `json:"r" gencodec:"required"`
 		S       *hexutil.Big   `json:"s" gencodec:"required"`
 	}
 	var enc Authorization
-	enc.ChainID = (*hexutil.Big)(a.ChainID)
+	enc.ChainID = hexutil.Uint64(a.ChainID)
 	enc.Address = a.Address
 	enc.Nonce = hexutil.Uint64(a.Nonce)
-	enc.V = (*hexutil.Big)(a.V)
+	enc.V = hexutil.Uint64(a.V)
 	enc.R = (*hexutil.Big)(a.R)
 	enc.S = (*hexutil.Big)(a.S)
 	return json.Marshal(&enc)
@@ -36,10 +36,10 @@ func (a Authorization) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON unmarshals from JSON.
 func (a *Authorization) UnmarshalJSON(input []byte) error {
 	type Authorization struct {
-		ChainID *hexutil.Big    `json:"chainId" gencodec:"required"`
+		ChainID *hexutil.Uint64 `json:"chainId" gencodec:"required"`
 		Address *common.Address `json:"address" gencodec:"required"`
 		Nonce   *hexutil.Uint64 `json:"nonce" gencodec:"required"`
-		V       *hexutil.Big    `json:"v" gencodec:"required"`
+		V       *hexutil.Uint64 `json:"v" gencodec:"required"`
 		R       *hexutil.Big    `json:"r" gencodec:"required"`
 		S       *hexutil.Big    `json:"s" gencodec:"required"`
 	}
@@ -50,7 +50,7 @@ func (a *Authorization) UnmarshalJSON(input []byte) error {
 	if dec.ChainID == nil {
 		return errors.New("missing required field 'chainId' for Authorization")
 	}
-	a.ChainID = (*big.Int)(dec.ChainID)
+	a.ChainID = uint64(*dec.ChainID)
 	if dec.Address == nil {
 		return errors.New("missing required field 'address' for Authorization")
 	}
@@ -62,7 +62,7 @@ func (a *Authorization) UnmarshalJSON(input []byte) error {
 	if dec.V == nil {
 		return errors.New("missing required field 'v' for Authorization")
 	}
-	a.V = (*big.Int)(dec.V)
+	a.V = uint8(*dec.V)
 	if dec.R == nil {
 		return errors.New("missing required field 'r' for Authorization")
 	}
