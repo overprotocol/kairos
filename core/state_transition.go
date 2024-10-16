@@ -373,9 +373,9 @@ func (st *StateTransition) preCheck() error {
 	for i, auth := range msg.AuthList {
 		switch {
 		case auth.R.BitLen() > 256:
-			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
+			return fmt.Errorf("%w: address %v, authorization %d", ErrBlobFeeCapTooLow, msg.From.Hex(), i)
 		case auth.S.BitLen() > 256:
-			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
+			return fmt.Errorf("%w: address %v, authorization %d", ErrBlobFeeCapTooLow, msg.From.Hex(), i)
 		}
 
 	}
