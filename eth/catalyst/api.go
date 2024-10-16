@@ -847,6 +847,24 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 			"error", err)
 		return api.invalid(err, nil), nil
 	}
+	log.Warn("Valid good params",
+		"params.Number", params.Number,
+		"params.ParentHash", params.ParentHash,
+		"params.BlockHash", params.BlockHash,
+		"params.StateRoot", params.StateRoot,
+		"params.FeeRecipient", params.FeeRecipient,
+		"params.LogsBloom", common.PrettyBytes(params.LogsBloom),
+		"params.Random", params.Random,
+		"params.GasLimit", params.GasLimit,
+		"params.GasUsed", params.GasUsed,
+		"params.Timestamp", params.Timestamp,
+		"params.ExtraData", common.PrettyBytes(params.ExtraData),
+		"params.BaseFeePerGas", params.BaseFeePerGas,
+		"len(params.Transactions)", len(params.Transactions),
+		"len(params.Withdrawals)", len(params.Withdrawals),
+		"beaconRoot", beaconRoot,
+		"len(requests)", len(requests),
+		"error", err)
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadLock.Lock()
 	api.lastNewPayloadUpdate = time.Now()
