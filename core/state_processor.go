@@ -111,9 +111,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// EIP-7002 withdrawals
 		withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
 		requests = append(requests, withdrawalRequests)
-		// EIP-7251 consolidations
-		consolidationRequests := ProcessConsolidationQueue(vmenv, statedb)
-		requests = append(requests, consolidationRequests)
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
@@ -271,12 +268,6 @@ func ProcessParentBlockHash(prevHash common.Hash, vmenv *vm.EVM, statedb *state.
 // It returns the opaque request data returned by the contract.
 func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
 	return processRequestsSystemCall(vmenv, statedb, 0x01, params.WithdrawalQueueAddress)
-}
-
-// ProcessConsolidationQueue calls the EIP-7251 consolidation queue contract.
-// It returns the opaque request data returned by the contract.
-func ProcessConsolidationQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
-	return processRequestsSystemCall(vmenv, statedb, 0x02, params.ConsolidationQueueAddress)
 }
 
 func processRequestsSystemCall(vmenv *vm.EVM, statedb *state.StateDB, requestType byte, addr common.Address) []byte {

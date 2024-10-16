@@ -364,9 +364,6 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			// EIP-7002 withdrawals
 			withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
 			requests = append(requests, withdrawalRequests)
-			// EIP-7251 consolidations
-			consolidationRequests := ProcessConsolidationQueue(vmenv, statedb)
-			requests = append(requests, consolidationRequests)
 		}
 		if requests != nil {
 			reqHash := types.CalcRequestsHash(requests)
