@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -217,7 +216,6 @@ func ExecutableDataToBlock(data ExecutableData, versionedHashes []common.Hash, b
 	if block.Hash() != data.BlockHash {
 		return nil, fmt.Errorf("blockhash mismatch, want %x, got %x", data.BlockHash, block.Hash())
 	}
-	log.Info(fmt.Sprintf("blockhash goodmatch, want %x, got %x", data.BlockHash, block.Hash()))
 	return block, nil
 }
 
@@ -262,7 +260,6 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 
 	var requestsHash *common.Hash
 	if requests != nil {
-		log.Warn("requests are not nil!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 		// Put back request type byte.
 		typedRequests := make([][]byte, len(requests))
 		for i, reqdata := range requests {
@@ -273,8 +270,6 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		}
 		h := types.CalcRequestsHash(typedRequests)
 		requestsHash = &h
-	} else {
-		log.Warn(("requests are nil!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))
 	}
 
 	header := &types.Header{
