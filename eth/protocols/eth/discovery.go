@@ -23,7 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-// enrEntry is the ENR entry which advertises `eth` protocol on the discovery.
+// enrEntry is the ENR entry which advertises `over` protocol on the discovery.
 type enrEntry struct {
 	ForkID forkid.ID // Fork identifier per EIP-2124
 
@@ -33,7 +33,7 @@ type enrEntry struct {
 
 // ENRKey implements enr.Entry.
 func (e enrEntry) ENRKey() string {
-	return "eth"
+	return "over"
 }
 
 // StartENRUpdater starts the `eth` ENR updater loop, which listens for chain

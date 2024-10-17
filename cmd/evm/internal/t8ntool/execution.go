@@ -379,8 +379,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		vmenv := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 		// EIP-7002 withdrawals
 		requests = append(requests, core.ProcessWithdrawalQueue(vmenv, statedb))
-		// EIP-7251 consolidations
-		requests = append(requests, core.ProcessConsolidationQueue(vmenv, statedb))
 	}
 
 	// Commit block

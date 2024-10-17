@@ -57,6 +57,13 @@ var (
 		Hidden:   true,
 		Category: flags.LoggingCategory,
 	}
+	logTerminalFlag = &cli.BoolFlag{
+		Name:     "log.terminal",
+		Usage:    "Write logs to terminal",
+		Value:    true,
+		Hidden:   true,
+		Category: flags.LoggingCategory,
+	}
 	logjsonFlag = &cli.BoolFlag{
 		Name:     "log.json",
 		Usage:    "Format logs with JSON",
@@ -147,6 +154,7 @@ var Flags = []cli.Flag{
 	verbosityFlag,
 	logVmoduleFlag,
 	vmoduleFlag,
+	logTerminalFlag,
 	logjsonFlag,
 	logFormatFlag,
 	logFileFlag,
@@ -181,6 +189,7 @@ func Setup(ctx *cli.Context) error {
 		terminalOutput = io.Writer(os.Stderr)
 		output         io.Writer
 		logFmtFlag     = ctx.String(logFormatFlag.Name)
+		enableTerminal = ctx.Bool(logTerminalFlag.Name)
 	)
 	var (
 		logFile  = ctx.String(logFileFlag.Name)
@@ -212,13 +221,21 @@ func Setup(ctx *cli.Context) error {
 			MaxAge:     ctx.Int(logMaxAgeFlag.Name),
 			Compress:   ctx.Bool(logCompressFlag.Name),
 		}
-		output = io.MultiWriter(terminalOutput, logOutputFile)
+		if enableTerminal {
+			output = io.MultiWriter(terminalOutput, logOutputFile)
+		} else {
+			output = logOutputFile
+		}
 	} else if logFile != "" {
 		var err error
 		if logOutputFile, err = os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644); err != nil {
 			return err
 		}
-		output = io.MultiWriter(logOutputFile, terminalOutput)
+		if enableTerminal {
+			output = io.MultiWriter(terminalOutput, logOutputFile)
+		} else {
+			output = logOutputFile
+		}
 		context = append(context, "location", logFile)
 	} else {
 		output = terminalOutput
@@ -238,7 +255,11 @@ func Setup(ctx *cli.Context) error {
 		if useColor {
 			terminalOutput = colorable.NewColorableStderr()
 			if logOutputFile != nil {
-				output = io.MultiWriter(logOutputFile, terminalOutput)
+				if enableTerminal {
+					output = io.MultiWriter(terminalOutput, logOutputFile)
+				} else {
+					output = logOutputFile
+				}
 			} else {
 				output = terminalOutput
 			}

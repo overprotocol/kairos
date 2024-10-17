@@ -1,0 +1,75 @@
+name: Build binaries
+
+on:
+  workflow_call:
+    inputs:
+      build-type:
+        required: true
+        type: string
+      tag_name:
+        required: true
+        type: string
+      version_name:
+        required: true
+        type: string
+
+jobs:
+  build-binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Git config
+        run: |
+          git config --global --add safe.directory /__w/kairos/kairos
+
+      - name: Build ${{ inputs.build-type }}
+        run: |
+          if [[ "${{ inputs.build-type }}" == *"darwin"* ]]; then
+            export GOOS=darwin
+          elif [[ "${{ inputs.build-type }}" == *"windows"* ]]; then
+            export GOOS=windows
+          else
+            export GOOS=linux
+          fi
+
+          if [[ "${{ inputs.build-type }}" == *"arm64"* ]]; then
+            export GOARCH=arm64
+          else
+            export GOARCH=amd64
+          fi
+
+          if [[ "${{ inputs.build-type }}" == *"windows"* ]]; then
+            go build -ldflags="-s -w" -trimpath -o ./build/bin/geth.exe ./cmd/geth
+            go build -ldflags="-s -w" -trimpath -o ./build/bin/bootnode.exe ./cmd/bootnode
+          elif [[ "${{ inputs.build-type }}" == *"linux"* ]]; then
+            go build -ldflags="-s -extldflags '-Wl,-z,stack-size=0x800000'" -trimpath -o ./build/bin/geth ./cmd/geth
+            go build -ldflags="-s -extldflags '-Wl,-z,stack-size=0x800000'" -trimpath -o ./build/bin/bootnode ./cmd/bootnode
+          else
+            go build -ldflags="-s -w" -trimpath -o ./build/bin/geth ./cmd/geth
+            go build -ldflags="-s -w" -trimpath -o ./build/bin/bootnode ./cmd/bootnode
+          fi
+
+      - name: Make dist directory
+        run: |
+          mkdir -p dist
+          mkdir -p dist/${{ github.sha }}
+
+      - name: Zip artifact (Windows)
+        if: ${{ inputs.build-type == 'windows_amd64' }}
+        run: |
+          zip -j dist/${{ github.sha }}/kairos_${{ inputs.build-type }}.zip \
+            build/bin/geth.exe \
+            build/bin/bootnode.exe
+
+      - name: Zip artifact (Non-Windows)
+        if: ${{ inputs.build-type != 'windows_amd64' }}
+        run: |
+          zip -j dist/${{ github.sha }}/kairos_${{ inputs.build-type }}.zip \
+            build/bin/geth \
+            build/bin/bootnode
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kairos_${{ github.sha }}_${{ inputs.build-type }}
+          path: dist/${{ github.sha }}/kairos_${{ inputs.build-type }}.zip
