@@ -82,6 +82,8 @@ func LatestSigner(config *params.ChainConfig) Signer {
 		default:
 			signer = HomesteadSigner{}
 		}
+	} else {
+		signer = HomesteadSigner{}
 	}
 	return signer
 }
@@ -186,7 +188,8 @@ type pragueSigner struct{ cancunSigner }
 // - EIP-155 replay protected transactions, and
 // - legacy Homestead transactions.
 func NewPragueSigner(chainId *big.Int) Signer {
-	return pragueSigner{cancunSigner{londonSigner{eip2930Signer{NewEIP155Signer(chainId)}}}}
+	signer, _ := NewCancunSigner(chainId).(cancunSigner)
+	return pragueSigner{signer}
 }
 
 func (s pragueSigner) Sender(tx *Transaction) (common.Address, error) {

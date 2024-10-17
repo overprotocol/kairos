@@ -373,6 +373,8 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 	return common.Hash{}
 }
 
+// ResolveCode retrieves the code at addr, resolving any delegation designations
+// that may exist.
 func (s *StateDB) ResolveCode(addr common.Address) []byte {
 	stateObject := s.resolveStateObject(addr)
 	if stateObject != nil {
@@ -381,6 +383,8 @@ func (s *StateDB) ResolveCode(addr common.Address) []byte {
 	return nil
 }
 
+// ResolveCodeHash retrieves the code at addr, resolving any delegation
+// designations that may exist.
 func (s *StateDB) ResolveCodeHash(addr common.Address) common.Hash {
 	stateObject := s.resolveStateObject(addr)
 	if stateObject != nil {
@@ -615,6 +619,9 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	return obj
 }
 
+// resolveStateObject follows delegation designations to resolve a state object
+// given by the address, returning nil if the object is not found or was deleted
+// in this execution context.
 func (s *StateDB) resolveStateObject(addr common.Address) *stateObject {
 	obj := s.getStateObject(addr)
 	if obj == nil {
@@ -1363,7 +1370,7 @@ func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, d
 		al.AddAddress(sender)
 		if dst != nil {
 			al.AddAddress(*dst)
-			// TODO: is this right?
+			// If the dst has a delegation, also warm its target.
 			if addr, ok := types.ParseDelegation(s.GetCode(*dst)); ok {
 				al.AddAddress(addr)
 			}

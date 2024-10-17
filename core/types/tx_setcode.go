@@ -74,6 +74,7 @@ type authorizationMarshaling struct {
 	S       *hexutil.Big
 }
 
+// SignAuth signs the provided authorization.
 func SignAuth(auth *Authorization, prv *ecdsa.PrivateKey) (*Authorization, error) {
 	h := prefixedRlpHash(
 		0x05,
@@ -90,6 +91,8 @@ func SignAuth(auth *Authorization, prv *ecdsa.PrivateKey) (*Authorization, error
 	return auth.WithSignature(sig), nil
 }
 
+// WithSignature updates the signature of an Authorization to be equal the
+// decoded signature provided in sig.
 func (a *Authorization) WithSignature(sig []byte) *Authorization {
 	r, s, _ := decodeSignature(sig)
 	cpy := Authorization{
@@ -105,6 +108,7 @@ func (a *Authorization) WithSignature(sig []byte) *Authorization {
 
 type AuthorizationList []*Authorization
 
+// Authority recovers the authorizing
 func (a Authorization) Authority() (common.Address, error) {
 	sighash := prefixedRlpHash(
 		0x05,

@@ -307,9 +307,8 @@ func (st *StateTransition) preCheck() error {
 	if !msg.SkipFromEOACheck {
 		// Make sure the sender is an EOA
 		code := st.state.GetCode(msg.From)
-		if 0 < len(code) && !bytes.HasPrefix(code, types.DelegationPrefix) {
-			return fmt.Errorf("%w: address %v, codehash: %s", ErrSenderNoEOA,
-				msg.From.Hex(), st.state.GetCodeHash(msg.From))
+		if len(code) > 0 && !bytes.HasPrefix(code, types.DelegationPrefix) {
+			return fmt.Errorf("%w: address %v, len(code): %d", ErrSenderNoEOA, msg.From.Hex(), len(code))
 		}
 	}
 	// Make sure that transaction gasFeeCap is greater than the baseFee (post london)
@@ -373,11 +372,10 @@ func (st *StateTransition) preCheck() error {
 	for i, auth := range msg.AuthList {
 		switch {
 		case auth.R.BitLen() > 256:
-			return fmt.Errorf("%w: address %v, authorization %d", ErrBlobFeeCapTooLow, msg.From.Hex(), i)
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
 		case auth.S.BitLen() > 256:
-			return fmt.Errorf("%w: address %v, authorization %d", ErrBlobFeeCapTooLow, msg.From.Hex(), i)
+			return fmt.Errorf("%w: address %v, authorization %d", ErrAuthSignatureVeryHigh, msg.From.Hex(), i)
 		}
-
 	}
 	return st.buyGas()
 }
@@ -505,7 +503,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			}
 			st.state.SetCode(authority, delegation)
 
-			// Usually the transation destination and delegation target are added to
+			// Usually the transaction destination and delegation target are added to
 			// the access list in statedb.Prepare(..), however if the delegation is in
 			// the same transaction we need add here as Prepare already happened.
 			if *msg.To == authority {
