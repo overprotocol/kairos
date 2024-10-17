@@ -569,6 +569,7 @@ func (api *ConsensusAPI) NewPayloadV2(params engine.ExecutableData) (engine.Payl
 
 // NewPayloadV3 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
 func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash) (engine.PayloadStatusV1, error) {
+	log.Info("NewPayloadV3")
 	if params.Withdrawals == nil {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil withdrawals post-shanghai"))
 	}
@@ -586,7 +587,7 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil beaconRoot post-cancun"))
 	}
 
-	if api.eth.BlockChain().Config().LatestFork(params.Timestamp) != forks.Cancun {
+	if api.eth.BlockChain().Config().LatestFork(params.Timestamp) != forks.Cancun && api.eth.BlockChain().Config().LatestFork(params.Timestamp) != forks.Prague {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.UnsupportedFork.With(errors.New("newPayloadV3 must only be called for cancun payloads"))
 	}
 	return api.newPayload(params, versionedHashes, beaconRoot, nil, false)
@@ -595,6 +596,7 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 // NewPayloadV4 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
 // NewPayloadV4 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
 func (api *ConsensusAPI) NewPayloadV4(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests []hexutil.Bytes) (engine.PayloadStatusV1, error) {
+	log.Info("NewPayloadV4")
 	if params.Withdrawals == nil {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil withdrawals post-shanghai"))
 	}
@@ -657,6 +659,7 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV2(params engine.ExecutableData) (
 // NewPayloadWithWitnessV3 is analogous to NewPayloadV3, only it also generates
 // and returns a stateless witness after running the payload.
 func (api *ConsensusAPI) NewPayloadWithWitnessV3(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash) (engine.PayloadStatusV1, error) {
+	log.Info("NewPayloadWithWitnessV3")
 	if params.Withdrawals == nil {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil withdrawals post-shanghai"))
 	}
@@ -683,6 +686,7 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV3(params engine.ExecutableData, v
 // NewPayloadWithWitnessV4 is analogous to NewPayloadV4, only it also generates
 // and returns a stateless witness after running the payload.
 func (api *ConsensusAPI) NewPayloadWithWitnessV4(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests []hexutil.Bytes) (engine.PayloadStatusV1, error) {
+	log.Info("NewPayloadWithWitnessV4")
 	if params.Withdrawals == nil {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("nil withdrawals post-shanghai"))
 	}

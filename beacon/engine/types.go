@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -259,6 +260,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 
 	var requestsHash *common.Hash
 	if requests != nil {
+		log.Info("Requests are not nil", "requests", requests)
 		// Put back request type byte.
 		typedRequests := make([][]byte, len(requests))
 		for i, reqdata := range requests {
