@@ -191,7 +191,7 @@ var (
 )
 
 var (
-	BigBlobBaseFee = big.NewInt(1e27) // Disable blob tx by setting blob fee 1,000,000,000 over
+	BigBlobBaseFee, _ = new(big.Int).SetString("1000000000000000000000000000", 10) // Disable blob tx by setting blob fee 1,000,000,000 over
 )
 
 // System contracts.
