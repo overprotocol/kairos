@@ -70,8 +70,8 @@ JavaScript API. See https://geth.ethereum.org/docs/interacting-with-geth/javascr
 func localConsole(ctx *cli.Context) error {
 	// Create and start the node based on the CLI flags
 	prepare(ctx)
-	stack, backend := makeFullNode(ctx)
-	startNode(ctx, stack, backend, true)
+	stack := makeFullNode(ctx)
+	startNode(ctx, stack, true)
 	defer stack.Close()
 
 	// Attach to the newly started node and create the JavaScript console.
@@ -152,7 +152,7 @@ func remoteConsole(ctx *cli.Context) error {
 func ephemeralConsole(ctx *cli.Context) error {
 	var b strings.Builder
 	for _, file := range ctx.Args().Slice() {
-		b.Write([]byte(fmt.Sprintf("loadScript('%s');", file)))
+		b.WriteString(fmt.Sprintf("loadScript('%s');", file))
 	}
 	utils.Fatalf(`The "js" command is deprecated. Please use the following instead:
 geth --exec "%s" console`, b.String())

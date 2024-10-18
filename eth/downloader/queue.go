@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/prque"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -84,6 +85,15 @@ func newFetchResult(header *types.Header, fastSync bool) *fetchResult {
 		item.pending.Store(item.pending.Load() | (1 << receiptType))
 	}
 	return item
+}
+
+// body returns a representation of the fetch result as a types.Body object.
+func (f *fetchResult) body() types.Body {
+	return types.Body{
+		Transactions: f.Transactions,
+		Uncles:       f.Uncles,
+		Withdrawals:  f.Withdrawals,
+	}
 }
 
 // SetBodyDone flags the body as finished.
@@ -375,6 +385,7 @@ func (q *queue) Results(block bool) []*fetchResult {
 		for _, tx := range result.Transactions {
 			size += common.StorageSize(tx.Size())
 		}
+		size += common.StorageSize(result.Withdrawals.Size())
 		q.resultSize = common.StorageSize(blockCacheSizeWeight)*size +
 			(1-common.StorageSize(blockCacheSizeWeight))*q.resultSize
 	}
@@ -773,7 +784,8 @@ func (q *queue) DeliverHeaders(id string, headers []*types.Header, hashes []comm
 // also wakes any threads waiting for data delivery.
 func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListHashes []common.Hash,
 	uncleLists [][]*types.Header, uncleListHashes []common.Hash,
-	withdrawalLists [][]*types.Withdrawal, withdrawalListHashes []common.Hash) (int, error) {
+	withdrawalLists [][]*types.Withdrawal, withdrawalListHashes []common.Hash,
+) (int, error) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
@@ -810,7 +822,7 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListH
 					return errInvalidBody
 				}
 				for _, hash := range tx.BlobHashes() {
-					if hash[0] != params.BlobTxHashVersion {
+					if !kzg4844.IsValidVersionedHash(hash[:]) {
 						return errInvalidBody
 					}
 				}

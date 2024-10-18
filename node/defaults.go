@@ -41,6 +41,7 @@ const (
 	// needs of all CLs.
 	engineAPIBatchItemLimit         = 2000
 	engineAPIBatchResponseSizeLimit = 250 * 1000 * 1000
+	engineAPIBodyLimit              = 128 * 1024 * 1024
 )
 
 var (
@@ -94,7 +95,7 @@ func DefaultDataDir() string {
 			}
 			return filepath.Join(appdata, "OverProtocol")
 		default:
-			return filepath.Join(home, ".OverProtocol")
+			return filepath.Join(home, ".overProtocol")
 		}
 	}
 	// As we cannot guess a stable location, return empty and handle later
