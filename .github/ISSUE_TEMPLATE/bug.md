@@ -1,6 +1,6 @@
 ---
 name: Report a bug
-about: Something with go-ethereum is not working as expected
+about: Something with kairos is not working as expected
 title: ''
 labels: 'type:bug'
 assignees: ''
@@ -8,8 +8,8 @@ assignees: ''
 
 #### System information
 
-Geth version: `geth version`
-CL client & version: e.g. lighthouse/nimbus/prysm@v1.0.0
+Kairos version: `kairos version`
+CL client & version: e.g. chronos@v1.0.0
 OS & Version: Windows/Linux/OSX
 Commit hash : (if `develop`)
 

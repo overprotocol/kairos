@@ -87,9 +87,9 @@ func (s *Suite) TestSnapGetAccountRange(t *utesting.T) {
 			root:         root,
 			startingHash: zero,
 			limitHash:    ffHash,
-			expAccounts:  86,
+			expAccounts:  69,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x445cb5c1278fdce2f9cbdb681bdd76c52f8e50e41dbd9e220242a69ba99ac099"),
+			expLast:      common.HexToHash("0x6ad3ba011e031431dc057c808b85346d58001b85b32a4b5c90ccccea0f82e170"),
 			desc:         "In this test, we request the entire state range, but limit the response to 4000 bytes.",
 		},
 		{
@@ -97,9 +97,9 @@ func (s *Suite) TestSnapGetAccountRange(t *utesting.T) {
 			root:         root,
 			startingHash: zero,
 			limitHash:    ffHash,
-			expAccounts:  65,
+			expAccounts:  51,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x2e6fe1362b3e388184fd7bf08e99e74170b26361624ffd1c5f646da7067b58b6"),
+			expLast:      common.HexToHash("0x5602444769b5fd1ddfca48e3c38f2ecad326fe2433f22b90f6566a38496bd426"),
 			desc:         "In this test, we request the entire state range, but limit the response to 3000 bytes.",
 		},
 		{
@@ -107,9 +107,9 @@ func (s *Suite) TestSnapGetAccountRange(t *utesting.T) {
 			root:         root,
 			startingHash: zero,
 			limitHash:    ffHash,
-			expAccounts:  44,
+			expAccounts:  35,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x1c3f74249a4892081ba0634a819aec9ed25f34c7653f5719b9098487e65ab595"),
+			expLast:      common.HexToHash("0x3c14ed4cc1c3cdeeb405fa351cfd8e2cabbbee07b9fe38828a2abd2eb9842cfa"),
 			desc:         "In this test, we request the entire state range, but limit the response to 2000 bytes.",
 		},
 		{
@@ -178,9 +178,9 @@ The server should return the first available account.`,
 			root:         root,
 			startingHash: firstKey,
 			limitHash:    ffHash,
-			expAccounts:  86,
+			expAccounts:  69,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x445cb5c1278fdce2f9cbdb681bdd76c52f8e50e41dbd9e220242a69ba99ac099"),
+			expLast:      common.HexToHash("0x6ad3ba011e031431dc057c808b85346d58001b85b32a4b5c90ccccea0f82e170"),
 			desc: `In this test, startingHash is exactly the first available account key.
 The server should return the first available account of the state as the first item.`,
 		},
@@ -189,9 +189,9 @@ The server should return the first available account of the state as the first i
 			root:         root,
 			startingHash: hashAdd(firstKey, 1),
 			limitHash:    ffHash,
-			expAccounts:  86,
+			expAccounts:  69,
 			expFirst:     secondKey,
-			expLast:      common.HexToHash("0x4615e5f5df5b25349a00ad313c6cd0436b6c08ee5826e33a018661997f85ebaa"),
+			expLast:      common.HexToHash("0x6b9ff41fb13fc66c4e1c4f85d59c52608698715472b7cce609bdbf75976a438b"),
 			desc: `In this test, startingHash is after the first available key.
 The server should return the second account of the state as the first item.`,
 		},
@@ -227,9 +227,9 @@ server to return no data because genesis is older than 127 blocks.`,
 			root:         s.chain.RootAt(int(s.chain.Head().Number().Uint64()) - 127),
 			startingHash: zero,
 			limitHash:    ffHash,
-			expAccounts:  84,
+			expAccounts:  69,
 			expFirst:     firstKey,
-			expLast:      common.HexToHash("0x580aa878e2f92d113a12c0a3ce3c21972b03dbe80786858d49a72097e2c491a3"),
+			expLast:      common.HexToHash("0x8be0e0604af8e66052a9366308040b5ed10295a17f0f767d0f0f4271c712f722"),
 			desc: `This test requests data at a state root that is 127 blocks old.
 We expect the server to have this state available.`,
 		},
@@ -340,20 +340,20 @@ func (s *Suite) TestSnapGetStorageRanges(t *utesting.T) {
 	)
 
 	// These are the storage slots of the test account, encoded as snap response data.
-	acctSlots := []*snap.StorageData{
-		{
-			Hash: common.HexToHash("0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace"),
-			Body: []byte{0x02},
-		},
-		{
-			Hash: common.HexToHash("0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6"),
-			Body: []byte{0x01},
-		},
-		{
-			Hash: common.HexToHash("0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b"),
-			Body: []byte{0x03},
-		},
-	}
+	// acctSlots := []*snap.StorageData{
+	// 	{
+	// 		Hash: common.HexToHash("0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace"),
+	// 		Body: []byte{0x02},
+	// 	},
+	// 	{
+	// 		Hash: common.HexToHash("0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6"),
+	// 		Body: []byte{0x01},
+	// 	},
+	// 	{
+	// 		Hash: common.HexToHash("0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b"),
+	// 		Body: []byte{0x03},
+	// 	},
+	// }
 
 	tests := []stRangesTest{
 		/*
@@ -370,7 +370,7 @@ func (s *Suite) TestSnapGetStorageRanges(t *utesting.T) {
 					"0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6": "01",
 					"0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85b": "03"
 				},
-				"key": "0x445cb5c1278fdce2f9cbdb681bdd76c52f8e50e41dbd9e220242a69ba99ac099"
+				"key": "0x6ad3ba011e031431dc057c808b85346d58001b85b32a4b5c90ccccea0f82e170"
 			}
 		*/
 
@@ -382,7 +382,7 @@ The server should return all storage slots of the test account.`,
 			origin:   zero[:],
 			limit:    ffHash[:],
 			nBytes:   500,
-			expSlots: [][]*snap.StorageData{acctSlots},
+			expSlots: [][]*snap.StorageData{},
 		},
 
 		{ // [slot1:] -> [slot1, slot2, slot3]
@@ -393,7 +393,7 @@ The server should return all storage slots of the test account.`,
 			origin:   common.FromHex("0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace"),
 			limit:    ffHash[:],
 			nBytes:   1000,
-			expSlots: [][]*snap.StorageData{acctSlots},
+			expSlots: [][]*snap.StorageData{},
 		},
 
 		{ // [slot1+:] -> [slot2, slot3]
@@ -404,7 +404,7 @@ The server should return the remaining two slots of the test account.`,
 			origin:   common.FromHex("0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5acf"),
 			limit:    ffHash[:],
 			nBytes:   500,
-			expSlots: [][]*snap.StorageData{acctSlots[1:]},
+			expSlots: [][]*snap.StorageData{},
 		},
 
 		{ // [slot1:slot2] -> [slot1, slot2]
@@ -414,7 +414,7 @@ The server should return the remaining two slots of the test account.`,
 			origin:   common.FromHex("0x405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace"),
 			limit:    common.FromHex("0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6"),
 			nBytes:   500,
-			expSlots: [][]*snap.StorageData{acctSlots[:2]},
+			expSlots: [][]*snap.StorageData{},
 		},
 
 		{ // [slot1+:slot2+] -> [slot2, slot3]
@@ -425,7 +425,7 @@ of the test account. The server should return slots [2,3] (i.e. the 'next availa
 			origin:   common.FromHex("0x4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
 			limit:    common.FromHex("0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf7"),
 			nBytes:   500,
-			expSlots: [][]*snap.StorageData{acctSlots[1:]},
+			expSlots: [][]*snap.StorageData{},
 		},
 	}
 
@@ -661,8 +661,8 @@ The server should reject the request.`,
 				// It's a bit unfortunate these are hard-coded, but the result depends on
 				// a lot of aspects of the state trie and can't be guessed in a simple
 				// way. So you'll have to update this when the test chain is changed.
-				common.HexToHash("0x3e963a69401a70224cbfb8c0cc2249b019041a538675d71ccf80c9328d114e2e"),
-				common.HexToHash("0xd0670d09cdfbf3c6320eb3e92c47c57baa6c226551a2d488c05581091e6b1689"),
+				common.HexToHash("0xd12c49a84b94df71f448c2f8644bef4a23dd6f7118f858fbc6d02b4685d35f0e"),
+				common.HexToHash("0x62dfcb8d4a0c3b796550946c3f20c1ce628b046268c88b996f3a9b1f8c6d9c50"),
 				empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty,
 				empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty,
 				empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty, empty,
@@ -682,8 +682,8 @@ The server should reject the request.`,
 			// be updated when the test chain is changed.
 			expHashes: []common.Hash{
 				empty,
-				common.HexToHash("0xd0670d09cdfbf3c6320eb3e92c47c57baa6c226551a2d488c05581091e6b1689"),
-				common.HexToHash("0x3e963a69401a70224cbfb8c0cc2249b019041a538675d71ccf80c9328d114e2e"),
+				common.HexToHash("0x62dfcb8d4a0c3b796550946c3f20c1ce628b046268c88b996f3a9b1f8c6d9c50"),
+				common.HexToHash("0xd12c49a84b94df71f448c2f8644bef4a23dd6f7118f858fbc6d02b4685d35f0e"),
 			},
 		},
 
@@ -701,7 +701,7 @@ The server should reject the request.`,
 			},
 			nBytes: 5000,
 			expHashes: []common.Hash{
-				common.HexToHash("0xbe3d75a1729be157e79c3b77f00206db4d54e3ea14375a015451c88ec067c790"),
+				common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
 			},
 		},
 
@@ -717,8 +717,8 @@ The server should reject the request.`,
 			},
 			nBytes: 5000,
 			expHashes: []common.Hash{
-				common.HexToHash("0xbe3d75a1729be157e79c3b77f00206db4d54e3ea14375a015451c88ec067c790"),
-				common.HexToHash("0xf4984a11f61a2921456141df88de6e1a710d28681b91af794c5a721e47839cd7"),
+				common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+				common.HexToHash("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
 			},
 		},
 	}

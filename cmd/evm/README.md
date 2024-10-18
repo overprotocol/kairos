@@ -472,8 +472,8 @@ You might have noticed that the results from these two invocations were stored i
 And we can now finally check that they match.
 ```
 cat alloc_jsontx.json | jq .stateRoot && cat alloc_rlptx.json | jq .stateRoot
-"0xe4b924a6adb5959fccf769d5b7bb2f6359e26d1e76a2443c5a91a36d826aef61"
-"0xe4b924a6adb5959fccf769d5b7bb2f6359e26d1e76a2443c5a91a36d826aef61"
+"0xa043fe0dcfa5e5656c9cecc42189f5cb8733ff78fe34571aa8047b25fc35a850"
+"0xa043fe0dcfa5e5656c9cecc42189f5cb8733ff78fe34571aa8047b25fc35a850"
 ```
 
 ## Transaction tool
