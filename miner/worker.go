@@ -132,9 +132,6 @@ func (miner *Miner) generateWork(params *generateParams, witness bool) *newPaylo
 		// EIP-7002 withdrawals
 		withdrawalRequests := core.ProcessWithdrawalQueue(vmenv, work.state)
 		requests = append(requests, withdrawalRequests)
-		// EIP-7251 consolidations
-		consolidationRequests := core.ProcessConsolidationQueue(vmenv, work.state)
-		requests = append(requests, consolidationRequests)
 	}
 	if requests != nil {
 		reqHash := types.CalcRequestsHash(requests)
