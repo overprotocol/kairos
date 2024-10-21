@@ -191,7 +191,13 @@ func (ec *Client) getBlock(ctx context.Context, method string, args ...interface
 		}
 		txs[i] = tx.tx
 	}
-	return types.NewBlockWithHeader(head).WithBody(txs, uncles).WithWithdrawals(body.Withdrawals), nil
+
+	return types.NewBlockWithHeader(head).WithBody(
+		types.Body{
+			Transactions: txs,
+			Uncles:       uncles,
+			Withdrawals:  body.Withdrawals,
+		}), nil
 }
 
 // HeaderByHash returns the block header with the given hash.
@@ -307,10 +313,8 @@ func (ec *Client) TransactionInBlock(ctx context.Context, blockHash common.Hash,
 func (ec *Client) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
 	var r *types.Receipt
 	err := ec.c.CallContext(ctx, &r, "eth_getTransactionReceipt", txHash)
-	if err == nil {
-		if r == nil {
-			return nil, ethereum.NotFound
-		}
+	if err == nil && r == nil {
+		return nil, ethereum.NotFound
 	}
 	return r, err
 }
@@ -356,7 +360,7 @@ func (ec *Client) NetworkID(ctx context.Context) (*big.Int, error) {
 	if err := ec.c.CallContext(ctx, &ver, "net_version"); err != nil {
 		return nil, err
 	}
-	if _, ok := version.SetString(ver, 10); !ok {
+	if _, ok := version.SetString(ver, 0); !ok {
 		return nil, fmt.Errorf("invalid net_version result %q", ver)
 	}
 	return version, nil
@@ -664,6 +668,15 @@ func toCallArg(msg ethereum.CallMsg) interface{} {
 	if msg.GasTipCap != nil {
 		arg["maxPriorityFeePerGas"] = (*hexutil.Big)(msg.GasTipCap)
 	}
+	if msg.AccessList != nil {
+		arg["accessList"] = msg.AccessList
+	}
+	if msg.BlobGasFeeCap != nil {
+		arg["maxFeePerBlobGas"] = (*hexutil.Big)(msg.BlobGasFeeCap)
+	}
+	if msg.BlobHashes != nil {
+		arg["blobVersionedHashes"] = msg.BlobHashes
+	}
 	return arg
 }
 
@@ -683,12 +696,15 @@ type rpcProgress struct {
 	SyncedStorage          hexutil.Uint64
 	SyncedStorageBytes     hexutil.Uint64
 	EstimatedStateProgress float64
+
 	HealedTrienodes        hexutil.Uint64
 	HealedTrienodeBytes    hexutil.Uint64
 	HealedBytecodes        hexutil.Uint64
 	HealedBytecodeBytes    hexutil.Uint64
 	HealingTrienodes       hexutil.Uint64
 	HealingBytecode        hexutil.Uint64
+	TxIndexFinishedBlocks  hexutil.Uint64
+	TxIndexRemainingBlocks hexutil.Uint64
 
 	SyncMode  string
 	Committed bool
@@ -717,6 +733,8 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		HealedBytecodeBytes:    uint64(p.HealedBytecodeBytes),
 		HealingTrienodes:       uint64(p.HealingTrienodes),
 		HealingBytecode:        uint64(p.HealingBytecode),
+		TxIndexFinishedBlocks:  uint64(p.TxIndexFinishedBlocks),
+		TxIndexRemainingBlocks: uint64(p.TxIndexRemainingBlocks),
 		SyncMode:               p.SyncMode,
 		Committed:              p.Committed,
 	}

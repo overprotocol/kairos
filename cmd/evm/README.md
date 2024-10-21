@@ -14,15 +14,15 @@ The `evm t8n` tool is a stateless state transition utility. It is a utility
 which can
 
 1. Take a prestate, including
-  - Accounts,
-  - Block context information,
-  - Previous blockshashes (*optional)
+   - Accounts,
+   - Block context information,
+   - Previous blockshashes (*optional)
 2. Apply a set of transactions,
 3. Apply a mining-reward (*optional),
 4. And generate a post-state, including
-  - State root, transaction root, receipt root,
-  - Information about rejected transactions,
-  - Optionally: a full or partial post-state dump
+   - State root, transaction root, receipt root,
+   - Information about rejected transactions,
+   - Optionally: a full or partial post-state dump
 
 ### Specification
 
@@ -214,7 +214,7 @@ exitcode:3 OK
 
 The chain configuration to be used for a transition is specified via the
 `--state.fork` CLI flag. A list of possible values and configurations can be
-found in [`tests/init.go`](tests/init.go).
+found in [`tests/init.go`](../../tests/init.go).
 
 #### Examples
 ##### Basic usage
@@ -472,8 +472,8 @@ You might have noticed that the results from these two invocations were stored i
 And we can now finally check that they match.
 ```
 cat alloc_jsontx.json | jq .stateRoot && cat alloc_rlptx.json | jq .stateRoot
-"0xa043fe0dcfa5e5656c9cecc42189f5cb8733ff78fe34571aa8047b25fc35a850"
-"0xa043fe0dcfa5e5656c9cecc42189f5cb8733ff78fe34571aa8047b25fc35a850"
+"0xe4b924a6adb5959fccf769d5b7bb2f6359e26d1e76a2443c5a91a36d826aef61"
+"0xe4b924a6adb5959fccf769d5b7bb2f6359e26d1e76a2443c5a91a36d826aef61"
 ```
 
 ## Transaction tool
