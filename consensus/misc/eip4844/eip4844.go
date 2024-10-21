@@ -26,8 +26,8 @@ import (
 )
 
 var (
-	minBlobGasPrice            = big.NewInt(params.BlobTxMinBlobGasprice)
-	blobGaspriceUpdateFraction = big.NewInt(params.BlobTxBlobGaspriceUpdateFraction)
+// minBlobGasPrice            = big.NewInt(params.BlobTxMinBlobGasprice)
+// blobGaspriceUpdateFraction = big.NewInt(params.BlobTxBlobGaspriceUpdateFraction)
 )
 
 // VerifyEIP4844Header verifies the presence of the excessBlobGas field and that
@@ -77,7 +77,8 @@ func CalcExcessBlobGas(parentExcessBlobGas uint64, parentBlobGasUsed uint64) uin
 
 // CalcBlobFee calculates the blobfee from the header's excess blob gas field.
 func CalcBlobFee(excessBlobGas uint64) *big.Int {
-	return fakeExponential(minBlobGasPrice, new(big.Int).SetUint64(excessBlobGas), blobGaspriceUpdateFraction)
+	return params.BigBlobBaseFee
+	//return fakeExponential(minBlobGasPrice, new(big.Int).SetUint64(excessBlobGas), blobGaspriceUpdateFraction)
 }
 
 // fakeExponential approximates factor * e ** (numerator / denominator) using

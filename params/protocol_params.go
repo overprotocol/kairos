@@ -190,6 +190,10 @@ var (
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
 )
 
+var (
+	BigBlobBaseFee, _ = new(big.Int).SetString("1000000000000000000000000000", 10) // Disable blob tx by setting blob fee 1,000,000,000 over
+)
+
 // System contracts.
 var (
 	// SystemAddress is where the system-transaction is sent from as per EIP-4788
