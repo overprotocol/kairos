@@ -4166,10 +4166,9 @@ func TestPragueRequests(t *testing.T) {
 	gspec := &Genesis{
 		Config: &config,
 		Alloc: types.GenesisAlloc{
-			addr1:                            {Balance: big.NewInt(9999900000000000)},
-			config.DepositContractAddress:    {Code: depositsGeneratorCode},
-			params.WithdrawalQueueAddress:    {Code: params.WithdrawalQueueCode},
-			params.ConsolidationQueueAddress: {Code: params.ConsolidationQueueCode},
+			addr1:                         {Balance: big.NewInt(9999900000000000)},
+			config.DepositContractAddress: {Code: depositsGeneratorCode},
+			params.WithdrawalQueueAddress: {Code: params.WithdrawalQueueCode},
 		},
 	}
 
@@ -4197,19 +4196,6 @@ func TestPragueRequests(t *testing.T) {
 			Data:      common.FromHex("b917cfdc0d25b72d55cf94db328e1629b7f4fde2c30cdacf873b664416f76a0c7f7cc50c9f72a3cb84be88144cde91250000000000000d80"),
 		})
 		b.AddTx(withdrawalTx)
-
-		// create consolidation request
-		consolidationTx := types.MustSignNewTx(key1, signer, &types.DynamicFeeTx{
-			ChainID:   gspec.Config.ChainID,
-			Nonce:     2,
-			To:        &params.ConsolidationQueueAddress,
-			Gas:       500_000,
-			GasFeeCap: newGwei(5),
-			GasTipCap: big.NewInt(2),
-			Value:     newGwei(1),
-			Data:      common.FromHex("b917cfdc0d25b72d55cf94db328e1629b7f4fde2c30cdacf873b664416f76a0c7f7cc50c9f72a3cb84be88144cde9125b9812f7d0b1f2f969b52bbb2d316b0c2fa7c9dba85c428c5e6c27766bcc4b0c6e874702ff1eb1c7024b08524a9771601"),
-		})
-		b.AddTx(consolidationTx)
 	})
 
 	// Check block has the correct requests hash.
