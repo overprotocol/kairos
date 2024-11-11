@@ -389,7 +389,7 @@ func (d *Downloader) getModeStringForApp() string {
 	if d.modeSet.Load() {
 		return SyncMode(d.mode.Load()).String()
 	}
-	return "Unset"
+	return "unset"
 }
 
 // syncToHead starts a block synchronization based on the hash chain from
