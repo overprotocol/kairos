@@ -108,9 +108,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, err
 		}
 		requests = append(requests, depositRequests)
-		// EIP-7002 withdrawals
-		withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
-		requests = append(requests, withdrawalRequests)
+		// Disable EIP-7002 withdrawals
+		requests = append(requests, ProcessEmptyWithdrawalQueue())
+		//// EIP-7002 withdrawals
+		//withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
+		//requests = append(requests, withdrawalRequests)
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
@@ -268,6 +270,13 @@ func ProcessParentBlockHash(prevHash common.Hash, vmenv *vm.EVM, statedb *state.
 // It returns the opaque request data returned by the contract.
 func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
 	return processRequestsSystemCall(vmenv, statedb, 0x01, params.WithdrawalQueueAddress)
+}
+
+// ProcessEmptyWithdrawalQueue return Empty Withdrawal Request Data
+func ProcessEmptyWithdrawalQueue() []byte {
+	requestData := make([]byte, 1)
+	requestData[0] = 0x01
+	return requestData
 }
 
 func processRequestsSystemCall(vmenv *vm.EVM, statedb *state.StateDB, requestType byte, addr common.Address) []byte {

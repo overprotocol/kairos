@@ -375,10 +375,12 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not parse requests logs: %v", err))
 		}
 		requests = append(requests, depositRequests)
-		// create EVM for system calls
-		vmenv := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+		// Disable EIP-7002 withdrawals
+		requests = append(requests, core.ProcessEmptyWithdrawalQueue())
+		//create EVM for system calls
+		//vmenv := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 		// EIP-7002 withdrawals
-		requests = append(requests, core.ProcessWithdrawalQueue(vmenv, statedb))
+		//requests = append(requests, core.ProcessWithdrawalQueue(vmenv, statedb))
 	}
 
 	// Commit block

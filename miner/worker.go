@@ -126,12 +126,14 @@ func (miner *Miner) generateWork(params *generateParams, witness bool) *newPaylo
 			return &newPayloadResult{err: err}
 		}
 		requests = append(requests, depositRequests)
-		// create EVM for system calls
-		blockContext := core.NewEVMBlockContext(work.header, miner.chain, &work.header.Coinbase)
-		vmenv := vm.NewEVM(blockContext, vm.TxContext{}, work.state, miner.chainConfig, vm.Config{})
-		// EIP-7002 withdrawals
-		withdrawalRequests := core.ProcessWithdrawalQueue(vmenv, work.state)
-		requests = append(requests, withdrawalRequests)
+		// Disable EIP-7002 withdrawals. return empty withdrawal request data
+		requests = append(requests, core.ProcessEmptyWithdrawalQueue())
+		//// create EVM for system calls
+		//blockContext := core.NewEVMBlockContext(work.header, miner.chain, &work.header.Coinbase)
+		//vmenv := vm.NewEVM(blockContext, vm.TxContext{}, work.state, miner.chainConfig, vm.Config{})
+		//// EIP-7002 withdrawals
+		//withdrawalRequests := core.ProcessWithdrawalQueue(vmenv, work.state)
+		//requests = append(requests, withdrawalRequests)
 	}
 	if requests != nil {
 		reqHash := types.CalcRequestsHash(requests)
