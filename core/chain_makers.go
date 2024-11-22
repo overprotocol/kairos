@@ -358,12 +358,14 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 				panic(fmt.Sprintf("failed to parse deposit log: %v", err))
 			}
 			requests = append(requests, depositRequests)
-			// create EVM for system calls
-			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
-			vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
-			// EIP-7002 withdrawals
-			withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
-			requests = append(requests, withdrawalRequests)
+			// Disable EIP-7002 withdrawals.
+			requests = append(requests, ProcessEmptyWithdrawalQueue())
+			//// create EVM for system calls
+			//blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
+			//vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
+			//// EIP-7002 withdrawals
+			//withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
+			//requests = append(requests, withdrawalRequests)
 		}
 		if requests != nil {
 			reqHash := types.CalcRequestsHash(requests)
