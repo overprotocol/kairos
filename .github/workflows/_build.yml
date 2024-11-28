@@ -18,6 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "^1.22"
       - name: Git config
         run: |
           git config --global --add safe.directory /__w/kairos/kairos
