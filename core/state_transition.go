@@ -89,9 +89,10 @@ func IntrinsicGas(data []byte, accessList types.AccessList, authList types.Autho
 		}
 		// Make sure we don't exceed uint64 for all data combinations
 		nonZeroGas := params.TxDataNonZeroGasFrontier
-		if isEIP2028 {
-			nonZeroGas = params.TxDataNonZeroGasEIP2028
-		}
+		// ignore eip2028
+		// if isEIP2028 {
+		// nonZeroGas = params.TxDataNonZeroGasEIP2028
+		// }
 		if (math.MaxUint64-gas)/nonZeroGas < nz {
 			return 0, ErrGasUintOverflow
 		}
