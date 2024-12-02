@@ -208,28 +208,28 @@ func TestSetFeeDefaults(t *testing.T) {
 			nil,
 			errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified"),
 		},
-		// EIP-4844
-		{
-			"set gas price and maxFee for blob transaction",
-			"cancun",
-			&TransactionArgs{GasPrice: fortytwo, MaxFeePerGas: maxFee, BlobHashes: []common.Hash{}},
-			nil,
-			errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified"),
-		},
-		{
-			"fill maxFeePerBlobGas",
-			"cancun",
-			&TransactionArgs{BlobHashes: []common.Hash{}},
-			&TransactionArgs{BlobHashes: []common.Hash{}, BlobFeeCap: (*hexutil.Big)(big.NewInt(4)), MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
-			nil,
-		},
-		{
-			"fill maxFeePerBlobGas when dynamic fees are set",
-			"cancun",
-			&TransactionArgs{BlobHashes: []common.Hash{}, MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
-			&TransactionArgs{BlobHashes: []common.Hash{}, BlobFeeCap: (*hexutil.Big)(big.NewInt(4)), MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
-			nil,
-		},
+		// EIP-4844 is disabled in over protocol
+		// {
+		// 	"set gas price and maxFee for blob transaction",
+		// 	"cancun",
+		// 	&TransactionArgs{GasPrice: fortytwo, MaxFeePerGas: maxFee, BlobHashes: []common.Hash{}},
+		// 	nil,
+		// 	errors.New("both gasPrice and (maxFeePerGas or maxPriorityFeePerGas) specified"),
+		// },
+		// {
+		// 	"fill maxFeePerBlobGas",
+		// 	"cancun",
+		// 	&TransactionArgs{BlobHashes: []common.Hash{}},
+		// 	&TransactionArgs{BlobHashes: []common.Hash{}, BlobFeeCap: (*hexutil.Big)(big.NewInt(4)), MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
+		// 	nil,
+		// },
+		// {
+		// 	"fill maxFeePerBlobGas when dynamic fees are set",
+		// 	"cancun",
+		// 	&TransactionArgs{BlobHashes: []common.Hash{}, MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
+		// 	&TransactionArgs{BlobHashes: []common.Hash{}, BlobFeeCap: (*hexutil.Big)(big.NewInt(4)), MaxFeePerGas: maxFee, MaxPriorityFeePerGas: fortytwo},
+		// 	nil,
+		// },
 	}
 
 	ctx := context.Background()

@@ -169,7 +169,7 @@ func testAccessList(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       &common.Address{},
 		Gas:      21000,
-		GasPrice: big.NewInt(875000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 	}
 	al, gas, vmErr, err := ec.CreateAccessList(context.Background(), msg)
@@ -190,7 +190,7 @@ func testAccessList(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       nil,
 		Gas:      100000,
-		GasPrice: big.NewInt(1000000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 		Data:     common.FromHex("0x608060806080608155fd"),
 	}
@@ -429,7 +429,7 @@ func testCallContract(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       &common.Address{},
 		Gas:      21000,
-		GasPrice: big.NewInt(1000000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 	}
 	// CallContract without override
@@ -539,7 +539,7 @@ func testCallContractWithBlockOverrides(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       &common.Address{},
 		Gas:      50000,
-		GasPrice: big.NewInt(1000000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 	}
 	override := OverrideAccount{

@@ -199,7 +199,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 				Balance: big.NewInt(0),
 			},
 		},
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	signer := types.LatestSigner(genesis.Config)
 	newGQLService(t, stack, false, genesis, 1, func(i int, gen *core.BlockGen) {
@@ -209,7 +209,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 			To:       &dad,
 			Value:    big.NewInt(100),
 			Gas:      50000,
-			GasPrice: big.NewInt(params.InitialBaseFee),
+			GasPrice: big.NewInt(params.MinimumBaseFee),
 		})
 		gen.AddTx(tx)
 		tx, _ = types.SignNewTx(key, signer, &types.AccessListTx{
@@ -217,7 +217,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 			Nonce:    uint64(1),
 			To:       &dad,
 			Gas:      30000,
-			GasPrice: big.NewInt(params.InitialBaseFee),
+			GasPrice: big.NewInt(params.MinimumBaseFee),
 			Value:    big.NewInt(50),
 			AccessList: types.AccessList{{
 				Address:     dad,
@@ -238,7 +238,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 	}{
 		{
 			body: `{"query": "{block {number transactions { from { address } to { address } value hash type accessList { address storageKeys } index}}}"}`,
-			want: `{"data":{"block":{"number":"0x1","transactions":[{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x64","hash":"0xd864c9d7d37fade6b70164740540c06dd58bb9c3f6b46101908d6339db6a6a7b","type":"0x0","accessList":[],"index":"0x0"},{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x32","hash":"0x19b35f8187b4e15fb59a9af469dca5dfa3cd363c11d372058c12f6482477b474","type":"0x1","accessList":[{"address":"0x0000000000000000000000000000000000000dad","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"index":"0x1"}]}}}`,
+			want: `{"data":{"block":{"number":"0x1","transactions":[{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x64","hash":"0x823d66eedf5aae4c317079438e40f11f48fd67160b1fcde3367dab6b26a129f7","type":"0x0","accessList":[],"index":"0x0"},{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x32","hash":"0x6f19cbc5b25a44a3cc8be072c69da37c5d5d85caf1b070aae3adfa1ccfbc7405","type":"0x1","accessList":[{"address":"0x0000000000000000000000000000000000000dad","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"index":"0x1"}]}}}`,
 			code: 200,
 		},
 	} {
@@ -304,11 +304,11 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 
 	var tx *types.Transaction
 	handler, chain := newGQLService(t, stack, false, genesis, 1, func(i int, gen *core.BlockGen) {
-		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Gas: 100000, GasPrice: big.NewInt(params.InitialBaseFee)})
+		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Gas: 100000, GasPrice: big.NewInt(params.MinimumBaseFee)})
 		gen.AddTx(tx)
-		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Nonce: 1, Gas: 100000, GasPrice: big.NewInt(params.InitialBaseFee)})
+		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Nonce: 1, Gas: 100000, GasPrice: big.NewInt(params.MinimumBaseFee)})
 		gen.AddTx(tx)
-		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Nonce: 2, Gas: 100000, GasPrice: big.NewInt(params.InitialBaseFee)})
+		tx, _ = types.SignNewTx(key, signer, &types.LegacyTx{To: &dad, Nonce: 2, Gas: 100000, GasPrice: big.NewInt(params.MinimumBaseFee)})
 		gen.AddTx(tx)
 	})
 	// start node
@@ -329,7 +329,7 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 		// because resolving the tx body belonging to a log is delayed.
 		{
 			body: `{block { logs(filter: {}) { transaction { nonce value gasPrice }}}}`,
-			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x3b9aca00"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x3b9aca00"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x3b9aca00"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x3b9aca00"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x3b9aca00"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x3b9aca00"}}]}}`,
+			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}}]}}`,
 		},
 		// Multiple txes of a block race to set/retrieve receipts of a block.
 		{
@@ -390,7 +390,7 @@ func TestWithdrawals(t *testing.T) {
 	defer stack.Close()
 
 	handler, _ := newGQLService(t, stack, true, genesis, 1, func(i int, gen *core.BlockGen) {
-		tx, _ := types.SignNewTx(key, signer, &types.LegacyTx{To: &common.Address{}, Gas: 100000, GasPrice: big.NewInt(params.InitialBaseFee)})
+		tx, _ := types.SignNewTx(key, signer, &types.LegacyTx{To: &common.Address{}, Gas: 100000, GasPrice: big.NewInt(params.MinimumBaseFee)})
 		gen.AddTx(tx)
 		gen.AddWithdrawal(&types.Withdrawal{
 			Validator: 5,

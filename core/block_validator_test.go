@@ -108,7 +108,7 @@ func testHeaderVerificationForMerging(t *testing.T, isClique bool) {
 			Alloc: map[common.Address]types.Account{
 				addr: {Balance: big.NewInt(1)},
 			},
-			BaseFee:    big.NewInt(params.InitialBaseFee),
+			BaseFee:    big.NewInt(params.MinimumBaseFee),
 			Difficulty: new(big.Int),
 		}
 		copy(gspec.ExtraData[32:], addr[:])
