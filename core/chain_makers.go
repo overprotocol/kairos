@@ -461,13 +461,14 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		// Save pre state for proof generation
 		// preState := statedb.Copy()
 
-		// Pre-execution system calls.
-		if config.IsPrague(b.header.Number, b.header.Time) {
-			// EIP-2935
-			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
-			vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
-			ProcessParentBlockHash(b.header.ParentHash, vmenv, statedb)
-		}
+		// Disable EIP-2935
+		//// Pre-execution system calls.
+		//if config.IsPrague(b.header.Number, b.header.Time) {
+		//	// EIP-2935
+		//	blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
+		//	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
+		//	ProcessParentBlockHash(b.header.ParentHash, vmenv, statedb)
+		//}
 
 		// Execute any user modifications to the block.
 		if gen != nil {
