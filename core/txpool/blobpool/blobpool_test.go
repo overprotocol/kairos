@@ -654,7 +654,7 @@ func TestOpenDrops(t *testing.T) {
 
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
-		basefee: uint256.NewInt(params.InitialBaseFee),
+		basefee: uint256.NewInt(params.MinimumBaseFee),
 		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
 		statedb: statedb,
 	}
@@ -773,7 +773,7 @@ func TestOpenIndex(t *testing.T) {
 
 	chain := &testBlockChain{
 		config:  params.MainnetChainConfig,
-		basefee: uint256.NewInt(params.InitialBaseFee),
+		basefee: uint256.NewInt(params.MinimumBaseFee),
 		blobfee: uint256.NewInt(params.BlobTxMinBlobGasprice),
 		statedb: statedb,
 	}

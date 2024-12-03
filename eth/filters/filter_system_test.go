@@ -193,7 +193,7 @@ func TestBlockSubscription(t *testing.T) {
 		api          = NewFilterAPI(sys)
 		genesis      = &core.Genesis{
 			Config:  params.TestChainConfig,
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		_, chain, _ = core.GenerateChainWithGenesis(genesis, ethash.NewFaker(), 10, func(i int, gen *core.BlockGen) {})
 		chainEvents []core.ChainEvent

@@ -18,7 +18,6 @@ package gasprice
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"math"
 	"math/big"
@@ -33,11 +32,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/holiman/uint256"
 )
 
 const testHead = 32
@@ -140,10 +137,10 @@ func newTestBackend(t *testing.T, londonBlock *big.Int, cancunBlock *big.Int, pe
 		}
 		signer = types.LatestSigner(gspec.Config)
 
-		// Compute empty blob hash.
-		emptyBlob          = kzg4844.Blob{}
-		emptyBlobCommit, _ = kzg4844.BlobToCommitment(&emptyBlob)
-		emptyBlobVHash     = kzg4844.CalcBlobHashV1(sha256.New(), &emptyBlobCommit)
+		// Compute empty blob hash. -> Blob is disabled in over protocol
+		// emptyBlob          = kzg4844.Blob{}
+		// emptyBlobCommit, _ = kzg4844.BlobToCommitment(&emptyBlob)
+		// emptyBlobVHash     = kzg4844.CalcBlobHashV1(sha256.New(), &emptyBlobCommit)
 	)
 	config.LondonBlock = londonBlock
 	config.ArrowGlacierBlock = londonBlock
@@ -169,8 +166,8 @@ func newTestBackend(t *testing.T, londonBlock *big.Int, cancunBlock *big.Int, pe
 				Nonce:     b.TxNonce(addr),
 				To:        &common.Address{},
 				Gas:       30000,
-				GasFeeCap: big.NewInt(100 * params.GWei),
-				GasTipCap: big.NewInt(int64(i+1) * params.GWei),
+				GasFeeCap: big.NewInt(200 * params.GWei),
+				GasTipCap: big.NewInt(int64(i+1)*params.GWei + params.MinimumBaseFee),
 				Data:      []byte{},
 			}
 		} else {
@@ -178,7 +175,7 @@ func newTestBackend(t *testing.T, londonBlock *big.Int, cancunBlock *big.Int, pe
 				Nonce:    b.TxNonce(addr),
 				To:       &common.Address{},
 				Gas:      21000,
-				GasPrice: big.NewInt(int64(i+1) * params.GWei),
+				GasPrice: big.NewInt(int64(i+1)*params.GWei + params.MinimumBaseFee),
 				Value:    big.NewInt(100),
 				Data:     []byte{},
 			}
@@ -188,23 +185,24 @@ func newTestBackend(t *testing.T, londonBlock *big.Int, cancunBlock *big.Int, pe
 		if cancunBlock != nil && b.Number().Cmp(cancunBlock) >= 0 {
 			b.SetPoS()
 
-			// put more blobs in each new block
-			for j := 0; j < i && j < 6; j++ {
-				blobTx := &types.BlobTx{
-					ChainID:    uint256.MustFromBig(gspec.Config.ChainID),
-					Nonce:      b.TxNonce(addr),
-					To:         common.Address{},
-					Gas:        30000,
-					GasFeeCap:  uint256.NewInt(100 * params.GWei),
-					GasTipCap:  uint256.NewInt(uint64(i+1) * params.GWei),
-					Data:       []byte{},
-					BlobFeeCap: uint256.NewInt(1),
-					BlobHashes: []common.Hash{emptyBlobVHash},
-					Value:      uint256.NewInt(100),
-					Sidecar:    nil,
-				}
-				b.AddTx(types.MustSignNewTx(key, signer, blobTx))
-			}
+			// Blob is disabled in over protocol
+			// // put more blobs in each new block
+			// for j := 0; j < i && j < 6; j++ {
+			// 	blobTx := &types.BlobTx{
+			// 		ChainID:    uint256.MustFromBig(gspec.Config.ChainID),
+			// 		Nonce:      b.TxNonce(addr),
+			// 		To:         common.Address{},
+			// 		Gas:        30000,
+			// 		GasFeeCap:  uint256.NewInt(200 * params.GWei),
+			// 		GasTipCap:  uint256.NewInt(uint64(i+1)*params.GWei + params.MinimumBaseFee),
+			// 		Data:       []byte{},
+			// 		BlobFeeCap: uint256.NewInt(1),
+			// 		BlobHashes: []common.Hash{emptyBlobVHash},
+			// 		Value:      uint256.NewInt(100),
+			// 		Sidecar:    nil,
+			// 	}
+			// 	b.AddTx(types.MustSignNewTx(key, signer, blobTx))
+			// }
 		}
 		td += b.Difficulty().Uint64()
 	})
@@ -240,11 +238,11 @@ func TestSuggestTipCap(t *testing.T) {
 		fork   *big.Int // London fork number
 		expect *big.Int // Expected gasprice suggestion
 	}{
-		{nil, big.NewInt(params.GWei * int64(30))},
-		{big.NewInt(0), big.NewInt(params.GWei * int64(30))},  // Fork point in genesis
-		{big.NewInt(1), big.NewInt(params.GWei * int64(30))},  // Fork point in first block
-		{big.NewInt(32), big.NewInt(params.GWei * int64(30))}, // Fork point in last block
-		{big.NewInt(33), big.NewInt(params.GWei * int64(30))}, // Fork point in the future
+		{nil, big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))},
+		{big.NewInt(0), big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))},  // Fork point in genesis
+		{big.NewInt(1), big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))},  // Fork point in first block
+		{big.NewInt(32), big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))}, // Fork point in last block
+		{big.NewInt(33), big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))}, // Fork point in the future
 	}
 	for _, c := range cases {
 		backend := newTestBackend(t, c.fork, nil, false)

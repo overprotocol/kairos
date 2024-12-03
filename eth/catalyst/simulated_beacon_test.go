@@ -106,7 +106,7 @@ func TestSimulatedBeaconSendWithdrawals(t *testing.T) {
 	// generate a bunch of transactions
 	signer := types.NewEIP155Signer(ethService.BlockChain().Config().ChainID)
 	for i := 0; i < 20; i++ {
-		tx, err := types.SignTx(types.NewTransaction(uint64(i), common.Address{}, big.NewInt(1000), params.TxGas, big.NewInt(params.InitialBaseFee), nil), signer, testKey)
+		tx, err := types.SignTx(types.NewTransaction(uint64(i), common.Address{}, big.NewInt(1000), params.TxGas, big.NewInt(params.MinimumBaseFee), nil), signer, testKey)
 		if err != nil {
 			t.Fatalf("error signing transaction, err=%v", err)
 		}
@@ -170,7 +170,7 @@ func TestOnDemandSpam(t *testing.T) {
 
 	// generate a bunch of transactions
 	for i := 0; i < 20000; i++ {
-		tx, err := types.SignTx(types.NewTransaction(uint64(i), common.Address{byte(i), byte(1)}, big.NewInt(1000), params.TxGas, big.NewInt(params.InitialBaseFee*2), nil), signer, testKey)
+		tx, err := types.SignTx(types.NewTransaction(uint64(i), common.Address{byte(i), byte(1)}, big.NewInt(1000), params.TxGas, big.NewInt(params.MinimumBaseFee*2), nil), signer, testKey)
 		if err != nil {
 			t.Fatal("error signing transaction", err)
 		}
