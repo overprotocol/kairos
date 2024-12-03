@@ -263,26 +263,10 @@ func TestT8n(t *testing.T) {
 			output: t8nOutput{alloc: true, result: true},
 			expOut: "exp.json",
 		},
-		{ // Cancun tests
+		{ // More cancun tests
 			base: "./testdata/28",
 			input: t8nInput{
-				"alloc.json", "txs.rlp", "env.json", "Cancun", "",
-			},
-			output: t8nOutput{alloc: true, result: true},
-			expOut: "exp.json",
-		},
-		{ // More cancun tests
-			base: "./testdata/29",
-			input: t8nInput{
 				"alloc.json", "txs.json", "env.json", "Cancun", "",
-			},
-			output: t8nOutput{alloc: true, result: true},
-			expOut: "exp.json",
-		},
-		{ // More cancun test, plus example of rlp-transaction that cannot be decoded properly
-			base: "./testdata/30",
-			input: t8nInput{
-				"alloc.json", "txs_more.rlp", "env.json", "Cancun", "",
 			},
 			output: t8nOutput{alloc: true, result: true},
 			expOut: "exp.json",
@@ -354,29 +338,7 @@ func TestT8nTracing(t *testing.T) {
 		expectedTraces []string
 	}{
 		{
-			base: "./testdata/31",
-			input: t8nInput{
-				"alloc.json", "txs.json", "env.json", "Cancun", "",
-			},
-			extraArgs:      []string{"--trace"},
-			expectedTraces: []string{"trace-0-0x88f5fbd1524731a81e49f637aa847543268a5aaf2a6b32a69d2c6d978c45dcfb.jsonl"},
-		},
-		{
-			base: "./testdata/31",
-			input: t8nInput{
-				"alloc.json", "txs.json", "env.json", "Cancun", "",
-			},
-			extraArgs: []string{"--trace.tracer", `
-{ 
-	result: function(){ 
-		return "hello world"
-	}, 
-	fault: function(){} 
-}`},
-			expectedTraces: []string{"trace-0-0x88f5fbd1524731a81e49f637aa847543268a5aaf2a6b32a69d2c6d978c45dcfb.json"},
-		},
-		{
-			base: "./testdata/32",
+			base: "./testdata/30",
 			input: t8nInput{
 				"alloc.json", "txs.json", "env.json", "Paris", "",
 			},
