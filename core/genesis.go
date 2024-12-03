@@ -573,7 +573,6 @@ func DeveloperGenesisBlock(gasLimit uint64, faucet *common.Address) *Genesis {
 			common.BytesToAddress([]byte{9}): {Balance: big.NewInt(1)}, // BLAKE2b
 			// Pre-deploy system contracts
 			params.BeaconRootsAddress:     {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress:  {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
 			params.WithdrawalQueueAddress: {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
 		},
 	}
