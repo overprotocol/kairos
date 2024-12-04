@@ -543,9 +543,9 @@ func DefaultDolphinGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.DolphinChainConfig,
 		Nonce:      0,
-		GasLimit:   0x1c9c380,
-		Difficulty: big.NewInt(0x20000),
-		Timestamp:  1633267481,
+		GasLimit:   30000000,
+		Difficulty: big.NewInt(1),
+		Timestamp:  1733296014,
 		Alloc:      decodePrealloc(dolphinAllocData),
 	}
 }
