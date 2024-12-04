@@ -57,7 +57,7 @@
         "init": "0x60206000600060006013600462030d40f260025560005160005500"
       },
       "result": {
-        "gasUsed": "0xf3bc",
+        "gasUsed": "0xf800",
         "code": "0x",
         "address": "0x5f8a7e007172ba80afbff1b15f800eb0b260f224"
       },
@@ -74,7 +74,7 @@
         "balance": "0x0",
         "callType": "callcode",
         "from": "0x5f8a7e007172ba80afbff1b15f800eb0b260f224",
-        "gas": "0xaf64",
+        "gas": "0xab31",
         "to": "0x0000000000000000000000000000000000000004",
         "value": "0x13"
       },
