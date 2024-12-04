@@ -28,7 +28,7 @@ var MainnetV5Bootnodes = []string{
 }
 
 var DolphinV5Bootnodes = []string{
-	"enr:-JS4QFSQ8R7E4UaeiwMGfp4PNh5L-rSoVJG2BI-b60rqPl1EVg9RxW23NDqZ6dHkFvNulG5ifyH9dAydB1EI4eEEFVSGAZFLTQ7EgmlkgnY0gmlwhIDHSxeEb3ZlcoQAAAAAiXNlY3AyNTZrMaEDq9XrhVPCGXchqPI2yMyQ9GfFXEZ7fcayBfmjq0b0Iz2DdWRwgsc4",
+	"enr:-JS4QJtb_JQpP9_7nn1-GtgrkWlwC-uM3V645xD-IcRJ6uJ1czjx9j5nCqonynrk1bo8vMr2tje00RbUKhT0rQakNBqGAZOQdrE_gmlkgnY0gmlwhKesTPSEb3ZlcoQAAAAAiXNlY3AyNTZrMaED_VBfi1aLnR_5kufyq6U0vp7aYCWXWlABlSu0YeKRtQyDdWRwgsc4",
 }
 
 // No DNSNetwork for now
