@@ -26,7 +26,7 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash = common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
+	MainnetGenesisHash = common.HexToHash("0xd538d0a8e6adc43cf2f1cee8fe8f7b4d7ff6a43f0c1e748e9b165808535410b1")
 	DolphinGenesisHash = common.HexToHash("0xccec2da84333da0edd9694552c77c81efdf3c0c225aa137c97c52baa20e56ee5")
 )
 
@@ -37,27 +37,29 @@ var (
 
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
-		ChainID:                       big.NewInt(1),
-		HomesteadBlock:                big.NewInt(1_150_000),
-		DAOForkBlock:                  big.NewInt(1_920_000),
+		ChainID:                       big.NewInt(54176),
+		HomesteadBlock:                big.NewInt(0),
+		DAOForkBlock:                  nil,
 		DAOForkSupport:                true,
-		EIP150Block:                   big.NewInt(2_463_000),
-		EIP155Block:                   big.NewInt(2_675_000),
-		EIP158Block:                   big.NewInt(2_675_000),
-		ByzantiumBlock:                big.NewInt(4_370_000),
-		ConstantinopleBlock:           big.NewInt(7_280_000),
-		PetersburgBlock:               big.NewInt(7_280_000),
-		IstanbulBlock:                 big.NewInt(9_069_000),
-		MuirGlacierBlock:              big.NewInt(9_200_000),
-		BerlinBlock:                   big.NewInt(12_244_000),
-		LondonBlock:                   big.NewInt(12_965_000),
-		ArrowGlacierBlock:             big.NewInt(13_773_000),
-		GrayGlacierBlock:              big.NewInt(15_050_000),
-		TerminalTotalDifficulty:       MainnetTerminalTotalDifficulty, // 58_750_000_000_000_000_000_000
+		EIP150Block:                   big.NewInt(0),
+		EIP155Block:                   big.NewInt(0),
+		EIP158Block:                   big.NewInt(0),
+		ByzantiumBlock:                big.NewInt(0),
+		ConstantinopleBlock:           big.NewInt(0),
+		PetersburgBlock:               big.NewInt(0),
+		IstanbulBlock:                 big.NewInt(0),
+		MuirGlacierBlock:              big.NewInt(0),
+		BerlinBlock:                   big.NewInt(0),
+		LondonBlock:                   big.NewInt(0),
+		ArrowGlacierBlock:             nil,
+		GrayGlacierBlock:              nil,
+		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
-		ShanghaiTime:                  newUint64(1681338455),
-		CancunTime:                    newUint64(1710338135),
-		DepositContractAddress:        common.HexToAddress("0x00000000219ab540356cbb839cbe05303d7705fa"),
+		MergeNetsplitBlock:            big.NewInt(0),
+		ShanghaiTime:                  newUint64(1733464800),
+		CancunTime:                    newUint64(1733464800),
+		PragueTime:                    newUint64(1733464800),
+		DepositContractAddress:        common.HexToAddress("0x000000000000000000000000000000000beac017"),
 		Ethash:                        new(EthashConfig),
 	}
 	// DolphinChainConfig contains the chain parameters to run a node on the Dolphin test network.
