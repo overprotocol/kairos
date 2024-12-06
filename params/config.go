@@ -26,7 +26,7 @@ import (
 
 // Genesis hashes to enforce below configs on.
 var (
-	MainnetGenesisHash = common.HexToHash("0x9cb66af6e4757a6e6f7122403ef17705c9db3c1111800b0e454bdd5fdb9babb3")
+	MainnetGenesisHash = common.HexToHash("0x3cb329371ddb525792b4fc8f025144e86f197e9c495960e66de3f266d8d7ff18")
 	DolphinGenesisHash = common.HexToHash("0xccec2da84333da0edd9694552c77c81efdf3c0c225aa137c97c52baa20e56ee5")
 )
 
@@ -56,9 +56,9 @@ var (
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
 		MergeNetsplitBlock:            big.NewInt(0),
-		ShanghaiTime:                  newUint64(1733490000),
-		CancunTime:                    newUint64(1733490000),
-		PragueTime:                    newUint64(1733490000),
+		ShanghaiTime:                  newUint64(1733496000),
+		CancunTime:                    newUint64(1733496000),
+		PragueTime:                    newUint64(1733496000),
 		DepositContractAddress:        common.HexToAddress("0x000000000000000000000000000000000beac017"),
 		Ethash:                        new(EthashConfig),
 	}
