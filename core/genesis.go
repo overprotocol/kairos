@@ -530,7 +530,7 @@ func (g *Genesis) MustCommit(db ethdb.Database, triedb *triedb.Database) *types.
 func DefaultGenesisBlock() *Genesis {
 	return &Genesis{
 		Config:     params.MainnetChainConfig,
-		Timestamp:  1733464800,
+		Timestamp:  1733468400,
 		GasLimit:   30000000,
 		Difficulty: big.NewInt(1),
 		Alloc:      decodePrealloc(mainnetAllocData),

@@ -56,9 +56,9 @@ var (
 		TerminalTotalDifficulty:       big.NewInt(0),
 		TerminalTotalDifficultyPassed: true,
 		MergeNetsplitBlock:            big.NewInt(0),
-		ShanghaiTime:                  newUint64(1733464800),
-		CancunTime:                    newUint64(1733464800),
-		PragueTime:                    newUint64(1733464800),
+		ShanghaiTime:                  newUint64(1733468400),
+		CancunTime:                    newUint64(1733468400),
+		PragueTime:                    newUint64(1733468400),
 		DepositContractAddress:        common.HexToAddress("0x000000000000000000000000000000000beac017"),
 		Ethash:                        new(EthashConfig),
 	}
