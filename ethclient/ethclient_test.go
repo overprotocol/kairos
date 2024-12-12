@@ -182,7 +182,7 @@ func TestToFilterArg(t *testing.T) {
 var (
 	testKey, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 	testAddr    = crypto.PubkeyToAddress(testKey.PublicKey)
-	testBalance = big.NewInt(2e15)
+	testBalance = big.NewInt(200e15)
 )
 
 var genesis = &core.Genesis{
@@ -502,7 +502,7 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gasPrice.Cmp(big.NewInt(10001000000)) != 0 {
+	if gasPrice.Cmp(big.NewInt(100001000000)) != 0 {
 		t.Fatalf("unexpected gas price: %v", gasPrice)
 	}
 
@@ -529,8 +529,8 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 			},
 		},
 		BaseFee: []*big.Int{
-			big.NewInt(10000000000),
-			big.NewInt(10000000000),
+			big.NewInt(100000000000),
+			big.NewInt(100000000000),
 		},
 		GasUsedRatio: []float64{0.008912678667376286},
 	}
