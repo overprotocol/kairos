@@ -129,6 +129,9 @@ func TestValidation(t *testing.T) {
 		// // Local is mainnet Shanghai. Remote is also in Shanghai, but announces Gopherium (non existing
 		// // fork) at timestamp 1668000000, before Cancun. Local is incompatible.
 		{params.MainnetChainConfig, 20999999, 1699999999, ID{Hash: checksumToBytes(0x71147644), Next: 1700000000}, ErrLocalIncompatibleOrStale},
+
+		// Local is mainnet Alpaca, Remote is mainnet Alpaca
+		{params.MainnetChainConfig, 0, 0, ID{Hash: checksumToBytes(0xcf2b60e5), Next: 0}, nil},
 	}
 	genesis := core.DefaultGenesisBlock().ToBlock()
 	for i, tt := range tests {

@@ -45,7 +45,7 @@ var (
 	testEmpty    = common.HexToAddress("0xeeee")
 	testSlot     = common.HexToHash("0xdeadbeef")
 	testValue    = crypto.Keccak256Hash(testSlot[:])
-	testBalance  = big.NewInt(200e15)
+	testBalance  = big.NewInt(2e17)
 )
 
 func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {

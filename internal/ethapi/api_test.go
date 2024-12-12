@@ -3061,7 +3061,6 @@ func setupReceiptBackend(t *testing.T, genBlocks int) (*testBackend, []common.Ha
 		signer   = types.LatestSignerForChainID(params.TestChainConfig.ChainID)
 		txHashes = make([]common.Hash, genBlocks)
 	)
-
 	backend := newTestBackend(t, genBlocks, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
 		var (
 			tx  *types.Transaction

@@ -86,7 +86,7 @@ func TestSupplyOmittedFields(t *testing.T) {
 
 	expected := supplyInfo{
 		Number:     0,
-		Hash:       common.HexToHash("0x210ffca654042a08cca60a1b3018b78a07d5d96844e23da5b7dedf531b48198f"),
+		Hash:       common.HexToHash("0x6d5bff5b9516decc0d36c85ab33b21e47e6964e857f261d5cf1cb826f6f3ccba"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 	}
 	actual := out[expected.Number]
@@ -118,7 +118,7 @@ func TestSupplyGenesisAlloc(t *testing.T) {
 			GenesisAlloc: (*hexutil.Big)(new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))),
 		},
 		Number:     0,
-		Hash:       common.HexToHash("0xdb746a72fb19701cee956a64379d1b7e4c2150e17b702b1016f86f8ade678de1"),
+		Hash:       common.HexToHash("0x39c2f1f9753f0a7524aa679f1050650ee18f468689b6dd9108cf5725ea6e0b90"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 	}
 
@@ -146,8 +146,8 @@ func TestSupplyRewards(t *testing.T) {
 			Reward: (*hexutil.Big)(new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))),
 		},
 		Number:     1,
-		Hash:       common.HexToHash("0xcc7447aaaf7a9aec3041af33b97f1d0b9ecfb2e48a74ee180981bffe20a9d66f"),
-		ParentHash: common.HexToHash("0x19e99cbfcffa6d3a08384bded448e3975d928cea4fe38365a415dbdbe4586d48"),
+		Hash:       common.HexToHash("0x3d55cc80276def58ae62fec9c5fb92c937ee583773cdfa824e274eda20e8e405"),
+		ParentHash: common.HexToHash("0x99a32310a2cbe63f05a81bc5531f39e0423cffe3a2cad17b50169fba89ac3e27"),
 	}
 
 	out, _, err := testSupplyTracer(t, gspec, emptyBlockGenerationFunc)
@@ -343,7 +343,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 	// Check live trace output
 	expected := supplyInfo{
 		Burn: &supplyInfoBurn{
-			EIP1559: (*hexutil.Big)(big.NewInt(631880000000000)),
+			EIP1559: (*hexutil.Big)(big.NewInt(6318800000000000)),
 			Misc:    (*hexutil.Big)(big.NewInt(5000000000)),
 		},
 		Number:     1,
@@ -384,7 +384,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 	head = postCancunChain.CurrentBlock()
 	expected = supplyInfo{
 		Burn: &supplyInfoBurn{
-			EIP1559: (*hexutil.Big)(big.NewInt(631880000000000)),
+			EIP1559: (*hexutil.Big)(big.NewInt(6318800000000000)),
 		},
 		Number:     1,
 		Hash:       head.Hash(),
