@@ -56,7 +56,6 @@ func TestEthSuite(t *testing.T) {
 		t.Fatalf("could not run geth: %v", err)
 	}
 	defer geth.Close()
-
 	suite, err := NewSuite(geth.Server().Self(), "./testdata", geth.HTTPAuthEndpoint(), common.Bytes2Hex(secret[:]))
 	if err != nil {
 		t.Fatalf("could not create new test suite: %v", err)

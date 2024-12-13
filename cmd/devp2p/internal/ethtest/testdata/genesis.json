@@ -17,8 +17,9 @@
     "mergeNetsplitBlock": 72,
     "shanghaiTime": 780,
     "cancunTime": 840,
-    "terminalTotalDifficulty": 9454784,
+    "terminalTotalDifficulty": 9449856,
     "terminalTotalDifficultyPassed": true,
+    "depositContractAddress": "0x0000000000000000000000000000000000000000",
     "ethash": {}
   },
   "nonce": "0x0",
@@ -74,6 +75,10 @@
     },
     "7435ed30a8b4aeb0877cef0c6e8cffe834eb865f": {
       "balance": "0xc097ce7bc90715b34b9f1000000000"
+    },
+    "7dcd17433742f4c0ca53122ab541d0ba67fc27df": {
+      "code": "0x3680600080376000206000548082558060010160005560005263656d697460206000a2",
+      "balance": "0x0"
     },
     "83c7e323d189f18725ac510004fdc2941f8c4a78": {
       "balance": "0xc097ce7bc90715b34b9f1000000000"
