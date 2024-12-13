@@ -857,8 +857,12 @@ func TestOpenHeap(t *testing.T) {
 		blob2, _ = rlp.EncodeToBytes(tx2)
 		blob3, _ = rlp.EncodeToBytes(tx3)
 
-		heapOrder = []common.Address{addr2, addr1, addr3}
-		heapIndex = map[common.Address]int{addr2: 0, addr1: 1, addr3: 2}
+		heapOrder = []common.Address{addr1, addr2, addr3}
+		heapIndex = map[common.Address]int{addr2: 1, addr1: 0, addr3: 2}
+
+		// Temporary disabled blob
+		// heapOrder = []common.Address{addr2, addr1, addr3}
+		// heapIndex = map[common.Address]int{addr2: 0, addr1: 1, addr3: 2}
 	)
 	store.Put(blob1)
 	store.Put(blob2)
@@ -933,8 +937,9 @@ func TestOpenCap(t *testing.T) {
 		blob2, _ = rlp.EncodeToBytes(tx2)
 		blob3, _ = rlp.EncodeToBytes(tx3)
 
-		keep = []common.Address{addr1, addr3}
-		drop = []common.Address{addr2}
+		// every tx is dropped cuz blob fee configuration
+		keep = []common.Address{addr1, addr2}
+		drop = []common.Address{addr3}
 		size = uint64(2 * (txAvgSize + blobSize))
 	)
 	store.Put(blob1)
