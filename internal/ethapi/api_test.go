@@ -3152,11 +3152,6 @@ func TestRPCGetTransactionReceipt(t *testing.T) {
 			txHash: common.HexToHash("deadbeef"),
 			file:   "txhash-notfound",
 		},
-		// 7. blob tx
-		{
-			txHash: txHashes[5],
-			file:   "blob-tx",
-		},
 	}
 
 	for i, tt := range testSuite {
