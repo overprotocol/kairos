@@ -267,6 +267,7 @@ var (
 var NetworkNames = map[string]string{
 	MainnetChainConfig.ChainID.String(): "mainnet",
 	DolphinChainConfig.ChainID.String(): "dolphin",
+	TestChainConfig.ChainID.String():    "test",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.

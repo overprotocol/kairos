@@ -34,7 +34,7 @@ func TestTxIndexer(t *testing.T) {
 	var (
 		testBankKey, _  = crypto.GenerateKey()
 		testBankAddress = crypto.PubkeyToAddress(testBankKey.PublicKey)
-		testBankFunds   = big.NewInt(1000000000000000000)
+		testBankFunds   = new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(100))
 
 		gspec = &Genesis{
 			Config:  params.TestChainConfig,

@@ -181,7 +181,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 	var (
 		key, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address = crypto.PubkeyToAddress(key.PublicKey)
-		funds   = big.NewInt(1000000000000000)
+		funds   = big.NewInt(10000000000000000)
 		dad     = common.HexToAddress("0x0000000000000000000000000000000000000dad")
 	)
 	stack := createNode(t)
@@ -238,7 +238,7 @@ func TestGraphQLBlockSerializationEIP2718(t *testing.T) {
 	}{
 		{
 			body: `{"query": "{block {number transactions { from { address } to { address } value hash type accessList { address storageKeys } index}}}"}`,
-			want: `{"data":{"block":{"number":"0x1","transactions":[{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x64","hash":"0x823d66eedf5aae4c317079438e40f11f48fd67160b1fcde3367dab6b26a129f7","type":"0x0","accessList":[],"index":"0x0"},{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x32","hash":"0x6f19cbc5b25a44a3cc8be072c69da37c5d5d85caf1b070aae3adfa1ccfbc7405","type":"0x1","accessList":[{"address":"0x0000000000000000000000000000000000000dad","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"index":"0x1"}]}}}`,
+			want: `{"data":{"block":{"number":"0x1","transactions":[{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x64","hash":"0xf97c497e46ebed124c2cf4fcc6428fc63a77593680c1bb600be3fbc698d1f06b","type":"0x0","accessList":[],"index":"0x0"},{"from":{"address":"0x71562b71999873db5b286df957af199ec94617f7"},"to":{"address":"0x0000000000000000000000000000000000000dad"},"value":"0x32","hash":"0xe72a9d37a8265b280d7ae3455311559b6487d4fa4fdea49c0e75d69934bd92d6","type":"0x1","accessList":[{"address":"0x0000000000000000000000000000000000000dad","storageKeys":["0x0000000000000000000000000000000000000000000000000000000000000000"]}],"index":"0x1"}]}}}`,
 			code: 200,
 		},
 	} {
@@ -329,7 +329,7 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 		// because resolving the tx body belonging to a log is delayed.
 		{
 			body: `{block { logs(filter: {}) { transaction { nonce value gasPrice }}}}`,
-			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}}]}}`,
+			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x174876e800"}}]}}`,
 		},
 		// Multiple txes of a block race to set/retrieve receipts of a block.
 		{
