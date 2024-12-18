@@ -1347,24 +1347,24 @@ func TestSimulateV1(t *testing.T) {
 			want: []blockRes{{
 				Number:        "0xb",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xe891",
+				GasUsed:       "0xe9fd",
 				Miner:         strings.ToLower(cac.String()),
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x000000000000000000000000000000000000000000000000000000000000000b",
-					GasUsed:     "0xe891",
+					GasUsed:     "0xe9fd",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
 			}, {
 				Number:        "0xc",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xe891",
+				GasUsed:       "0xe9fd",
 				Miner:         strings.ToLower(cac.String()),
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x000000000000000000000000000000000000000000000000000000000000000c",
-					GasUsed:     "0xe891",
+					GasUsed:     "0xe9fd",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -1428,17 +1428,17 @@ func TestSimulateV1(t *testing.T) {
 			want: []blockRes{{
 				Number:        "0xb",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0x10683",
+				GasUsed:       "0x10857",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x",
-					GasUsed:     "0xaacc",
+					GasUsed:     "0xabd0",
 					Logs:        []log{},
 					Status:      "0x1",
 				}, {
 					ReturnValue: "0x0000000000000000000000000000000000000000000000000000000000000005",
-					GasUsed:     "0x5bb7",
+					GasUsed:     "0x5c87",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -1590,17 +1590,17 @@ func TestSimulateV1(t *testing.T) {
 			want: []blockRes{{
 				Number:        "0xb",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xa58c",
+				GasUsed:       "0xa5f4",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0xec4916dd28fc4c10d78e287ca5d9cc51ee1ae73cbfde08c6b37324cbfaac8bc5",
-					GasUsed:     "0x52dc",
+					GasUsed:     "0x5310",
 					Logs:        []log{},
 					Status:      "0x1",
 				}, {
 					ReturnValue: "0x0000000000000000000000000000000000000000000000000000000000000001",
-					GasUsed:     "0x52b0",
+					GasUsed:     "0x52e4",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -1639,12 +1639,12 @@ func TestSimulateV1(t *testing.T) {
 			want: []blockRes{{
 				Number:        "0xb",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0x77dc",
+				GasUsed:       "0x7bec",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x",
-					GasUsed:     "0x77dc",
+					GasUsed:     "0x7bec",
 					Logs: []log{{
 						Address: transferAddress,
 						Topics: []common.Hash{
@@ -1706,7 +1706,7 @@ func TestSimulateV1(t *testing.T) {
 			want: []blockRes{{
 				Number:        "0xb",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0x1b83f",
+				GasUsed:       "0x1c0fb",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
@@ -1716,19 +1716,19 @@ func TestSimulateV1(t *testing.T) {
 					Status:      "0x1",
 				}, {
 					ReturnValue: "0x",
-					GasUsed:     "0xe6d9",
+					GasUsed:     "0xef95",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
 			}, {
 				Number:        "0xc",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xe6d9",
+				GasUsed:       "0xef95",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x",
-					GasUsed:     "0xe6d9",
+					GasUsed:     "0xef95",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -1775,7 +1775,7 @@ func TestSimulateV1(t *testing.T) {
 				GasLimit:      "0x47e7c4",
 				GasUsed:       "0xd166",
 				Miner:         coinbase,
-				BaseFeePerGas: "0x2540be400",
+				BaseFeePerGas: "0x174876e800",
 				Calls: []callRes{{
 					ReturnValue: "0x",
 					GasUsed:     "0xd166",
@@ -1941,23 +1941,23 @@ func TestSimulateV1(t *testing.T) {
 			}, {
 				Number:        "0xc",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xf864",
+				GasUsed:       "0xf900",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x",
-					GasUsed:     "0x52cc",
+					GasUsed:     "0x5300",
 					Logs:        []log{},
 					Status:      "0x1",
 				}, {
 					ReturnValue: "0x",
-					GasUsed:     "0x52cc",
+					GasUsed:     "0x5300",
 					Logs:        []log{},
 					Status:      "0x1",
 				}, {
 
 					ReturnValue: "0x",
-					GasUsed:     "0x52cc",
+					GasUsed:     "0x5300",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -1985,18 +1985,18 @@ func TestSimulateV1(t *testing.T) {
 			}, {
 				Number:        "0x10",
 				GasLimit:      "0x47e7c4",
-				GasUsed:       "0xa598",
+				GasUsed:       "0xa600",
 				Miner:         coinbase,
 				BaseFeePerGas: "0x0",
 				Calls: []callRes{{
 					ReturnValue: "0x",
-					GasUsed:     "0x52cc",
+					GasUsed:     "0x5300",
 					Logs:        []log{},
 					Status:      "0x1",
 				}, {
 
 					ReturnValue: "0x",
-					GasUsed:     "0x52cc",
+					GasUsed:     "0x5300",
 					Logs:        []log{},
 					Status:      "0x1",
 				}},
@@ -2149,9 +2149,9 @@ func TestSimulateV1(t *testing.T) {
 				GasLimit:      "0x47e7c4",
 				GasUsed:       "0x5227",
 				Miner:         coinbase,
-				BaseFeePerGas: "0x2540be400",
+				BaseFeePerGas: "0x174876e800",
 				Calls: []callRes{{
-					ReturnValue: "0x00000000000000000000000000000000000000000000000000000002540be40000000000000000000000000000000000000000000000000000000002540be400",
+					ReturnValue: "0x000000000000000000000000000000000000000000000000000000174876e800000000000000000000000000000000000000000000000000000000174876e800",
 					GasUsed:     "0x5227",
 					Logs:        []log{},
 					Status:      "0x1",
@@ -2282,21 +2282,14 @@ func TestSendBlobTransaction(t *testing.T) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
-	res, err := api.FillTransaction(context.Background(), TransactionArgs{
+	_, err := api.FillTransaction(context.Background(), TransactionArgs{
 		From:       &b.acc.Address,
 		To:         &to,
 		Value:      (*hexutil.Big)(big.NewInt(1)),
 		BlobHashes: []common.Hash{{0x01, 0x22}},
 	})
-	if err != nil {
-		t.Fatalf("failed to fill tx defaults: %v\n", err)
-	}
-
-	_, err = api.SendTransaction(context.Background(), argsFromTransaction(res.Tx, b.acc.Address))
-	if err == nil {
-		t.Errorf("sending tx should have failed")
-	} else if !errors.Is(err, errBlobTxNotSupported) {
-		t.Errorf("unexpected error. Have %v, want %v\n", err, errBlobTxNotSupported)
+	if err != core.ErrInsufficientFunds {
+		t.Fatalf("unexpected error, should have insufficient funds for gas * price + value")
 	}
 }
 

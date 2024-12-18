@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"reflect"
 	"testing"
@@ -517,6 +518,7 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 
 	// FeeHistory
 	history, err := ec.FeeHistory(context.Background(), 1, big.NewInt(2), []float64{95, 99})
+	fmt.Println(history.GasUsedRatio)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
