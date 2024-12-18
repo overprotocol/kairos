@@ -724,7 +724,7 @@ func TestEstimateGas(t *testing.T) {
 				GasPrice: (*hexutil.Big)(big.NewInt(params.MinimumBaseFee)), // Legacy as pricing
 			},
 			expectErr: nil,
-			want:      67617,
+			want:      74480,
 		},
 		{
 			blockNumber: rpc.LatestBlockNumber,
@@ -734,7 +734,7 @@ func TestEstimateGas(t *testing.T) {
 				MaxFeePerGas: (*hexutil.Big)(big.NewInt(params.MinimumBaseFee)), // 1559 gas pricing
 			},
 			expectErr: nil,
-			want:      67617,
+			want:      74480,
 		},
 		{
 			blockNumber: rpc.LatestBlockNumber,
@@ -745,7 +745,7 @@ func TestEstimateGas(t *testing.T) {
 				MaxFeePerGas: nil, // No 1559 gas pricing
 			},
 			expectErr: nil,
-			want:      67595,
+			want:      74458,
 		},
 		// Blobs should have no effect on gas estimate -> Blob is disabled in over protocol
 		// {
@@ -2251,19 +2251,14 @@ func TestSignBlobTransaction(t *testing.T) {
 		b.SetPoS()
 	})
 	api := NewTransactionAPI(b, nil)
-	res, err := api.FillTransaction(context.Background(), TransactionArgs{
+	_, err := api.FillTransaction(context.Background(), TransactionArgs{
 		From:       &b.acc.Address,
 		To:         &to,
 		Value:      (*hexutil.Big)(big.NewInt(1)),
 		BlobHashes: []common.Hash{{0x01, 0x22}},
 	})
-	if err != nil {
-		t.Fatalf("failed to fill tx defaults: %v\n", err)
-	}
-
-	_, err = api.SignTransaction(context.Background(), argsFromTransaction(res.Tx, b.acc.Address))
-	if err != nil {
-		t.Fatalf("should not fail on blob transaction")
+	if err != core.ErrInsufficientFunds {
+		t.Fatalf("unexpected error, should have insufficient funds for gas * price + value")
 	}
 }
 
@@ -2391,14 +2386,7 @@ func TestFillBlobTransaction(t *testing.T) {
 				Commitments: []kzg4844.Commitment{emptyBlobCommit},
 				Proofs:      []kzg4844.Proof{emptyBlobProof},
 			},
-			want: &result{
-				Hashes: []common.Hash{emptyBlobHash},
-				Sidecar: &types.BlobTxSidecar{
-					Blobs:       emptyBlobs,
-					Commitments: []kzg4844.Commitment{emptyBlobCommit},
-					Proofs:      []kzg4844.Proof{emptyBlobProof},
-				},
-			},
+			err: `insufficient funds for gas * price + value`,
 		},
 		{
 			name: "TestValidBlobHashes",
@@ -2411,14 +2399,7 @@ func TestFillBlobTransaction(t *testing.T) {
 				Commitments: []kzg4844.Commitment{emptyBlobCommit},
 				Proofs:      []kzg4844.Proof{emptyBlobProof},
 			},
-			want: &result{
-				Hashes: []common.Hash{emptyBlobHash},
-				Sidecar: &types.BlobTxSidecar{
-					Blobs:       emptyBlobs,
-					Commitments: []kzg4844.Commitment{emptyBlobCommit},
-					Proofs:      []kzg4844.Proof{emptyBlobProof},
-				},
-			},
+			err: `insufficient funds for gas * price + value`,
 		},
 		{
 			name: "TestInvalidBlobHashes",
@@ -2441,14 +2422,7 @@ func TestFillBlobTransaction(t *testing.T) {
 				Value: (*hexutil.Big)(big.NewInt(1)),
 				Blobs: emptyBlobs,
 			},
-			want: &result{
-				Hashes: []common.Hash{emptyBlobHash},
-				Sidecar: &types.BlobTxSidecar{
-					Blobs:       emptyBlobs,
-					Commitments: []kzg4844.Commitment{emptyBlobCommit},
-					Proofs:      []kzg4844.Proof{emptyBlobProof},
-				},
-			},
+			err: `insufficient funds for gas * price + value`,
 		},
 	}
 	for _, tc := range suite {

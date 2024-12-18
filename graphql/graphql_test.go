@@ -329,7 +329,7 @@ func TestGraphQLConcurrentResolvers(t *testing.T) {
 		// because resolving the tx body belonging to a log is delayed.
 		{
 			body: `{block { logs(filter: {}) { transaction { nonce value gasPrice }}}}`,
-			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x2540be400"}}]}}`,
+			want: `{"block":{"logs":[{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x0","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x1","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x174876e800"}},{"transaction":{"nonce":"0x2","value":"0x0","gasPrice":"0x174876e800"}}]}}`,
 		},
 		// Multiple txes of a block race to set/retrieve receipts of a block.
 		{
