@@ -1486,6 +1486,9 @@ func (s *SyncState) SyncedStorage() hexutil.Uint64 {
 func (s *SyncState) SyncedStorageBytes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.SyncedStorageBytes)
 }
+func (s *SyncState) EstimatedStateProgress() float64 {
+	return s.progress.EstimatedStateProgress
+}
 func (s *SyncState) HealedTrienodes() hexutil.Uint64 {
 	return hexutil.Uint64(s.progress.HealedTrienodes)
 }

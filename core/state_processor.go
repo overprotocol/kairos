@@ -112,12 +112,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, err
 		}
 		requests = append(requests, depositRequests)
-		// EIP-7002 withdrawals
-		withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
-		requests = append(requests, withdrawalRequests)
-		// EIP-7251 consolidations
-		consolidationRequests := ProcessConsolidationQueue(vmenv, statedb)
-		requests = append(requests, consolidationRequests)
+		// Disable EIP-7002 withdrawals
+		requests = append(requests, ProcessEmptyWithdrawalQueue())
+		//// EIP-7002 withdrawals
+		//withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
+		//requests = append(requests, withdrawalRequests)
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
@@ -248,45 +247,47 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, vmenv *vm.EVM, statedb vm.St
 	statedb.Finalise(true)
 }
 
-// ProcessParentBlockHash stores the parent block hash in the history storage contract
-// as per EIP-2935.
-// func ProcessParentBlockHash(prevHash common.Hash, vmenv *vm.EVM, statedb vm.StateDB) {
-// 	if tracer := vmenv.Config.Tracer; tracer != nil {
-// 		if tracer.OnSystemCallStart != nil {
-// 			tracer.OnSystemCallStart()
-// 		}
-// 		if tracer.OnSystemCallEnd != nil {
-// 			defer tracer.OnSystemCallEnd()
-// 		}
-// 	}
-// 	msg := &Message{
-// 		From:      params.SystemAddress,
-// 		GasLimit:  30_000_000,
-// 		GasPrice:  common.Big0,
-// 		GasFeeCap: common.Big0,
-// 		GasTipCap: common.Big0,
-// 		To:        &params.HistoryStorageAddress,
-// 		Data:      prevHash.Bytes(),
-// 	}
-// 	vmenv.Reset(NewEVMTxContext(msg), statedb)
-// 	statedb.AddAddressToAccessList(params.HistoryStorageAddress)
-// 	_, _, _ = vmenv.Call(vm.AccountRef(msg.From), *msg.To, msg.Data, 30_000_000, common.U2560)
-// 	statedb.Finalise(true)
-// }
+// Disable EIP-2935
+//// ProcessParentBlockHash stores the parent block hash in the history storage contract
+//// as per EIP-2935.
+//func ProcessParentBlockHash(prevHash common.Hash, vmenv *vm.EVM, statedb *state.StateDB) {
+//	if tracer := vmenv.Config.Tracer; tracer != nil {
+//		if tracer.OnSystemCallStart != nil {
+//			tracer.OnSystemCallStart()
+//		}
+//		if tracer.OnSystemCallEnd != nil {
+//			defer tracer.OnSystemCallEnd()
+//		}
+//	}
+//	msg := &Message{
+//		From:      params.SystemAddress,
+//		GasLimit:  30_000_000,
+//		GasPrice:  common.Big0,
+//		GasFeeCap: common.Big0,
+//		GasTipCap: common.Big0,
+//		To:        &params.HistoryStorageAddress,
+//		Data:      prevHash.Bytes(),
+//	}
+//	vmenv.Reset(NewEVMTxContext(msg), statedb)
+//	statedb.AddAddressToAccessList(params.HistoryStorageAddress)
+//	_, _, _ = vmenv.Call(vm.AccountRef(msg.From), *msg.To, msg.Data, 30_000_000, common.U2560)
+//	statedb.Finalise(true)
+//}
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.
 // It returns the opaque request data returned by the contract.
-func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb vm.StateDB) []byte {
+func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
 	return processRequestsSystemCall(vmenv, statedb, 0x01, params.WithdrawalQueueAddress)
 }
 
-// ProcessConsolidationQueue calls the EIP-7251 consolidation queue contract.
-// It returns the opaque request data returned by the contract.
-func ProcessConsolidationQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
-	return processRequestsSystemCall(vmenv, statedb, 0x02, params.ConsolidationQueueAddress)
+// ProcessEmptyWithdrawalQueue return Empty Withdrawal Request Data
+func ProcessEmptyWithdrawalQueue() []byte {
+	requestData := make([]byte, 1)
+	requestData[0] = 0x01
+	return requestData
 }
 
-func processRequestsSystemCall(vmenv *vm.EVM, statedb vm.StateDB, requestType byte, addr common.Address) []byte {
+func processRequestsSystemCall(vmenv *vm.EVM, statedb *state.StateDB, requestType byte, addr common.Address) []byte {
 	if tracer := vmenv.Config.Tracer; tracer != nil {
 		if tracer.OnSystemCallStart != nil {
 			tracer.OnSystemCallStart()

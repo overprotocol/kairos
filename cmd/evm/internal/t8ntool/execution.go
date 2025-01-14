@@ -205,14 +205,15 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		evm := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vmConfig)
 		core.ProcessBeaconBlockRoot(*beaconRoot, evm, statedb)
 	}
-	if pre.Env.BlockHashes != nil && chainConfig.IsPrague(new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp) {
-		var (
-			prevNumber = pre.Env.Number - 1
-			prevHash   = pre.Env.BlockHashes[math.HexOrDecimal64(prevNumber)]
-			evm        = vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vmConfig)
-		)
-		core.ProcessParentBlockHash(prevHash, evm, statedb)
-	}
+	// Disable EIP-2935
+	//if pre.Env.BlockHashes != nil && chainConfig.IsPrague(new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp) {
+	//	var (
+	//		prevNumber = pre.Env.Number - 1
+	//		prevHash   = pre.Env.BlockHashes[math.HexOrDecimal64(prevNumber)]
+	//		evm        = vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vmConfig)
+	//	)
+	//	//core.ProcessParentBlockHash(prevHash, evm, statedb)
+	//}
 	for i := 0; txIt.Next(); i++ {
 		tx, err := txIt.Tx()
 		if err != nil {
@@ -375,12 +376,12 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not parse requests logs: %v", err))
 		}
 		requests = append(requests, depositRequests)
-		// create EVM for system calls
-		vmenv := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+		// Disable EIP-7002 withdrawals
+		requests = append(requests, core.ProcessEmptyWithdrawalQueue())
+		//create EVM for system calls
+		//vmenv := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
 		// EIP-7002 withdrawals
-		requests = append(requests, core.ProcessWithdrawalQueue(vmenv, statedb))
-		// EIP-7251 consolidations
-		requests = append(requests, core.ProcessConsolidationQueue(vmenv, statedb))
+		//requests = append(requests, core.ProcessWithdrawalQueue(vmenv, statedb))
 	}
 
 	// Commit block

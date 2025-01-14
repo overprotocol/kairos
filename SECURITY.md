@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-Please see [Releases](https://github.com/ethereum/go-ethereum/releases). We recommend using the [most recently released version](https://github.com/ethereum/go-ethereum/releases/latest).
+Please see [Releases](https://github.com/overprotocol/kairos/releases). We recommend using the [most recently released version](https://github.com/overprotocol/kairos/releases/latest).
 
 ## Audit reports
 
-Audit reports are published in the `docs` folder: https://github.com/ethereum/go-ethereum/tree/master/docs/audits 
+Audit reports are published in the `docs` folder: https://github.com/overprotocol/kairos/tree/master/docs/audits 
 
 | Date | Report Link |
 | ------- | ----------- |

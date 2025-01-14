@@ -214,6 +214,9 @@ func (n *autodisc) DeleteMapping(protocol string, extport, intport int) error {
 
 func (n *autodisc) ExternalIP() (net.IP, error) {
 	if err := n.wait(); err != nil {
+		n.mu.Lock()
+		n.found = nil
+		n.mu.Unlock()
 		return nil, err
 	}
 	return n.found.ExternalIP()
@@ -230,11 +233,11 @@ func (n *autodisc) String() string {
 
 // wait blocks until auto-discovery has been performed.
 func (n *autodisc) wait() error {
-	n.once.Do(func() {
-		n.mu.Lock()
+	n.mu.Lock()
+	if n.found == nil {
 		n.found = n.doit()
-		n.mu.Unlock()
-	})
+	}
+	n.mu.Unlock()
 	if n.found == nil {
 		return fmt.Errorf("no %s router discovered", n.what)
 	}

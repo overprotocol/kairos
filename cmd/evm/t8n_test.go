@@ -263,26 +263,10 @@ func TestT8n(t *testing.T) {
 			output: t8nOutput{alloc: true, result: true},
 			expOut: "exp.json",
 		},
-		{ // Cancun tests
+		{ // More cancun tests
 			base: "./testdata/28",
 			input: t8nInput{
-				"alloc.json", "txs.rlp", "env.json", "Cancun", "",
-			},
-			output: t8nOutput{alloc: true, result: true},
-			expOut: "exp.json",
-		},
-		{ // More cancun tests
-			base: "./testdata/29",
-			input: t8nInput{
 				"alloc.json", "txs.json", "env.json", "Cancun", "",
-			},
-			output: t8nOutput{alloc: true, result: true},
-			expOut: "exp.json",
-		},
-		{ // More cancun test, plus example of rlp-transaction that cannot be decoded properly
-			base: "./testdata/30",
-			input: t8nInput{
-				"alloc.json", "txs_more.rlp", "env.json", "Cancun", "",
 			},
 			output: t8nOutput{alloc: true, result: true},
 			expOut: "exp.json",

@@ -72,13 +72,13 @@ var genesis = &core.Genesis{
 	},
 	ExtraData: []byte("test genesis"),
 	Timestamp: 9000,
-	BaseFee:   big.NewInt(params.InitialBaseFee),
+	BaseFee:   big.NewInt(params.MinimumBaseFee),
 }
 
 var testTx1 = types.MustSignNewTx(testKey, types.LatestSigner(genesis.Config), &types.LegacyTx{
 	Nonce:    0,
 	Value:    big.NewInt(12),
-	GasPrice: big.NewInt(params.InitialBaseFee),
+	GasPrice: big.NewInt(params.MinimumBaseFee),
 	Gas:      params.TxGas,
 	To:       &common.Address{2},
 })
@@ -86,7 +86,7 @@ var testTx1 = types.MustSignNewTx(testKey, types.LatestSigner(genesis.Config), &
 var testTx2 = types.MustSignNewTx(testKey, types.LatestSigner(genesis.Config), &types.LegacyTx{
 	Nonce:    1,
 	Value:    big.NewInt(8),
-	GasPrice: big.NewInt(params.InitialBaseFee),
+	GasPrice: big.NewInt(params.MinimumBaseFee),
 	Gas:      params.TxGas,
 	To:       &common.Address{2},
 })
@@ -390,7 +390,7 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gasPrice.Cmp(big.NewInt(1000000000)) != 0 {
+	if gasPrice.Cmp(big.NewInt(100001000000)) != 0 {
 		t.Fatalf("unexpected gas price: %v", gasPrice)
 	}
 
@@ -399,7 +399,7 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if gasTipCap.Cmp(big.NewInt(234375000)) != 0 {
+	if gasTipCap.Cmp(big.NewInt(1000000)) != 0 {
 		t.Fatalf("unexpected gas tip cap: %v", gasTipCap)
 	}
 
@@ -412,13 +412,13 @@ func testStatusFunctions(t *testing.T, client *rpc.Client) {
 		OldestBlock: big.NewInt(2),
 		Reward: [][]*big.Int{
 			{
-				big.NewInt(234375000),
-				big.NewInt(234375000),
+				new(big.Int).SetBits(make([]big.Word, 0, 1)),
+				new(big.Int).SetBits(make([]big.Word, 0, 1)),
 			},
 		},
 		BaseFee: []*big.Int{
-			big.NewInt(765625000),
-			big.NewInt(671627818),
+			big.NewInt(100000000000),
+			big.NewInt(100000000000),
 		},
 		GasUsedRatio: []float64{0.008912678667376286},
 	}
@@ -641,7 +641,7 @@ func sendTransaction(ec *ethclient.Client) error {
 		To:       &common.Address{2},
 		Value:    big.NewInt(1),
 		Gas:      22000,
-		GasPrice: big.NewInt(params.InitialBaseFee),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 	})
 	if err != nil {
 		return err

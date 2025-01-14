@@ -19,6 +19,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 	gomath "math"
 	"math/big"
 	"math/rand"
@@ -58,7 +59,7 @@ var (
 func newCanonical(engine consensus.Engine, n int, full bool, scheme string) (ethdb.Database, *Genesis, *BlockChain, error) {
 	var (
 		genesis = &Genesis{
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 			Config:  params.AllEthashProtocolChanges,
 		}
 	)
@@ -737,11 +738,11 @@ func testFastVsFullChains(t *testing.T, scheme string) {
 	var (
 		key, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address = crypto.PubkeyToAddress(key.PublicKey)
-		funds   = big.NewInt(1000000000000000)
+		funds   = big.NewInt(2000000000000000000)
 		gspec   = &Genesis{
 			Config:  params.TestChainConfig,
 			Alloc:   types.GenesisAlloc{address: {Balance: funds}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		signer = types.LatestSigner(gspec.Config)
 	)
@@ -874,7 +875,7 @@ func testLightVsFastVsFullChainHeads(t *testing.T, scheme string) {
 		gspec   = &Genesis{
 			Config:  params.TestChainConfig,
 			Alloc:   types.GenesisAlloc{address: {Balance: funds}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 	)
 	height := uint64(64)
@@ -994,9 +995,9 @@ func testChainTxReorgs(t *testing.T, scheme string) {
 			Config:   params.TestChainConfig,
 			GasLimit: 3141592,
 			Alloc: types.GenesisAlloc{
-				addr1: {Balance: big.NewInt(1000000000000000)},
-				addr2: {Balance: big.NewInt(1000000000000000)},
-				addr3: {Balance: big.NewInt(1000000000000000)},
+				addr1: {Balance: big.NewInt(2000000000000000000)},
+				addr2: {Balance: big.NewInt(2000000000000000000)},
+				addr3: {Balance: big.NewInt(2000000000000000000)},
 			},
 		}
 		signer = types.LatestSigner(gspec.Config)
@@ -1005,8 +1006,8 @@ func testChainTxReorgs(t *testing.T, scheme string) {
 	// Create two transactions shared between the chains:
 	//  - postponed: transaction included at a later block in the forked chain
 	//  - swapped: transaction included at the same block number in the forked chain
-	postponed, _ := types.SignTx(types.NewTransaction(0, addr1, big.NewInt(1000), params.TxGas, big.NewInt(params.InitialBaseFee), nil), signer, key1)
-	swapped, _ := types.SignTx(types.NewTransaction(1, addr1, big.NewInt(1000), params.TxGas, big.NewInt(params.InitialBaseFee), nil), signer, key1)
+	postponed, _ := types.SignTx(types.NewTransaction(0, addr1, big.NewInt(1000), params.TxGas, big.NewInt(params.MinimumBaseFee), nil), signer, key1)
+	swapped, _ := types.SignTx(types.NewTransaction(1, addr1, big.NewInt(1000), params.TxGas, big.NewInt(params.MinimumBaseFee), nil), signer, key1)
 
 	// Create two transactions that will be dropped by the forked chain:
 	//  - pastDrop: transaction dropped retroactively from a past block
@@ -1108,7 +1109,7 @@ func testLogReorgs(t *testing.T, scheme string) {
 
 		// this code generates a log
 		code   = common.Hex2Bytes("60606040525b7f24ec1d3ff24c2f6ff210738839dbc339cd45a5294d85c79361016243157aae7b60405180905060405180910390a15b600a8060416000396000f360606040526008565b00")
-		gspec  = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(10000000000000000)}}}
+		gspec  = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(100000000000000000)}}}
 		signer = types.LatestSigner(gspec.Config)
 	)
 
@@ -1165,7 +1166,7 @@ func testLogRebirth(t *testing.T, scheme string) {
 	var (
 		key1, _       = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1         = crypto.PubkeyToAddress(key1.PublicKey)
-		gspec         = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(10000000000000000)}}}
+		gspec         = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(200000000000000000)}}}
 		signer        = types.LatestSigner(gspec.Config)
 		engine        = ethash.NewFaker()
 		blockchain, _ = NewBlockChain(rawdb.NewMemoryDatabase(), DefaultCacheConfigWithScheme(scheme), gspec, nil, engine, vm.Config{}, nil)
@@ -1247,7 +1248,7 @@ func testSideLogRebirth(t *testing.T, scheme string) {
 	var (
 		key1, _       = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1         = crypto.PubkeyToAddress(key1.PublicKey)
-		gspec         = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(10000000000000000)}}}
+		gspec         = &Genesis{Config: params.TestChainConfig, Alloc: types.GenesisAlloc{addr1: {Balance: big.NewInt(100000000000000000)}}}
 		signer        = types.LatestSigner(gspec.Config)
 		blockchain, _ = NewBlockChain(rawdb.NewMemoryDatabase(), DefaultCacheConfigWithScheme(scheme), gspec, nil, ethash.NewFaker(), vm.Config{}, nil)
 	)
@@ -1583,7 +1584,7 @@ func testBlockchainHeaderchainReorgConsistency(t *testing.T, scheme string) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	genDb, blocks, _ := GenerateChainWithGenesis(genesis, engine, 64, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{1}) })
 
@@ -1628,7 +1629,7 @@ func TestTrieForkGC(t *testing.T) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	genDb, blocks, _ := GenerateChainWithGenesis(genesis, engine, 2*state.TriesInMemory, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{1}) })
 
@@ -1679,7 +1680,7 @@ func testLargeReorgTrieGC(t *testing.T, scheme string) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	genDb, shared, _ := GenerateChainWithGenesis(genesis, engine, 64, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{1}) })
 	original, _ := GenerateChain(genesis.Config, shared[len(shared)-1], engine, genDb, 2*state.TriesInMemory, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{2}) })
@@ -1883,7 +1884,7 @@ func testLowDiffLongChain(t *testing.T, scheme string) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	// We must use a pretty long chain to ensure that the fork doesn't overtake us
 	// until after at least 128 blocks post tip
@@ -1951,7 +1952,7 @@ func testSideImport(t *testing.T, numCanonBlocksInSidechain, blocksBetweenCommon
 		gspec = &Genesis{
 			Config:  &chainConfig,
 			Alloc:   types.GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		signer     = types.LatestSigner(gspec.Config)
 		mergeBlock = gomath.MaxInt32
@@ -1971,7 +1972,7 @@ func testSideImport(t *testing.T, numCanonBlocksInSidechain, blocksBetweenCommon
 		gspec.Config.TerminalTotalDifficulty = big.NewInt(0)
 	}
 	genDb, blocks, _ := GenerateChainWithGenesis(gspec, engine, 2*state.TriesInMemory, func(i int, gen *BlockGen) {
-		tx, err := types.SignTx(types.NewTransaction(nonce, common.HexToAddress("deadbeef"), big.NewInt(100), 21000, big.NewInt(int64(i+1)*params.GWei), nil), signer, key)
+		tx, err := types.SignTx(types.NewTransaction(nonce, common.HexToAddress("deadbeef"), big.NewInt(100), 21000, big.NewInt(params.MinimumBaseFee), nil), signer, key)
 		if err != nil {
 			t.Fatalf("failed to create tx: %v", err)
 		}
@@ -2092,7 +2093,7 @@ func testInsertKnownChainData(t *testing.T, typ string, scheme string) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	genDb, blocks, receipts := GenerateChainWithGenesis(genesis, engine, 32, func(i int, b *BlockGen) { b.SetCoinbase(common.Address{1}) })
 
@@ -2233,7 +2234,7 @@ func testInsertKnownChainDataWithMerging(t *testing.T, typ string, mergeHeight i
 	chainConfig := *params.TestChainConfig
 	var (
 		genesis = &Genesis{
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 			Config:  &chainConfig,
 		}
 		engine     = beacon.New(ethash.NewFaker())
@@ -2389,7 +2390,7 @@ func getLongAndShortChains(scheme string) (*BlockChain, []*types.Block, []*types
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	// Generate and import the canonical chain,
 	// Offset the time, to keep the difficulty low
@@ -2654,7 +2655,7 @@ func testSideImportPrunedBlocks(t *testing.T, scheme string) {
 	engine := ethash.NewFaker()
 	genesis := &Genesis{
 		Config:  params.TestChainConfig,
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 	}
 	// Generate and import the canonical chain
 	_, blocks, _ := GenerateChainWithGenesis(genesis, engine, 2*state.TriesInMemory, nil)
@@ -2802,7 +2803,7 @@ func testDeleteRecreateSlots(t *testing.T, scheme string) {
 		// A sender who makes transactions, has some funds
 		key, _    = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address   = crypto.PubkeyToAddress(key.PublicKey)
-		funds     = big.NewInt(1000000000000000)
+		funds     = big.NewInt(100000000000000000)
 		bb        = common.HexToAddress("0x000000000000000000000000000000000000bbbb")
 		aaStorage = make(map[common.Hash]common.Hash)          // Initial storage in AA
 		aaCode    = []byte{byte(vm.PC), byte(vm.SELFDESTRUCT)} // Code for AA (simple selfdestruct)
@@ -2930,7 +2931,7 @@ func testDeleteRecreateAccount(t *testing.T, scheme string) {
 		// A sender who makes transactions, has some funds
 		key, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address = crypto.PubkeyToAddress(key.PublicKey)
-		funds   = big.NewInt(1000000000000000)
+		funds   = big.NewInt(1000000000000000000)
 
 		aa        = common.HexToAddress("0x7217d81b76bdd8707601e959454e3d776aee5f43")
 		aaStorage = make(map[common.Hash]common.Hash)          // Initial storage in AA
@@ -3008,7 +3009,7 @@ func testDeleteRecreateSlotsAcrossManyBlocks(t *testing.T, scheme string) {
 		// A sender who makes transactions, has some funds
 		key, _    = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address   = crypto.PubkeyToAddress(key.PublicKey)
-		funds     = big.NewInt(1000000000000000)
+		funds     = big.NewInt(1000000000000000000)
 		bb        = common.HexToAddress("0x000000000000000000000000000000000000bbbb")
 		aaStorage = make(map[common.Hash]common.Hash)          // Initial storage in AA
 		aaCode    = []byte{byte(vm.PC), byte(vm.SELFDESTRUCT)} // Code for AA (simple selfdestruct)
@@ -3214,7 +3215,7 @@ func testInitThenFailCreateContract(t *testing.T, scheme string) {
 		// A sender who makes transactions, has some funds
 		key, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address = crypto.PubkeyToAddress(key.PublicKey)
-		funds   = big.NewInt(1000000000000000)
+		funds   = big.NewInt(1000000000000000000)
 		bb      = common.HexToAddress("0x000000000000000000000000000000000000bbbb")
 	)
 
@@ -3330,7 +3331,7 @@ func testEIP2718Transition(t *testing.T, scheme string) {
 		// A sender who makes transactions, has some funds
 		key, _  = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address = crypto.PubkeyToAddress(key.PublicKey)
-		funds   = big.NewInt(1000000000000000)
+		funds   = big.NewInt(10000000000000000)
 		gspec   = &Genesis{
 			Config: params.TestChainConfig,
 			Alloc: types.GenesisAlloc{
@@ -3414,7 +3415,7 @@ func testEIP1559Transition(t *testing.T, scheme string) {
 		key2, _ = crypto.HexToECDSA("8a1f9a8f95be41cd7ccb6168179afb4504aefe388d1e14474d32c45c72ce7b7a")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
 		addr2   = crypto.PubkeyToAddress(key2.PublicKey)
-		funds   = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		funds   = new(big.Int).Mul(common.Big256, big.NewInt(params.Ether))
 		config  = *params.AllEthashProtocolChanges
 		gspec   = &Genesis{
 			Config: &config,
@@ -3454,7 +3455,7 @@ func testEIP1559Transition(t *testing.T, scheme string) {
 			Nonce:      0,
 			To:         &aa,
 			Gas:        30000,
-			GasFeeCap:  newGwei(5),
+			GasFeeCap:  newGwei(100000),
 			GasTipCap:  big.NewInt(2),
 			AccessList: accesses,
 			Data:       []byte{},
@@ -3509,7 +3510,7 @@ func testEIP1559Transition(t *testing.T, scheme string) {
 			Nonce:    0,
 			To:       &aa,
 			Gas:      30000,
-			GasPrice: newGwei(5),
+			GasPrice: newGwei(500),
 		}
 		tx := types.NewTx(txdata)
 		tx, _ = types.SignTx(tx, signer, key2)
@@ -3560,7 +3561,7 @@ func testSetCanonical(t *testing.T, scheme string) {
 		gspec   = &Genesis{
 			Config:  params.TestChainConfig,
 			Alloc:   types.GenesisAlloc{address: {Balance: funds}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		signer      = types.LatestSigner(gspec.Config)
 		engine      = ethash.NewFaker()
@@ -3678,7 +3679,7 @@ func testCanonicalHashMarker(t *testing.T, scheme string) {
 			gspec = &Genesis{
 				Config:  params.TestChainConfig,
 				Alloc:   types.GenesisAlloc{},
-				BaseFee: big.NewInt(params.InitialBaseFee),
+				BaseFee: big.NewInt(params.MinimumBaseFee),
 			}
 			engine = ethash.NewFaker()
 		)
@@ -3768,7 +3769,7 @@ func testCreateThenDelete(t *testing.T, config *params.ChainConfig) {
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
 		destAddress = crypto.CreateAddress(address, 0)
-		funds       = big.NewInt(1000000000000000)
+		funds       = big.NewInt(100000000000000000)
 	)
 
 	// runtime code is 	0x60ffff : PUSH1 0xFF SELFDESTRUCT, a.k.a SELFDESTRUCT(0xFF)
@@ -3842,7 +3843,7 @@ func TestDeleteThenCreate(t *testing.T) {
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
 		factoryAddr = crypto.CreateAddress(address, 0)
-		funds       = big.NewInt(1000000000000000)
+		funds       = big.NewInt(100000000000000000)
 	)
 	/*
 		contract Factory {
@@ -3954,7 +3955,7 @@ func TestTransientStorageReset(t *testing.T) {
 		key, _      = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		address     = crypto.PubkeyToAddress(key.PublicKey)
 		destAddress = crypto.CreateAddress(address, 0)
-		funds       = big.NewInt(1000000000000000)
+		funds       = big.NewInt(100000000000000000)
 		vmConfig    = vm.Config{
 			ExtraEips: []int{1153}, // Enable transient storage EIP
 		}
@@ -4052,7 +4053,7 @@ func TestEIP3651(t *testing.T) {
 		key2, _ = crypto.HexToECDSA("8a1f9a8f95be41cd7ccb6168179afb4504aefe388d1e14474d32c45c72ce7b7a")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
 		addr2   = crypto.PubkeyToAddress(key2.PublicKey)
-		funds   = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		funds   = new(big.Int).Mul(common.Big256, big.NewInt(params.Ether))
 		config  = *params.AllEthashProtocolChanges
 		gspec   = &Genesis{
 			Config: &config,
@@ -4104,7 +4105,7 @@ func TestEIP3651(t *testing.T) {
 			Nonce:      0,
 			To:         &bb,
 			Gas:        500000,
-			GasFeeCap:  newGwei(5),
+			GasFeeCap:  newGwei(100000),
 			GasTipCap:  big.NewInt(2),
 			AccessList: nil,
 			Data:       []byte{},
@@ -4166,10 +4167,9 @@ func TestPragueRequests(t *testing.T) {
 	gspec := &Genesis{
 		Config: &config,
 		Alloc: types.GenesisAlloc{
-			addr1:                            {Balance: big.NewInt(9999900000000000)},
-			config.DepositContractAddress:    {Code: depositsGeneratorCode},
-			params.WithdrawalQueueAddress:    {Code: params.WithdrawalQueueCode},
-			params.ConsolidationQueueAddress: {Code: params.ConsolidationQueueCode},
+			addr1:                         {Balance: big.NewInt(999990000000000000)},
+			config.DepositContractAddress: {Code: depositsGeneratorCode},
+			params.WithdrawalQueueAddress: {Code: params.WithdrawalQueueCode},
 		},
 	}
 
@@ -4180,7 +4180,7 @@ func TestPragueRequests(t *testing.T) {
 			Nonce:     0,
 			To:        &config.DepositContractAddress,
 			Gas:       500_000,
-			GasFeeCap: newGwei(5),
+			GasFeeCap: newGwei(1000),
 			GasTipCap: big.NewInt(2),
 		})
 		b.AddTx(depositTx)
@@ -4191,25 +4191,12 @@ func TestPragueRequests(t *testing.T) {
 			Nonce:     1,
 			To:        &params.WithdrawalQueueAddress,
 			Gas:       500_000,
-			GasFeeCap: newGwei(5),
+			GasFeeCap: newGwei(1000),
 			GasTipCap: big.NewInt(2),
 			Value:     newGwei(1),
 			Data:      common.FromHex("b917cfdc0d25b72d55cf94db328e1629b7f4fde2c30cdacf873b664416f76a0c7f7cc50c9f72a3cb84be88144cde91250000000000000d80"),
 		})
 		b.AddTx(withdrawalTx)
-
-		// create consolidation request
-		consolidationTx := types.MustSignNewTx(key1, signer, &types.DynamicFeeTx{
-			ChainID:   gspec.Config.ChainID,
-			Nonce:     2,
-			To:        &params.ConsolidationQueueAddress,
-			Gas:       500_000,
-			GasFeeCap: newGwei(5),
-			GasTipCap: big.NewInt(2),
-			Value:     newGwei(1),
-			Data:      common.FromHex("b917cfdc0d25b72d55cf94db328e1629b7f4fde2c30cdacf873b664416f76a0c7f7cc50c9f72a3cb84be88144cde9125b9812f7d0b1f2f969b52bbb2d316b0c2fa7c9dba85c428c5e6c27766bcc4b0c6e874702ff1eb1c7024b08524a9771601"),
-		})
-		b.AddTx(consolidationTx)
 	})
 
 	// Check block has the correct requests hash.
@@ -4217,7 +4204,7 @@ func TestPragueRequests(t *testing.T) {
 	if rh == nil {
 		t.Fatal("block has nil requests hash")
 	}
-	expectedRequestsHash := common.HexToHash("0x06ffb72b9f0823510b128bca6cd4f96f59b745de6791e9fc350b596e7605101e")
+	expectedRequestsHash := common.HexToHash("0x9c67e2808642669b1fd263c6ee71802ed0a8f75ed9a21ef26acba267eb369244")
 	if *rh != expectedRequestsHash {
 		t.Fatalf("block has wrong requestsHash %v, want %v", *rh, expectedRequestsHash)
 	}

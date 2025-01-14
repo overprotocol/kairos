@@ -34,19 +34,19 @@ func TestTxIndexer(t *testing.T) {
 	var (
 		testBankKey, _  = crypto.GenerateKey()
 		testBankAddress = crypto.PubkeyToAddress(testBankKey.PublicKey)
-		testBankFunds   = big.NewInt(1000000000000000000)
+		testBankFunds   = new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(100))
 
 		gspec = &Genesis{
 			Config:  params.TestChainConfig,
 			Alloc:   types.GenesisAlloc{testBankAddress: {Balance: testBankFunds}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		engine    = ethash.NewFaker()
 		nonce     = uint64(0)
 		chainHead = uint64(128)
 	)
 	_, blocks, receipts := GenerateChainWithGenesis(gspec, engine, int(chainHead), func(i int, gen *BlockGen) {
-		tx, _ := types.SignTx(types.NewTransaction(nonce, common.HexToAddress("0xdeadbeef"), big.NewInt(1000), params.TxGas, big.NewInt(10*params.InitialBaseFee), nil), types.HomesteadSigner{}, testBankKey)
+		tx, _ := types.SignTx(types.NewTransaction(nonce, common.HexToAddress("0xdeadbeef"), big.NewInt(1000), params.TxGas, big.NewInt(10*params.MinimumBaseFee), nil), types.HomesteadSigner{}, testBankKey)
 		gen.AddTx(tx)
 		nonce += 1
 	})

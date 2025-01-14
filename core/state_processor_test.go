@@ -18,7 +18,6 @@ package core
 
 import (
 	"crypto/ecdsa"
-	"encoding/binary"
 	"math"
 	"math/big"
 	"testing"
@@ -30,14 +29,11 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/triedb"
-	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
@@ -122,11 +118,11 @@ func TestStateProcessorErrors(t *testing.T) {
 				Config: config,
 				Alloc: types.GenesisAlloc{
 					common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7"): types.Account{
-						Balance: big.NewInt(1000000000000000000), // 1 ether
+						Balance: new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(100)), // 100 ether
 						Nonce:   0,
 					},
 					common.HexToAddress("0xfd0810DD14796680f72adf1a371963d0745BCc64"): types.Account{
-						Balance: big.NewInt(1000000000000000000), // 1 ether
+						Balance: new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(100)), // 100 ether
 						Nonce:   math.MaxUint64,
 					},
 				},
@@ -145,40 +141,40 @@ func TestStateProcessorErrors(t *testing.T) {
 		}{
 			{ // ErrNonceTooLow
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(875000000), nil),
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(875000000), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(params.MinimumBaseFee), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 1 [0x0026256b3939ed97e2c4a6f3fce8ecf83bdcfa6d507c47838c308a1fb0436f62]: nonce too low: address 0x71562b71999873DB5b286dF957af199Ec94617F7, tx: 0 state: 1",
+				want: "could not apply tx 1 [0x5b6ce949af7f17c2354269122e63051f5de62fef2f29e66a3646803247c7d250]: nonce too low: address 0x71562b71999873DB5b286dF957af199Ec94617F7, tx: 0 state: 1",
 			},
 			{ // ErrNonceTooHigh
 				txs: []*types.Transaction{
-					makeTx(key1, 100, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(875000000), nil),
+					makeTx(key1, 100, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0xdebad714ca7f363bd0d8121c4518ad48fa469ca81b0a081be3d10c17460f751b]: nonce too high: address 0x71562b71999873DB5b286dF957af199Ec94617F7, tx: 100 state: 0",
+				want: "could not apply tx 0 [0x186cf35a467d5eef6a12d63752a232366407201edb04add4749f2f5ad54c8ac2]: nonce too high: address 0x71562b71999873DB5b286dF957af199Ec94617F7, tx: 100 state: 0",
 			},
 			{ // ErrNonceMax
 				txs: []*types.Transaction{
-					makeTx(key2, math.MaxUint64, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(875000000), nil),
+					makeTx(key2, math.MaxUint64, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0x84ea18d60eb2bb3b040e3add0eb72f757727122cc257dd858c67cb6591a85986]: nonce has max value: address 0xfd0810DD14796680f72adf1a371963d0745BCc64, nonce: 18446744073709551615",
+				want: "could not apply tx 0 [0xdbdc93599190f529fb59e01d7213f9a952067c816396425bf21c637575dade3a]: nonce has max value: address 0xfd0810DD14796680f72adf1a371963d0745BCc64, nonce: 18446744073709551615",
 			},
 			{ // ErrGasLimitReached
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), 21000000, big.NewInt(875000000), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), 21000000, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0xbd49d8dadfd47fb846986695f7d4da3f7b2c48c8da82dbc211a26eb124883de9]: gas limit reached",
+				want: "could not apply tx 0 [0xca3306098214d7c4515667ae85dd206e12150097489fa30da659dad30621a6c0]: gas limit reached",
 			},
 			{ // ErrInsufficientFundsForTransfer
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(1000000000000000000), params.TxGas, big.NewInt(875000000), nil),
+					makeTx(key1, 0, common.Address{}, new(big.Int).Mul(big.NewInt(1000000000000000000), big.NewInt(100)), params.TxGas, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0x98c796b470f7fcab40aaef5c965a602b0238e1034cce6fb73823042dd0638d74]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 1000000000000000000 want 1000018375000000000",
+				want: "could not apply tx 0 [0x72219729bbe7aa5a27213d89d77b3463d01ae52ff42caf74f252dd1f463362d9]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 100000000000000000000 want 100002100000000000000",
 			},
 			{ // ErrInsufficientFunds
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(900000000000000000), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas, new(big.Int).Mul(big.NewInt(900000000000000000), big.NewInt(100)), nil),
 				},
-				want: "could not apply tx 0 [0x4a69690c4b0cd85e64d0d9ea06302455b01e10a83db964d60281739752003440]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 1000000000000000000 want 18900000000000000000000",
+				want: "could not apply tx 0 [0x8995d241b8a27d8f6fefa4c0158f129d266065b74e9a7960d07e39dcbe44eaeb]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 100000000000000000000 want 1890000000000000000000000",
 			},
 			// ErrGasUintOverflow
 			// One missing 'core' error is ErrGasUintOverflow: "gas uint64 overflow",
@@ -186,21 +182,21 @@ func TestStateProcessorErrors(t *testing.T) {
 			// multiplication len(data) +gas_per_byte overflows uint64. Not testable at the moment
 			{ // ErrIntrinsicGas
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas-1000, big.NewInt(875000000), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas-1000, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0xcf3b049a0b516cb4f9274b3e2a264359e2ba53b2fb64b7bda2c634d5c9d01fca]: intrinsic gas too low: have 20000, want 21000",
+				want: "could not apply tx 0 [0x502b3e087a0d8f13d4c25b25fb932b70e19f52f2b30bf0cbe8537cfb09d3106c]: intrinsic gas too low: have 20000, want 21000",
 			},
 			{ // ErrGasLimitReached
 				txs: []*types.Transaction{
-					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas*1000, big.NewInt(875000000), nil),
+					makeTx(key1, 0, common.Address{}, big.NewInt(0), params.TxGas*1000, big.NewInt(params.MinimumBaseFee), nil),
 				},
-				want: "could not apply tx 0 [0xbd49d8dadfd47fb846986695f7d4da3f7b2c48c8da82dbc211a26eb124883de9]: gas limit reached",
+				want: "could not apply tx 0 [0xca3306098214d7c4515667ae85dd206e12150097489fa30da659dad30621a6c0]: gas limit reached",
 			},
 			{ // ErrFeeCapTooLow
 				txs: []*types.Transaction{
 					mkDynamicTx(0, common.Address{}, params.TxGas, big.NewInt(0), big.NewInt(0)),
 				},
-				want: "could not apply tx 0 [0xc4ab868fef0c82ae0387b742aee87907f2d0fc528fc6ea0a021459fb0fc4a4a8]: max fee per gas less than block base fee: address 0x71562b71999873DB5b286dF957af199Ec94617F7, maxFeePerGas: 0, baseFee: 875000000",
+				want: "could not apply tx 0 [0xc4ab868fef0c82ae0387b742aee87907f2d0fc528fc6ea0a021459fb0fc4a4a8]: max fee per gas less than block base fee: address 0x71562b71999873DB5b286dF957af199Ec94617F7, maxFeePerGas: 0, baseFee: 100000000000",
 			},
 			{ // ErrTipVeryHigh
 				txs: []*types.Transaction{
@@ -227,9 +223,9 @@ func TestStateProcessorErrors(t *testing.T) {
 				// This test is designed to have the effective cost be covered by the balance, but
 				// the extended requirement on FeeCap*gas < balance to fail
 				txs: []*types.Transaction{
-					mkDynamicTx(0, common.Address{}, params.TxGas, big.NewInt(1), big.NewInt(50000000000000)),
+					mkDynamicTx(0, common.Address{}, params.TxGas, big.NewInt(1), new(big.Int).Mul(big.NewInt(50000000000000), big.NewInt(100))),
 				},
-				want: "could not apply tx 0 [0x413603cd096a87f41b1660d3ed3e27d62e1da78eac138961c0a1314ed43bd129]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 1000000000000000000 want 1050000000000000000",
+				want: "could not apply tx 0 [0xedb3f1e923bc82b91a57c402be8ff34787bf56b13e4b1e85738999a8869cc161]: insufficient funds for gas * price + value: address 0x71562b71999873DB5b286dF957af199Ec94617F7 have 100000000000000000000 want 105000000000000000000",
 			},
 			{ // Another ErrInsufficientFunds, this one to ensure that feecap/tip of max u256 is allowed
 				txs: []*types.Transaction{
@@ -239,21 +235,21 @@ func TestStateProcessorErrors(t *testing.T) {
 			},
 			{ // ErrMaxInitCodeSizeExceeded
 				txs: []*types.Transaction{
-					mkDynamicCreationTx(0, 500000, common.Big0, big.NewInt(params.InitialBaseFee), tooBigInitCode[:]),
+					mkDynamicCreationTx(0, 500000, common.Big0, big.NewInt(params.MinimumBaseFee), tooBigInitCode[:]),
 				},
-				want: "could not apply tx 0 [0xd491405f06c92d118dd3208376fcee18a57c54bc52063ee4a26b1cf296857c25]: max initcode size exceeded: code size 49153 limit 49152",
+				want: "could not apply tx 0 [0xceebc8e3213101763afd933f96cb1089539cd3bc61d5af56698664745908dfe9]: max initcode size exceeded: code size 49153 limit 49152",
 			},
 			{ // ErrIntrinsicGas: Not enough gas to cover init code
 				txs: []*types.Transaction{
-					mkDynamicCreationTx(0, 54299, common.Big0, big.NewInt(params.InitialBaseFee), make([]byte, 320)),
+					mkDynamicCreationTx(0, 54299, common.Big0, big.NewInt(params.MinimumBaseFee), make([]byte, 320)),
 				},
-				want: "could not apply tx 0 [0xfd49536a9b323769d8472fcb3ebb3689b707a349379baee3e2ee3fe7baae06a1]: intrinsic gas too low: have 54299, want 54300",
+				want: "could not apply tx 0 [0x6a9a238084ed53ba908c23c5feebd25bf9e4622f910d39793ac2c8a584a3e000]: intrinsic gas too low: have 54299, want 54300",
 			},
 			{ // ErrBlobFeeCapTooLow
 				txs: []*types.Transaction{
 					mkBlobTx(0, common.Address{}, params.TxGas, big.NewInt(1), big.NewInt(1), big.NewInt(0), []common.Hash{(common.Hash{1})}),
 				},
-				want: "could not apply tx 0 [0x6c11015985ce82db691d7b2d017acda296db88b811c3c60dc71449c76256c716]: max fee per gas less than block base fee: address 0x71562b71999873DB5b286dF957af199Ec94617F7, maxFeePerGas: 1, baseFee: 875000000",
+				want: "could not apply tx 0 [0x6c11015985ce82db691d7b2d017acda296db88b811c3c60dc71449c76256c716]: max fee per gas less than block base fee: address 0x71562b71999873DB5b286dF957af199Ec94617F7, maxFeePerGas: 1, baseFee: 100000000000",
 			},
 		} {
 			block := GenerateBadBlock(gspec.ToBlock(), beacon.New(ethash.NewFaker()), tt.txs, gspec.Config, false)
@@ -440,22 +436,25 @@ var (
 // func TestProcessVerkle(t *testing.T) {
 // 	var (
 // 		config = &params.ChainConfig{
-// 			ChainID:                 big.NewInt(1),
-// 			HomesteadBlock:          big.NewInt(0),
-// 			EIP150Block:             big.NewInt(0),
-// 			EIP155Block:             big.NewInt(0),
-// 			EIP158Block:             big.NewInt(0),
-// 			ByzantiumBlock:          big.NewInt(0),
-// 			ConstantinopleBlock:     big.NewInt(0),
-// 			PetersburgBlock:         big.NewInt(0),
-// 			IstanbulBlock:           big.NewInt(0),
-// 			MuirGlacierBlock:        big.NewInt(0),
-// 			BerlinBlock:             big.NewInt(0),
-// 			LondonBlock:             big.NewInt(0),
-// 			Ethash:                  new(params.EthashConfig),
-// 			ShanghaiTime:            u64(0),
-// 			VerkleTime:              u64(0),
-// 			TerminalTotalDifficulty: common.Big0,
+// 			ChainID:                       big.NewInt(1),
+// 			HomesteadBlock:                big.NewInt(0),
+// 			EIP150Block:                   big.NewInt(0),
+// 			EIP155Block:                   big.NewInt(0),
+// 			EIP158Block:                   big.NewInt(0),
+// 			ByzantiumBlock:                big.NewInt(0),
+// 			ConstantinopleBlock:           big.NewInt(0),
+// 			PetersburgBlock:               big.NewInt(0),
+// 			IstanbulBlock:                 big.NewInt(0),
+// 			MuirGlacierBlock:              big.NewInt(0),
+// 			BerlinBlock:                   big.NewInt(0),
+// 			LondonBlock:                   big.NewInt(0),
+// 			Ethash:                        new(params.EthashConfig),
+// 			ShanghaiTime:                  u64(0),
+// 			VerkleTime:                    u64(0),
+// 			TerminalTotalDifficulty:       common.Big0,
+// 			TerminalTotalDifficultyPassed: true,
+// 			// TODO uncomment when proof generation is merged
+// 			// ProofInBlocks:                 true,
 // 		}
 // 		signer     = types.LatestSigner(config)
 // 		testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
@@ -465,7 +464,7 @@ var (
 // 			Config: config,
 // 			Alloc: GenesisAlloc{
 // 				coinbase: GenesisAccount{
-// 					Balance: big.NewInt(1000000000000000000), // 1 ether
+// 					Balance: big.NewInt(2000000000000000000), // 1 ether
 // 					Nonce:   0,
 // 				},
 // 			},
@@ -479,140 +478,141 @@ var (
 // 	blockchain, _ := NewBlockChain(bcdb, cacheConfig, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil)
 // 	defer blockchain.Stop()
 
-	txCost1 := params.TxGas
-	txCost2 := params.TxGas
-	contractCreationCost := intrinsicContractCreationGas +
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* creation with value */
-		739 /* execution costs */
-	codeWithExtCodeCopyGas := intrinsicCodeWithExtCodeCopyGas +
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (tx) */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (CREATE at pc=0x20) */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #1 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #2 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #3 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #4 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #5 */
-		params.WitnessChunkReadCost + /* SLOAD in constructor */
-		params.WitnessChunkWriteCost + /* SSTORE in constructor */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (CREATE at PC=0x121) */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #1 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #2 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #3 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #4 */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #5 */
-		params.WitnessChunkReadCost + /* SLOAD in constructor */
-		params.WitnessChunkWriteCost + /* SSTORE in constructor */
-		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash for tx creation */
-		15*(params.WitnessChunkReadCost+params.WitnessChunkWriteCost) + /* code chunks #0..#14 */
-		4844 /* execution costs */
-	blockGasUsagesExpected := []uint64{
-		txCost1*2 + txCost2,
-		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
-	}
-	_, chain, _, proofs, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 2, func(i int, gen *BlockGen) {
-		gen.SetPoS()
+// 	txCost1 := params.TxGas
+// 	txCost2 := params.TxGas
+// 	contractCreationCost := intrinsicContractCreationGas +
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* creation with value */
+// 		739 /* execution costs */
+// 	codeWithExtCodeCopyGas := intrinsicCodeWithExtCodeCopyGas +
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (tx) */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (CREATE at pc=0x20) */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #1 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #2 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #3 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #4 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #5 */
+// 		params.WitnessChunkReadCost + /* SLOAD in constructor */
+// 		params.WitnessChunkWriteCost + /* SSTORE in constructor */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (CREATE at PC=0x121) */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #1 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #2 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #3 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #4 */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #5 */
+// 		params.WitnessChunkReadCost + /* SLOAD in constructor */
+// 		params.WitnessChunkWriteCost + /* SSTORE in constructor */
+// 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash for tx creation */
+// 		15*(params.WitnessChunkReadCost+params.WitnessChunkWriteCost) + /* code chunks #0..#14 */
+// 		4844 /* execution costs */
+// 	blockGasUsagesExpected := []uint64{
+// 		txCost1*2 + txCost2,
+// 		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
+// 	}
+// 	_, chain, _, proofs, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 2, func(i int, gen *BlockGen) {
+// 		gen.SetPoS()
 
-		// TODO need to check that the tx cost provided is the exact amount used (no remaining left-over)
-		tx, _ := types.SignTx(types.NewTransaction(uint64(i)*3, common.Address{byte(i), 2, 3}, big.NewInt(999), txCost1, big.NewInt(875000000), nil), signer, testKey)
-		gen.AddTx(tx)
-		tx, _ = types.SignTx(types.NewTransaction(uint64(i)*3+1, common.Address{}, big.NewInt(999), txCost1, big.NewInt(875000000), nil), signer, testKey)
-		gen.AddTx(tx)
-		tx, _ = types.SignTx(types.NewTransaction(uint64(i)*3+2, common.Address{}, big.NewInt(0), txCost2, big.NewInt(875000000), nil), signer, testKey)
-		gen.AddTx(tx)
+// 		// TODO need to check that the tx cost provided is the exact amount used (no remaining left-over)
+// 		tx, _ := types.SignTx(types.NewTransaction(uint64(i)*3, common.Address{byte(i), 2, 3}, big.NewInt(999), txCost1, big.NewInt(params.MinimumBaseFee), nil), signer, testKey)
+// 		gen.AddTx(tx)
+// 		tx, _ = types.SignTx(types.NewTransaction(uint64(i)*3+1, common.Address{}, big.NewInt(999), txCost1, big.NewInt(params.MinimumBaseFee), nil), signer, testKey)
+// 		gen.AddTx(tx)
+// 		tx, _ = types.SignTx(types.NewTransaction(uint64(i)*3+2, common.Address{}, big.NewInt(0), txCost2, big.NewInt(params.MinimumBaseFee), nil), signer, testKey)
+// 		gen.AddTx(tx)
 
-		// Add two contract creations in block #2
-		if i == 1 {
-			tx, _ = types.SignTx(types.NewContractCreation(6, big.NewInt(16), 3000000, big.NewInt(875000000), code), signer, testKey)
-			gen.AddTx(tx)
+// 		// Add two contract creations in block #2
+// 		if i == 1 {
+// 			tx, _ = types.SignTx(types.NewContractCreation(6, big.NewInt(16), 3000000, big.NewInt(params.MinimumBaseFee), code), signer, testKey)
+// 			gen.AddTx(tx)
 
-			tx, _ = types.SignTx(types.NewContractCreation(7, big.NewInt(0), 3000000, big.NewInt(875000000), codeWithExtCodeCopy), signer, testKey)
-			gen.AddTx(tx)
-		}
-	})
+// 			tx, _ = types.SignTx(types.NewContractCreation(7, big.NewInt(0), 3000000, big.NewInt(params.MinimumBaseFee), codeWithExtCodeCopy), signer, testKey)
+// 			gen.AddTx(tx)
+// 		}
+// 	})
 
-	// Check proof for both blocks
-	err := verkle.Verify(proofs[0], gspec.ToBlock().Root().Bytes(), chain[0].Root().Bytes(), statediffs[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = verkle.Verify(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), statediffs[1])
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	// Check proof for both blocks
+// 	err := verkle.Verify(proofs[0], gspec.ToBlock().Root().Bytes(), chain[0].Root().Bytes(), statediffs[0])
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	err = verkle.Verify(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), statediffs[1])
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	t.Log("verified verkle proof, inserting blocks into the chain")
+// 	t.Log("verified verkle proof, inserting blocks into the chain")
 
-	endnum, err := blockchain.InsertChain(chain)
-	if err != nil {
-		t.Fatalf("block %d imported with error: %v", endnum, err)
-	}
+// 	endnum, err := blockchain.InsertChain(chain)
+// 	if err != nil {
+// 		t.Fatalf("block %d imported with error: %v", endnum, err)
+// 	}
 
-	for i := 0; i < 2; i++ {
-		b := blockchain.GetBlockByNumber(uint64(i) + 1)
-		if b == nil {
-			t.Fatalf("expected block %d to be present in chain", i+1)
-		}
-		if b.Hash() != chain[i].Hash() {
-			t.Fatalf("block #%d not found at expected height", b.NumberU64())
-		}
-		if b.GasUsed() != blockGasUsagesExpected[i] {
-			t.Fatalf("expected block #%d txs to use %d, got %d\n", b.NumberU64(), blockGasUsagesExpected[i], b.GasUsed())
-		}
-	}
-}
+// 	for i := 0; i < 2; i++ {
+// 		b := blockchain.GetBlockByNumber(uint64(i) + 1)
+// 		if b == nil {
+// 			t.Fatalf("expected block %d to be present in chain", i+1)
+// 		}
+// 		if b.Hash() != chain[i].Hash() {
+// 			t.Fatalf("block #%d not found at expected height", b.NumberU64())
+// 		}
+// 		if b.GasUsed() != blockGasUsagesExpected[i] {
+// 			t.Fatalf("expected block #%d txs to use %d, got %d\n", b.NumberU64(), blockGasUsagesExpected[i], b.GasUsed())
+// 		}
+// 	}
+// }
 
-func TestProcessParentBlockHash(t *testing.T) {
-	var (
-		chainConfig = params.MergedTestChainConfig
-		hashA       = common.Hash{0x01}
-		hashB       = common.Hash{0x02}
-		header      = &types.Header{ParentHash: hashA, Number: big.NewInt(2), Difficulty: big.NewInt(0)}
-		parent      = &types.Header{ParentHash: hashB, Number: big.NewInt(1), Difficulty: big.NewInt(0)}
-		coinbase    = common.Address{}
-	)
-	test := func(statedb *state.StateDB) {
-		statedb.SetNonce(params.HistoryStorageAddress, 1)
-		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
-		statedb.IntermediateRoot(true)
+//
+//func TestProcessParentBlockHash(t *testing.T) {
+//	var (
+//		chainConfig = params.MergedTestChainConfig
+//		hashA       = common.Hash{0x01}
+//		hashB       = common.Hash{0x02}
+//		header      = &types.Header{ParentHash: hashA, Number: big.NewInt(2), Difficulty: big.NewInt(0)}
+//		parent      = &types.Header{ParentHash: hashB, Number: big.NewInt(1), Difficulty: big.NewInt(0)}
+//		coinbase    = common.Address{}
+//	)
+//	test := func(statedb *state.StateDB) {
+//		statedb.SetNonce(params.HistoryStorageAddress, 1)
+//		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
+//		statedb.IntermediateRoot(true)
+//
+//		vmContext := NewEVMBlockContext(header, nil, &coinbase)
+//		evm := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+//		ProcessParentBlockHash(header.ParentHash, evm, statedb)
+//
+//		vmContext = NewEVMBlockContext(parent, nil, &coinbase)
+//		evm = vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
+//		ProcessParentBlockHash(parent.ParentHash, evm, statedb)
+//
+//		// make sure that the state is correct
+//		if have := getParentBlockHash(statedb, 1); have != hashA {
+//			t.Errorf("want parent hash %v, have %v", hashA, have)
+//		}
+//		if have := getParentBlockHash(statedb, 0); have != hashB {
+//			t.Errorf("want parent hash %v, have %v", hashB, have)
+//		}
+//	}
+//	t.Run("MPT", func(t *testing.T) {
+//		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+//		test(statedb)
+//	})
+//	t.Run("Verkle", func(t *testing.T) {
+//		db := rawdb.NewMemoryDatabase()
+//		cacheConfig := DefaultCacheConfigWithScheme(rawdb.PathScheme)
+//		cacheConfig.SnapshotLimit = 0
+//		triedb := triedb.NewDatabase(db, cacheConfig.triedbConfig(true))
+//		statedb, _ := state.New(types.EmptyVerkleHash, state.NewDatabase(triedb, nil))
+//		test(statedb)
+//	})
+//}
 
-		vmContext := NewEVMBlockContext(header, nil, &coinbase)
-		evm := vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
-		ProcessParentBlockHash(header.ParentHash, evm, statedb)
-
-		vmContext = NewEVMBlockContext(parent, nil, &coinbase)
-		evm = vm.NewEVM(vmContext, vm.TxContext{}, statedb, chainConfig, vm.Config{})
-		ProcessParentBlockHash(parent.ParentHash, evm, statedb)
-
-		// make sure that the state is correct
-		if have := getParentBlockHash(statedb, 1); have != hashA {
-			t.Errorf("want parent hash %v, have %v", hashA, have)
-		}
-		if have := getParentBlockHash(statedb, 0); have != hashB {
-			t.Errorf("want parent hash %v, have %v", hashB, have)
-		}
-	}
-	t.Run("MPT", func(t *testing.T) {
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-		test(statedb)
-	})
-	t.Run("Verkle", func(t *testing.T) {
-		db := rawdb.NewMemoryDatabase()
-		cacheConfig := DefaultCacheConfigWithScheme(rawdb.PathScheme)
-		cacheConfig.SnapshotLimit = 0
-		triedb := triedb.NewDatabase(db, cacheConfig.triedbConfig(true))
-		statedb, _ := state.New(types.EmptyVerkleHash, state.NewDatabase(triedb, nil))
-		test(statedb)
-	})
-}
-
-func getParentBlockHash(statedb *state.StateDB, number uint64) common.Hash {
-	ringIndex := number % params.HistoryServeWindow
-	var key common.Hash
-	binary.BigEndian.PutUint64(key[24:], ringIndex)
-	return statedb.GetState(params.HistoryStorageAddress, key)
-}
+//func getParentBlockHash(statedb *state.StateDB, number uint64) common.Hash {
+//	ringIndex := number % params.HistoryServeWindow
+//	var key common.Hash
+//	binary.BigEndian.PutUint64(key[24:], ringIndex)
+//	return statedb.GetState(params.HistoryStorageAddress, key)
+//}

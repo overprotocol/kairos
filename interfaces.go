@@ -94,7 +94,7 @@ type ChainStateReader interface {
 }
 
 // SyncProgress gives progress indications when the node is synchronising with
-// the Ethereum network.
+// the Over network.
 type SyncProgress struct {
 	StartingBlock uint64 // Block number where sync began
 	CurrentBlock  uint64 // Current block number where sync is at
@@ -112,6 +112,10 @@ type SyncProgress struct {
 	SyncedBytecodeBytes uint64 // Number of bytecode bytes downloaded
 	SyncedStorage       uint64 // Number of storage slots downloaded
 	SyncedStorageBytes  uint64 // Number of storage trie bytes persisted to disk
+
+	// EstimatedStateProgress represents the estimated percentage (0 to 100)
+	// of overall progress in downloading state.
+	EstimatedStateProgress float64
 
 	HealedTrienodes     uint64 // Number of state trie nodes downloaded
 	HealedTrienodeBytes uint64 // Number of state trie bytes persisted to disk

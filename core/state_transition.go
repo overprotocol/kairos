@@ -87,9 +87,10 @@ func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation, 
 		}
 		// Make sure we don't exceed uint64 for all data combinations
 		nonZeroGas := params.TxDataNonZeroGasFrontier
-		if isEIP2028 {
-			nonZeroGas = params.TxDataNonZeroGasEIP2028
-		}
+		// ignore eip2028
+		// if isEIP2028 {
+		// nonZeroGas = params.TxDataNonZeroGasEIP2028
+		// }
 		if (math.MaxUint64-gas)/nonZeroGas < nz {
 			return 0, ErrGasUintOverflow
 		}
@@ -365,6 +366,7 @@ func (st *StateTransition) preCheck() error {
 			}
 		}
 	}
+
 	return st.buyGas()
 }
 
@@ -476,6 +478,13 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// the coinbase when simulating calls.
 	} else {
 		fee := new(uint256.Int).SetUint64(st.gasUsed())
+		if rules.IsLondon {
+			// BaseFee is sent to the foundation's treasury
+			baseFeeContext := new(uint256.Int)
+			baseFeeContext.SetFromBig(st.evm.Context.BaseFee)
+			burn := new(uint256.Int).Mul(fee, baseFeeContext)
+			st.state.AddBalance(params.DaoTreasuryAddress, burn, tracing.BalanceBaseFeeSend)
+		}
 		fee.Mul(fee, effectiveTipU256)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 

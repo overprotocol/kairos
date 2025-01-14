@@ -58,7 +58,7 @@ func config() *params.ChainConfig {
 // TestBlockGasLimits tests the gasLimit checks for blocks both across
 // the EIP-1559 boundary and post-1559 blocks
 func TestBlockGasLimits(t *testing.T) {
-	initial := new(big.Int).SetUint64(params.InitialBaseFee)
+	initial := new(big.Int).SetUint64(params.MinimumBaseFee)
 
 	for i, tc := range []struct {
 		pGasLimit uint64
@@ -113,9 +113,9 @@ func TestCalcBaseFee(t *testing.T) {
 		parentGasUsed   uint64
 		expectedBaseFee int64
 	}{
-		{params.InitialBaseFee, 20000000, 10000000, params.InitialBaseFee}, // usage == target
-		{params.InitialBaseFee, 20000000, 9000000, 987500000},              // usage below target
-		{params.InitialBaseFee, 20000000, 11000000, 1012500000},            // usage above target
+		{params.MinimumBaseFee, 20000000, 10000000, params.MinimumBaseFee}, // usage == target
+		{params.MinimumBaseFee, 20000000, 9000000, 100000000000},           // usage below target : InitialBaseFee = MinimumBaseFee which is minimum value of baseFee
+		{params.MinimumBaseFee, 20000000, 11000000, 101250000000},          // usage above target
 	}
 	for i, test := range tests {
 		parent := &types.Header{

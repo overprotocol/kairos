@@ -1,6 +1,6 @@
 #!/bin/sh
 
-hivechain generate \
+./hivechain generate \
   --fork-interval 6 \
   --tx-interval 1 \
   --length 500 \

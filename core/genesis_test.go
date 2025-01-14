@@ -96,15 +96,15 @@ func testSetupGenesis(t *testing.T, scheme string) {
 			wantConfig: customg.Config,
 		},
 		{
-			name: "custom block in DB, genesis == sepolia",
+			name: "custom block in DB, genesis == dolphin",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, error) {
 				tdb := triedb.NewDatabase(db, newDbConfig(scheme))
 				customg.Commit(db, tdb)
-				return SetupGenesisBlock(db, tdb, DefaultSepoliaGenesisBlock())
+				return SetupGenesisBlock(db, tdb, DefaultDolphinGenesisBlock())
 			},
-			wantErr:    &GenesisMismatchError{Stored: customghash, New: params.SepoliaGenesisHash},
-			wantHash:   params.SepoliaGenesisHash,
-			wantConfig: params.SepoliaChainConfig,
+			wantErr:    &GenesisMismatchError{Stored: customghash, New: params.DolphinGenesisHash},
+			wantHash:   params.DolphinGenesisHash,
+			wantConfig: params.DolphinChainConfig,
 		},
 		{
 			name: "compatible config in DB",
@@ -175,7 +175,7 @@ func TestGenesisHashes(t *testing.T) {
 		want    common.Hash
 	}{
 		{DefaultGenesisBlock(), params.MainnetGenesisHash},
-		{DefaultSepoliaGenesisBlock(), params.SepoliaGenesisHash},
+		{DefaultDolphinGenesisBlock(), params.DolphinGenesisHash},
 	} {
 		// Test via MustCommit
 		db := rawdb.NewMemoryDatabase()
@@ -191,7 +191,7 @@ func TestGenesisHashes(t *testing.T) {
 
 func TestGenesis_Commit(t *testing.T) {
 	genesis := &Genesis{
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		BaseFee: big.NewInt(params.MinimumBaseFee),
 		Config:  params.TestChainConfig,
 		// difficulty is nil
 	}
@@ -284,7 +284,7 @@ func TestVerkleGenesisCommit(t *testing.T) {
 	}
 
 	genesis := &Genesis{
-		BaseFee:    big.NewInt(params.InitialBaseFee),
+		BaseFee:    big.NewInt(params.MinimumBaseFee),
 		Config:     verkleConfig,
 		Timestamp:  verkleTime,
 		Difficulty: big.NewInt(0),

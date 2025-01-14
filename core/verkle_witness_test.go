@@ -28,13 +28,11 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 )
@@ -100,10 +98,10 @@ func TestProcessVerkle(t *testing.T) {
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   0,
 				},
-				params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-				params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-				params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-				params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+				params.BeaconRootsAddress: {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+				// params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+				params.WithdrawalQueueAddress: {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+				// params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
 			},
 		}
 	)
@@ -212,51 +210,51 @@ func TestProcessVerkle(t *testing.T) {
 	}
 }
 
-func TestProcessParentBlockHash(t *testing.T) {
-	// This test uses blocks where,
-	// block 1 parent hash is 0x0100....
-	// block 2 parent hash is 0x0200....
-	// etc
-	checkBlockHashes := func(statedb *state.StateDB) {
-		statedb.SetNonce(params.HistoryStorageAddress, 1)
-		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
-		// Process n blocks, from 1 .. num
-		var num = 2
-		for i := 1; i <= num; i++ {
-			header := &types.Header{ParentHash: common.Hash{byte(i)}, Number: big.NewInt(int64(i)), Difficulty: new(big.Int)}
-			vmContext := NewEVMBlockContext(header, nil, new(common.Address))
-			evm := vm.NewEVM(vmContext, vm.TxContext{}, statedb, params.MergedTestChainConfig, vm.Config{})
-			ProcessParentBlockHash(header.ParentHash, evm, statedb)
-		}
-		// Read block hashes for block 0 .. num-1
-		for i := 0; i < num; i++ {
-			have, want := getContractStoredBlockHash(statedb, uint64(i)), common.Hash{byte(i + 1)}
-			if have != want {
-				t.Errorf("block %d, have parent hash %v, want %v", i, have, want)
-			}
-		}
-	}
-	t.Run("MPT", func(t *testing.T) {
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-		checkBlockHashes(statedb)
-	})
-	t.Run("Verkle", func(t *testing.T) {
-		db := rawdb.NewMemoryDatabase()
-		cacheConfig := DefaultCacheConfigWithScheme(rawdb.PathScheme)
-		cacheConfig.SnapshotLimit = 0
-		triedb := triedb.NewDatabase(db, cacheConfig.triedbConfig(true))
-		statedb, _ := state.New(types.EmptyVerkleHash, state.NewDatabase(triedb, nil))
-		checkBlockHashes(statedb)
-	})
-}
+// func TestProcessParentBlockHash(t *testing.T) {
+// 	// This test uses blocks where,
+// 	// block 1 parent hash is 0x0100....
+// 	// block 2 parent hash is 0x0200....
+// 	// etc
+// 	checkBlockHashes := func(statedb *state.StateDB) {
+// 		statedb.SetNonce(params.HistoryStorageAddress, 1)
+// 		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
+// 		// Process n blocks, from 1 .. num
+// 		var num = 2
+// 		for i := 1; i <= num; i++ {
+// 			header := &types.Header{ParentHash: common.Hash{byte(i)}, Number: big.NewInt(int64(i)), Difficulty: new(big.Int)}
+// 			vmContext := NewEVMBlockContext(header, nil, new(common.Address))
+// 			evm := vm.NewEVM(vmContext, vm.TxContext{}, statedb, params.MergedTestChainConfig, vm.Config{})
+// 			ProcessParentBlockHash(header.ParentHash, evm, statedb)
+// 		}
+// 		// Read block hashes for block 0 .. num-1
+// 		for i := 0; i < num; i++ {
+// 			have, want := getContractStoredBlockHash(statedb, uint64(i)), common.Hash{byte(i + 1)}
+// 			if have != want {
+// 				t.Errorf("block %d, have parent hash %v, want %v", i, have, want)
+// 			}
+// 		}
+// 	}
+// 	t.Run("MPT", func(t *testing.T) {
+// 		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+// 		checkBlockHashes(statedb)
+// 	})
+// 	t.Run("Verkle", func(t *testing.T) {
+// 		db := rawdb.NewMemoryDatabase()
+// 		cacheConfig := DefaultCacheConfigWithScheme(rawdb.PathScheme)
+// 		cacheConfig.SnapshotLimit = 0
+// 		triedb := triedb.NewDatabase(db, cacheConfig.triedbConfig(true))
+// 		statedb, _ := state.New(types.EmptyVerkleHash, state.NewDatabase(triedb, nil))
+// 		checkBlockHashes(statedb)
+// 	})
+// }
 
 // getContractStoredBlockHash is a utility method which reads the stored parent blockhash for block 'number'
-func getContractStoredBlockHash(statedb *state.StateDB, number uint64) common.Hash {
-	ringIndex := number % params.HistoryServeWindow
-	var key common.Hash
-	binary.BigEndian.PutUint64(key[24:], ringIndex)
-	return statedb.GetState(params.HistoryStorageAddress, key)
-}
+// func getContractStoredBlockHash(statedb *state.StateDB, number uint64) common.Hash {
+// 	ringIndex := number % params.HistoryServeWindow
+// 	var key common.Hash
+// 	binary.BigEndian.PutUint64(key[24:], ringIndex)
+// 	return statedb.GetState(params.HistoryStorageAddress, key)
+// }
 
 // TestProcessVerkleInvalidContractCreation checks for several modes of contract creation failures
 func TestProcessVerkleInvalidContractCreation(t *testing.T) {
@@ -277,7 +275,7 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	//
 	// - The second block contains a single failing contract creation transaction,
 	//   that fails right off the bat.
-	_, chain, _, _, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 2, func(i int, gen *BlockGen) {
+	_, _, _, _, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		if i == 0 {
@@ -315,8 +313,8 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	tx2ContractStem := utils.StorageSlotKey(tx2ContractAddress[:], tx2SlotKey[:])
 	tx2ContractStem = tx2ContractStem[:31]
 
-	eip2935Stem := utils.GetTreeKey(params.HistoryStorageAddress[:], uint256.NewInt(0), 0)
-	eip2935Stem = eip2935Stem[:31]
+	// eip2935Stem := utils.GetTreeKey(params.HistoryStorageAddress[:], uint256.NewInt(0), 0)
+	// eip2935Stem = eip2935Stem[:31]
 
 	// Check that the witness contains what we expect: a storage entry for each of the two contract
 	// creations that failed: one at 133 for the 2nd tx, and one at 105 for the first tx.
@@ -345,26 +343,26 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 					t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 				}
 			}
-		} else if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
-			// Check the eip 2935 group of leaves.
-			// Check that only one leaf was accessed, and is present in the witness.
-			if len(stemStateDiff.SuffixDiffs) > 1 {
-				t.Fatalf("invalid suffix diff count found for BLOCKHASH contract: %d != 1", len(stemStateDiff.SuffixDiffs))
-			}
-			// Check that this leaf is the first storage slot
-			if stemStateDiff.SuffixDiffs[0].Suffix != 64 {
-				t.Fatalf("invalid suffix diff value found for BLOCKHASH contract: %d != 64", stemStateDiff.SuffixDiffs[0].Suffix)
-			}
-			// check that the prestate value is nil and that the poststate value isn't.
-			if stemStateDiff.SuffixDiffs[0].CurrentValue != nil {
-				t.Fatalf("non-nil current value in BLOCKHASH contract insert: %x", stemStateDiff.SuffixDiffs[0].CurrentValue)
-			}
-			if stemStateDiff.SuffixDiffs[0].NewValue == nil {
-				t.Fatalf("nil new value in BLOCKHASH contract insert")
-			}
-			if *stemStateDiff.SuffixDiffs[0].NewValue != chain[0].Hash() {
-				t.Fatalf("invalid BLOCKHASH value: %x != %x", *stemStateDiff.SuffixDiffs[0].NewValue, chain[0].Hash())
-			}
+			// } else if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
+			// 	// Check the eip 2935 group of leaves.
+			// 	// Check that only one leaf was accessed, and is present in the witness.
+			// 	if len(stemStateDiff.SuffixDiffs) > 1 {
+			// 		t.Fatalf("invalid suffix diff count found for BLOCKHASH contract: %d != 1", len(stemStateDiff.SuffixDiffs))
+			// 	}
+			// 	// Check that this leaf is the first storage slot
+			// 	if stemStateDiff.SuffixDiffs[0].Suffix != 64 {
+			// 		t.Fatalf("invalid suffix diff value found for BLOCKHASH contract: %d != 64", stemStateDiff.SuffixDiffs[0].Suffix)
+			// 	}
+			// 	// check that the prestate value is nil and that the poststate value isn't.
+			// 	if stemStateDiff.SuffixDiffs[0].CurrentValue != nil {
+			// 		t.Fatalf("non-nil current value in BLOCKHASH contract insert: %x", stemStateDiff.SuffixDiffs[0].CurrentValue)
+			// 	}
+			// 	if stemStateDiff.SuffixDiffs[0].NewValue == nil {
+			// 		t.Fatalf("nil new value in BLOCKHASH contract insert")
+			// 	}
+			// 	if *stemStateDiff.SuffixDiffs[0].NewValue != chain[0].Hash() {
+			// 		t.Fatalf("invalid BLOCKHASH value: %x != %x", *stemStateDiff.SuffixDiffs[0].NewValue, chain[0].Hash())
+			// 	}
 		} else {
 			// For all other entries present in the witness, check that nothing beyond
 			// the account header was accessed.
@@ -380,21 +378,22 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	// code should make it to the witness.
 	for _, stemStateDiff := range statediffs[1] {
 		for _, suffixDiff := range stemStateDiff.SuffixDiffs {
-			if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
-				// BLOCKHASH contract stem
-				if len(stemStateDiff.SuffixDiffs) > 1 {
-					t.Fatalf("invalid suffix diff count found for BLOCKHASH contract at block #2: %d != 1", len(stemStateDiff.SuffixDiffs))
-				}
-				if stemStateDiff.SuffixDiffs[0].Suffix != 65 {
-					t.Fatalf("invalid suffix diff value found for BLOCKHASH contract at block #2: %d != 65", stemStateDiff.SuffixDiffs[0].Suffix)
-				}
-				if stemStateDiff.SuffixDiffs[0].NewValue == nil {
-					t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
-				}
-				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54") {
-					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
-				}
-			} else if suffixDiff.Suffix > 4 {
+			// if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
+			// 	// BLOCKHASH contract stem
+			// 	if len(stemStateDiff.SuffixDiffs) > 1 {
+			// 		t.Fatalf("invalid suffix diff count found for BLOCKHASH contract at block #2: %d != 1", len(stemStateDiff.SuffixDiffs))
+			// 	}
+			// 	if stemStateDiff.SuffixDiffs[0].Suffix != 65 {
+			// 		t.Fatalf("invalid suffix diff value found for BLOCKHASH contract at block #2: %d != 65", stemStateDiff.SuffixDiffs[0].Suffix)
+			// 	}
+			// 	if stemStateDiff.SuffixDiffs[0].NewValue == nil {
+			// 		t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
+			// 	}
+			// 	if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54") {
+			// 		t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
+			// 	}
+			// }
+			if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 			}
 		}
@@ -422,10 +421,10 @@ func verkleTestGenesis(config *params.ChainConfig) *Genesis {
 				Balance: big.NewInt(1000000000000000000), // 1 ether
 				Nonce:   3,
 			},
-			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+			params.BeaconRootsAddress: {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+			// params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+			params.WithdrawalQueueAddress: {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+			// params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
 		},
 	}
 }
@@ -438,7 +437,7 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 	config.ChainID.SetUint64(69421)
 	gspec := verkleTestGenesis(&config)
 
-	_, chain, _, _, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 1, func(i int, gen *BlockGen) {
+	_, _, _, _, statediffs := GenerateVerkleChainWithGenesis(gspec, beacon.New(ethash.NewFaker()), 1, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		var tx types.Transaction
 		// a transaction that does some PUSH1n but returns a 0-sized contract
@@ -449,40 +448,40 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 		gen.AddTx(&tx)
 	})
 
-	eip2935Stem := utils.GetTreeKey(params.HistoryStorageAddress[:], uint256.NewInt(0), 0)
-	eip2935Stem = eip2935Stem[:31]
+	// eip2935Stem := utils.GetTreeKey(params.HistoryStorageAddress[:], uint256.NewInt(0), 0)
+	// eip2935Stem = eip2935Stem[:31]
 
 	for _, stemStateDiff := range statediffs[0] {
 		// Handle the case of the history contract: make sure only the correct
 		// slots are added to the witness.
-		if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
-			// BLOCKHASH contract stem
-			if len(stemStateDiff.SuffixDiffs) > 1 {
-				t.Fatalf("invalid suffix diff count found for BLOCKHASH contract: %d != 1", len(stemStateDiff.SuffixDiffs))
-			}
-			if stemStateDiff.SuffixDiffs[0].Suffix != 64 {
-				t.Fatalf("invalid suffix diff value found for BLOCKHASH contract: %d != 64", stemStateDiff.SuffixDiffs[0].Suffix)
-			}
-			// check that the "current value" is nil and that the new value isn't.
-			if stemStateDiff.SuffixDiffs[0].CurrentValue != nil {
-				t.Fatalf("non-nil current value in BLOCKHASH contract insert: %x", stemStateDiff.SuffixDiffs[0].CurrentValue)
-			}
-			if stemStateDiff.SuffixDiffs[0].NewValue == nil {
-				t.Fatalf("nil new value in BLOCKHASH contract insert")
-			}
-			if *stemStateDiff.SuffixDiffs[0].NewValue != chain[0].Hash() {
-				t.Fatalf("invalid BLOCKHASH value: %x != %x", *stemStateDiff.SuffixDiffs[0].NewValue, chain[0].Hash())
-			}
-		} else {
-			for _, suffixDiff := range stemStateDiff.SuffixDiffs {
-				if suffixDiff.Suffix > 2 {
-					// if d8898012c484fb48610ecb7963886339207dab004bce968b007b616ffa18e0 shows up, it means that the PUSHn
-					// in the transaction above added entries into the witness, when they should not have since they are
-					// part of a contract deployment.
-					t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
-				}
+		// if bytes.Equal(stemStateDiff.Stem[:], eip2935Stem) {
+		// 	// BLOCKHASH contract stem
+		// 	if len(stemStateDiff.SuffixDiffs) > 1 {
+		// 		t.Fatalf("invalid suffix diff count found for BLOCKHASH contract: %d != 1", len(stemStateDiff.SuffixDiffs))
+		// 	}
+		// 	if stemStateDiff.SuffixDiffs[0].Suffix != 64 {
+		// 		t.Fatalf("invalid suffix diff value found for BLOCKHASH contract: %d != 64", stemStateDiff.SuffixDiffs[0].Suffix)
+		// 	}
+		// 	// check that the "current value" is nil and that the new value isn't.
+		// 	if stemStateDiff.SuffixDiffs[0].CurrentValue != nil {
+		// 		t.Fatalf("non-nil current value in BLOCKHASH contract insert: %x", stemStateDiff.SuffixDiffs[0].CurrentValue)
+		// 	}
+		// 	if stemStateDiff.SuffixDiffs[0].NewValue == nil {
+		// 		t.Fatalf("nil new value in BLOCKHASH contract insert")
+		// 	}
+		// 	if *stemStateDiff.SuffixDiffs[0].NewValue != chain[0].Hash() {
+		// 		t.Fatalf("invalid BLOCKHASH value: %x != %x", *stemStateDiff.SuffixDiffs[0].NewValue, chain[0].Hash())
+		// 	}
+		// } else {
+		for _, suffixDiff := range stemStateDiff.SuffixDiffs {
+			if suffixDiff.Suffix > 2 {
+				// if d8898012c484fb48610ecb7963886339207dab004bce968b007b616ffa18e0 shows up, it means that the PUSHn
+				// in the transaction above added entries into the witness, when they should not have since they are
+				// part of a contract deployment.
+				t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 			}
 		}
+		// }
 	}
 }
 

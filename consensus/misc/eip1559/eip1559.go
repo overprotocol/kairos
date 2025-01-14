@@ -22,7 +22,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -55,9 +54,9 @@ func VerifyEIP1559Header(config *params.ChainConfig, parent, header *types.Heade
 
 // CalcBaseFee calculates the basefee of the header.
 func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
-	// If the current block is the first EIP-1559 block, return the InitialBaseFee.
+	// If the current block is the first EIP-1559 block, return the MinimumBaseFee as InitialBaseFee.
 	if !config.IsLondon(parent.Number) {
-		return new(big.Int).SetUint64(params.InitialBaseFee)
+		return new(big.Int).SetUint64(params.MinimumBaseFee)
 	}
 
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
@@ -91,9 +90,9 @@ func CalcBaseFee(config *params.ChainConfig, parent *types.Header) *big.Int {
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 
 		baseFee := num.Sub(parent.BaseFee, num)
-		if baseFee.Cmp(common.Big0) < 0 {
-			baseFee = common.Big0
+		if baseFee.Cmp(new(big.Int).SetUint64(params.MinimumBaseFee)) < 0 {
+			baseFee = new(big.Int).SetUint64(params.MinimumBaseFee)
 		}
-		return math.BigMax(baseFee, new(big.Int).SetUint64(params.MinimumBaseFee))
+		return baseFee
 	}
 }

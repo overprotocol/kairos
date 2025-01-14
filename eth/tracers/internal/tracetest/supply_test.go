@@ -86,7 +86,7 @@ func TestSupplyOmittedFields(t *testing.T) {
 
 	expected := supplyInfo{
 		Number:     0,
-		Hash:       common.HexToHash("0xc02ee8ee5b54a40e43f0fa827d431e1bd4f217e941790dda10b2521d1925a20b"),
+		Hash:       common.HexToHash("0x6d5bff5b9516decc0d36c85ab33b21e47e6964e857f261d5cf1cb826f6f3ccba"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 	}
 	actual := out[expected.Number]
@@ -118,7 +118,7 @@ func TestSupplyGenesisAlloc(t *testing.T) {
 			GenesisAlloc: (*hexutil.Big)(new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))),
 		},
 		Number:     0,
-		Hash:       common.HexToHash("0xbcc9466e9fc6a8b56f4b29ca353a421ff8b51a0c1a58ca4743b427605b08f2ca"),
+		Hash:       common.HexToHash("0x39c2f1f9753f0a7524aa679f1050650ee18f468689b6dd9108cf5725ea6e0b90"),
 		ParentHash: common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
 	}
 
@@ -146,8 +146,8 @@ func TestSupplyRewards(t *testing.T) {
 			Reward: (*hexutil.Big)(new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))),
 		},
 		Number:     1,
-		Hash:       common.HexToHash("0xcbb08370505be503dafedc4e96d139ea27aba3cbc580148568b8a307b3f51052"),
-		ParentHash: common.HexToHash("0xadeda0a83e337b6c073e3f0e9a17531a04009b397a9588c093b628f21b8bc5a3"),
+		Hash:       common.HexToHash("0x3d55cc80276def58ae62fec9c5fb92c937ee583773cdfa824e274eda20e8e405"),
+		ParentHash: common.HexToHash("0x99a32310a2cbe63f05a81bc5531f39e0423cffe3a2cad17b50169fba89ac3e27"),
 	}
 
 	out, _, err := testSupplyTracer(t, gspec, emptyBlockGenerationFunc)
@@ -168,12 +168,12 @@ func TestSupplyEip1559Burn(t *testing.T) {
 		// A sender who makes transactions, has some eth1
 		key1, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
-		gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
-		eth1    = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		// gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
+		eth1 = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
 
 		gspec = &core.Genesis{
 			Config:  &config,
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 			Alloc: types.GenesisAlloc{
 				addr1: {Balance: eth1},
 			},
@@ -188,7 +188,7 @@ func TestSupplyEip1559Burn(t *testing.T) {
 			Nonce:     0,
 			To:        &aa,
 			Gas:       21000,
-			GasFeeCap: gwei5,
+			GasFeeCap: big.NewInt(params.MinimumBaseFee),
 			GasTipCap: big.NewInt(2),
 		}
 		tx := types.NewTx(txdata)
@@ -280,7 +280,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 
 		gspec = &core.Genesis{
 			Config:  &config,
-			BaseFee: big.NewInt(params.InitialBaseFee),
+			BaseFee: big.NewInt(params.MinimumBaseFee),
 			Alloc: types.GenesisAlloc{
 				addr1: {Balance: eth1},
 				aa: {
@@ -309,7 +309,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 			To:       &aa,
 			Value:    gwei5,
 			Gas:      150000,
-			GasPrice: gwei5,
+			GasPrice: big.NewInt(params.MinimumBaseFee),
 			Data:     []byte{},
 		}
 
@@ -344,7 +344,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 	// Check live trace output
 	expected := supplyInfo{
 		Burn: &supplyInfoBurn{
-			EIP1559: (*hexutil.Big)(big.NewInt(55289500000000)),
+			EIP1559: (*hexutil.Big)(big.NewInt(6318800000000000)),
 			Misc:    (*hexutil.Big)(big.NewInt(5000000000)),
 		},
 		Number:     1,
@@ -385,7 +385,7 @@ func TestSupplySelfdestruct(t *testing.T) {
 	head = postCancunChain.CurrentBlock()
 	expected = supplyInfo{
 		Burn: &supplyInfoBurn{
-			EIP1559: (*hexutil.Big)(big.NewInt(55289500000000)),
+			EIP1559: (*hexutil.Big)(big.NewInt(6318800000000000)),
 		},
 		Number:     1,
 		Hash:       head.Hash(),
@@ -414,14 +414,14 @@ func TestSupplySelfdestructItselfAndRevert(t *testing.T) {
 		dd      = common.HexToAddress("0x4444444444444444444444444444444444444444")
 		key1, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
-		gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
-		eth1    = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
-		eth2    = new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))
-		eth5    = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.Ether))
+		// gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
+		eth1 = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		eth2 = new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))
+		eth5 = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.Ether))
 
 		gspec = &core.Genesis{
 			Config: &config,
-			// BaseFee: big.NewInt(params.InitialBaseFee),
+			// BaseFee: big.NewInt(params.MinimumBaseFee),
 			Alloc: types.GenesisAlloc{
 				addr1: {Balance: eth1},
 				aa: {
@@ -491,7 +491,7 @@ func TestSupplySelfdestructItselfAndRevert(t *testing.T) {
 			To:       &aa,
 			Value:    common.Big0,
 			Gas:      150000,
-			GasPrice: gwei5,
+			GasPrice: big.NewInt(params.MinimumBaseFee),
 			Data:     []byte{},
 		}
 

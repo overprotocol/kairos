@@ -158,6 +158,14 @@ web3._extend({
 			name: 'stopWS',
 			call: 'admin_stopWS'
 		}),
+		new web3._extend.Method({
+			name: 'stopNode',
+			call: 'admin_stopNode'
+		}),
+		new web3._extend.Method({
+			name: 'clientVersion',
+			call: 'admin_clientVersion'
+		}),
 	],
 	properties: [
 		new web3._extend.Property({

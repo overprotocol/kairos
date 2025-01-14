@@ -46,7 +46,7 @@ var (
 	testEmpty    = common.HexToAddress("0xeeee")
 	testSlot     = common.HexToHash("0xdeadbeef")
 	testValue    = crypto.Keccak256Hash(testSlot[:])
-	testBalance  = big.NewInt(2e15)
+	testBalance  = big.NewInt(2e17)
 )
 
 func newTestBackend(t *testing.T) (*node.Node, []*types.Block) {
@@ -460,7 +460,7 @@ func testCallContract(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       &common.Address{},
 		Gas:      21000,
-		GasPrice: big.NewInt(1000000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 	}
 	// CallContract without override
@@ -570,7 +570,7 @@ func testCallContractWithBlockOverrides(t *testing.T, client *rpc.Client) {
 		From:     testAddr,
 		To:       &common.Address{},
 		Gas:      50000,
-		GasPrice: big.NewInt(1000000000),
+		GasPrice: big.NewInt(params.MinimumBaseFee),
 		Value:    big.NewInt(1),
 	}
 	override := OverrideAccount{

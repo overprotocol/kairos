@@ -358,15 +358,14 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 				panic(fmt.Sprintf("failed to parse deposit log: %v", err))
 			}
 			requests = append(requests, depositRequests)
-			// create EVM for system calls
-			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
-			vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
-			// EIP-7002 withdrawals
-			withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
-			requests = append(requests, withdrawalRequests)
-			// EIP-7251 consolidations
-			consolidationRequests := ProcessConsolidationQueue(vmenv, statedb)
-			requests = append(requests, consolidationRequests)
+			// Disable EIP-7002 withdrawals.
+			requests = append(requests, ProcessEmptyWithdrawalQueue())
+			//// create EVM for system calls
+			//blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
+			//vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
+			//// EIP-7002 withdrawals
+			//withdrawalRequests := ProcessWithdrawalQueue(vmenv, statedb)
+			//requests = append(requests, withdrawalRequests)
 		}
 		if requests != nil {
 			reqHash := types.CalcRequestsHash(requests)
@@ -462,13 +461,14 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		// Save pre state for proof generation
 		// preState := statedb.Copy()
 
-		// Pre-execution system calls.
-		if config.IsPrague(b.header.Number, b.header.Time) {
-			// EIP-2935
-			blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
-			vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
-			ProcessParentBlockHash(b.header.ParentHash, vmenv, statedb)
-		}
+		// Disable EIP-2935
+		//// Pre-execution system calls.
+		//if config.IsPrague(b.header.Number, b.header.Time) {
+		//	// EIP-2935
+		//	blockContext := NewEVMBlockContext(b.header, cm, &b.header.Coinbase)
+		//	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, cm.config, vm.Config{})
+		//	ProcessParentBlockHash(b.header.ParentHash, vmenv, statedb)
+		//}
 
 		// Execute any user modifications to the block.
 		if gen != nil {
