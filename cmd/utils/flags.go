@@ -40,6 +40,7 @@ import (
 	bparams "github.com/ethereum/go-ethereum/beacon/params"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/fdlimit"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
@@ -171,12 +172,6 @@ var (
 		Usage:    "Custom node name",
 		Category: flags.NetworkingCategory,
 	}
-	DocRootFlag = &flags.DirectoryFlag{
-		Name:     "docroot",
-		Usage:    "Document Root for HTTPClient file scheme",
-		Value:    flags.DirectoryString(flags.HomeDir()),
-		Category: flags.APICategory,
-	}
 	ExitWhenSyncedFlag = &cli.BoolFlag{
 		Name:     "exitwhensynced",
 		Usage:    "Exits after block synchronisation completes",
@@ -212,8 +207,7 @@ var (
 		Value: 0,
 	}
 
-	defaultSyncMode = ethconfig.Defaults.SyncMode
-	SnapshotFlag    = &cli.BoolFlag{
+	SnapshotFlag = &cli.BoolFlag{
 		Name:     "snapshot",
 		Usage:    `Enables snapshot-database mode (default = enable)`,
 		Value:    true,
@@ -245,10 +239,10 @@ var (
 		Usage:    "Manually specify the Verkle fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
-	SyncModeFlag = &flags.TextMarshalerFlag{
+	SyncModeFlag = &cli.StringFlag{
 		Name:     "syncmode",
 		Usage:    `Blockchain sync mode ("snap" or "full")`,
-		Value:    &defaultSyncMode,
+		Value:    ethconfig.Defaults.SyncMode.String(),
 		Category: flags.StateCategory,
 	}
 	GCModeFlag = &cli.StringFlag{
@@ -321,7 +315,7 @@ var (
 		Usage:    "Target EL engine API URL",
 		Category: flags.BeaconCategory,
 	}
-	BlsyncJWTSecretFlag = &cli.StringFlag{
+	BlsyncJWTSecretFlag = &flags.DirectoryFlag{
 		Name:     "blsync.jwtsecret",
 		Usage:    "Path to a JWT secret to use for target engine API endpoint",
 		Category: flags.BeaconCategory,
@@ -500,12 +494,6 @@ var (
 	}
 
 	// Account settings
-	UnlockedAccountFlag = &cli.StringFlag{
-		Name:     "unlock",
-		Usage:    "Comma separated list of accounts to unlock",
-		Value:    "",
-		Category: flags.AccountCategory,
-	}
 	PasswordFileFlag = &cli.PathFlag{
 		Name:      "password",
 		Usage:     "Password file to use for non-interactive password input",
@@ -518,12 +506,6 @@ var (
 		Value:    "",
 		Category: flags.AccountCategory,
 	}
-	InsecureUnlockAllowedFlag = &cli.BoolFlag{
-		Name:     "allow-insecure-unlock",
-		Usage:    "Allow insecure account unlocking when account-related RPCs are exposed by http",
-		Category: flags.AccountCategory,
-	}
-
 	// EVM settings
 	VMEnableDebugFlag = &cli.BoolFlag{
 		Name:     "vmdebug",
@@ -734,11 +716,6 @@ var (
 		Name:     "rpc.batch-response-max-size",
 		Usage:    "Maximum number of bytes returned from a batched call",
 		Value:    node.DefaultConfig.BatchResponseMaxSize,
-		Category: flags.APICategory,
-	}
-	EnablePersonal = &cli.BoolFlag{
-		Name:     "rpc.enabledeprecatedpersonal",
-		Usage:    "Enables the (deprecated) personal namespace",
 		Category: flags.APICategory,
 	}
 
@@ -1273,31 +1250,6 @@ func MakeDatabaseHandles(max int) int {
 	return int(raised / 2) // Leave half for networking and other stuff
 }
 
-// MakeAddress converts an account specified directly as a hex encoded string or
-// a key index in the key store to an internal account representation.
-func MakeAddress(ks *keystore.KeyStore, account string) (accounts.Account, error) {
-	// If the specified account is a valid address, return it
-	if common.IsHexAddress(account) {
-		return accounts.Account{Address: common.HexToAddress(account)}, nil
-	}
-	// Otherwise try to interpret the account as a keystore index
-	index, err := strconv.Atoi(account)
-	if err != nil || index < 0 {
-		return accounts.Account{}, fmt.Errorf("invalid account address or index %q", account)
-	}
-	log.Warn("-------------------------------------------------------------------")
-	log.Warn("Referring to accounts by order in the keystore folder is dangerous!")
-	log.Warn("This functionality is deprecated and will be removed in the future!")
-	log.Warn("Please use explicit addresses! (can search via `geth account list`)")
-	log.Warn("-------------------------------------------------------------------")
-
-	accs := ks.Accounts()
-	if len(accs) <= index {
-		return accounts.Account{}, fmt.Errorf("index %d higher than number of accounts %d", index, len(accs))
-	}
-	return accs[index], nil
-}
-
 // setEtherbase retrieves the etherbase from the directly specified command line flags.
 func setEtherbase(ctx *cli.Context, cfg *ethconfig.Config) {
 	if ctx.IsSet(MinerEtherbaseFlag.Name) {
@@ -1316,24 +1268,6 @@ func setEtherbase(ctx *cli.Context, cfg *ethconfig.Config) {
 		return
 	}
 	cfg.Miner.PendingFeeRecipient = common.BytesToAddress(b)
-}
-
-// MakePasswordList reads password lines from the file specified by the global --password flag.
-func MakePasswordList(ctx *cli.Context) []string {
-	path := ctx.Path(PasswordFileFlag.Name)
-	if path == "" {
-		return nil
-	}
-	text, err := os.ReadFile(path)
-	if err != nil {
-		Fatalf("Failed to read password file: %v", err)
-	}
-	lines := strings.Split(string(text), "\n")
-	// Sanitise DOS line endings.
-	for i := range lines {
-		lines[i] = strings.TrimRight(lines[i], "\r")
-	}
-	return lines
 }
 
 func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
@@ -1393,9 +1327,8 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 	if ctx.IsSet(JWTSecretFlag.Name) {
 		cfg.JWTSecret = ctx.String(JWTSecretFlag.Name)
 	}
-
 	if ctx.IsSet(EnablePersonal.Name) {
-		cfg.EnablePersonal = true
+		log.Warn(fmt.Sprintf("Option --%s is deprecated. The 'personal' RPC namespace has been removed.", EnablePersonal.Name))
 	}
 
 	if ctx.IsSet(ExternalSignerFlag.Name) {
@@ -1418,7 +1351,7 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 		cfg.USB = ctx.Bool(USBFlag.Name)
 	}
 	if ctx.IsSet(InsecureUnlockAllowedFlag.Name) {
-		cfg.InsecureUnlockAllowed = ctx.Bool(InsecureUnlockAllowedFlag.Name)
+		log.Warn(fmt.Sprintf("Option %q is deprecated and has no effect", InsecureUnlockAllowedFlag.Name))
 	}
 	if ctx.IsSet(DBEngineFlag.Name) {
 		dbEngine := ctx.String(DBEngineFlag.Name)
@@ -1667,7 +1600,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if ctx.IsSet(SyncTargetFlag.Name) {
 		cfg.SyncMode = downloader.FullSync // dev sync target forces full sync
 	} else if ctx.IsSet(SyncModeFlag.Name) {
-		cfg.SyncMode = *flags.GlobalTextMarshaler(ctx, SyncModeFlag.Name).(*downloader.SyncMode)
+		if err = cfg.SyncMode.UnmarshalText([]byte(ctx.String(SyncModeFlag.Name))); err != nil {
+			Fatalf("invalid --syncmode flag: %v", err)
+		}
 	}
 	if ctx.IsSet(NetworkIdFlag.Name) {
 		cfg.NetworkId = ctx.Uint64(NetworkIdFlag.Name)
@@ -1747,9 +1682,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			cfg.SnapshotCache = 0 // Disabled
 		}
 	}
-	if ctx.IsSet(DocRootFlag.Name) {
-		cfg.DocRoot = ctx.String(DocRootFlag.Name)
-	}
 	if ctx.IsSet(VMEnableDebugFlag.Name) {
 		// TODO(fjl): force-enable this in --dev mode
 		cfg.EnablePreimageRecording = ctx.Bool(VMEnableDebugFlag.Name)
@@ -1802,13 +1734,15 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			passphrase string
 			err        error
 		)
-		if list := MakePasswordList(ctx); len(list) > 0 {
-			// Just take the first value. Although the function returns a possible multiple values and
-			// some usages iterate through them as attempts, that doesn't make sense in this setting,
-			// when we're definitely concerned with only one account.
-			passphrase = list[0]
+		if path := ctx.Path(PasswordFileFlag.Name); path != "" {
+			if text, err := os.ReadFile(path); err != nil {
+				Fatalf("Failed to read password file: %v", err)
+			} else {
+				if lines := strings.Split(string(text), "\n"); len(lines) > 0 {
+					passphrase = strings.TrimRight(lines[0], "\r") // Sanitise DOS line endings.
+				}
+			}
 		}
-
 		// Unlock the developer account by local keystore.
 		var ks *keystore.KeyStore
 		if keystores := stack.AccountManager().Backends(keystore.KeyStoreType); len(keystores) > 0 {
@@ -1851,9 +1785,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 				if err != nil {
 					Fatalf("Could not read genesis from database: %v", err)
 				}
-				if !genesis.Config.TerminalTotalDifficultyPassed {
-					Fatalf("Bad developer-mode genesis configuration: terminalTotalDifficultyPassed must be true")
-				}
 				if genesis.Config.TerminalTotalDifficulty == nil {
 					Fatalf("Bad developer-mode genesis configuration: terminalTotalDifficulty must be specified")
 				} else if genesis.Config.TerminalTotalDifficulty.Cmp(big.NewInt(0)) != 0 {
@@ -1877,11 +1808,90 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if err := kzg4844.UseCKZG(ctx.String(CryptoKZGFlag.Name) == "ckzg"); err != nil {
 		Fatalf("Failed to set KZG library implementation to %s: %v", ctx.String(CryptoKZGFlag.Name), err)
 	}
+	// VM tracing config.
+	if ctx.IsSet(VMTraceFlag.Name) {
+		if name := ctx.String(VMTraceFlag.Name); name != "" {
+			cfg.VMTrace = name
+			cfg.VMTraceJsonConfig = ctx.String(VMTraceJsonConfigFlag.Name)
+		}
+	}
 }
 
-// No DNSNetwork for now
-// // SetDNSDiscoveryDefaults configures DNS discovery with the given URL if
-// // no URLs are set.
+// MakeBeaconLightConfig constructs a beacon light client config based on the
+// related command line flags.
+func MakeBeaconLightConfig(ctx *cli.Context) bparams.ClientConfig {
+	var config bparams.ClientConfig
+	customConfig := ctx.IsSet(BeaconConfigFlag.Name)
+	CheckExclusive(ctx, MainnetFlag, DolphinFlag, BeaconConfigFlag)
+	switch {
+	case ctx.Bool(MainnetFlag.Name):
+		config.ChainConfig = *bparams.MainnetLightConfig
+	case ctx.Bool(DolphinFlag.Name):
+		config.ChainConfig = *bparams.DolphinLightConfig
+	default:
+		if !customConfig {
+			config.ChainConfig = *bparams.MainnetLightConfig
+		}
+	}
+	// Genesis root and time should always be specified together with custom chain config
+	if customConfig {
+		if !ctx.IsSet(BeaconGenesisRootFlag.Name) {
+			Fatalf("Custom beacon chain config is specified but genesis root is missing")
+		}
+		if !ctx.IsSet(BeaconGenesisTimeFlag.Name) {
+			Fatalf("Custom beacon chain config is specified but genesis time is missing")
+		}
+		if !ctx.IsSet(BeaconCheckpointFlag.Name) {
+			Fatalf("Custom beacon chain config is specified but checkpoint is missing")
+		}
+		config.ChainConfig = bparams.ChainConfig{
+			GenesisTime: ctx.Uint64(BeaconGenesisTimeFlag.Name),
+		}
+		if c, err := hexutil.Decode(ctx.String(BeaconGenesisRootFlag.Name)); err == nil && len(c) <= 32 {
+			copy(config.GenesisValidatorsRoot[:len(c)], c)
+		} else {
+			Fatalf("Invalid hex string", "beacon.genesis.gvroot", ctx.String(BeaconGenesisRootFlag.Name), "error", err)
+		}
+		configFile := ctx.String(BeaconConfigFlag.Name)
+		if err := config.ChainConfig.LoadForks(configFile); err != nil {
+			Fatalf("Could not load beacon chain config", "file", configFile, "error", err)
+		}
+		log.Info("Using custom beacon chain config", "file", configFile)
+	} else {
+		if ctx.IsSet(BeaconGenesisRootFlag.Name) {
+			Fatalf("Genesis root is specified but custom beacon chain config is missing")
+		}
+		if ctx.IsSet(BeaconGenesisTimeFlag.Name) {
+			Fatalf("Genesis time is specified but custom beacon chain config is missing")
+		}
+	}
+	// Checkpoint is required with custom chain config and is optional with pre-defined config
+	if ctx.IsSet(BeaconCheckpointFlag.Name) {
+		if c, err := hexutil.Decode(ctx.String(BeaconCheckpointFlag.Name)); err == nil && len(c) <= 32 {
+			copy(config.Checkpoint[:len(c)], c)
+		} else {
+			Fatalf("Invalid hex string", "beacon.checkpoint", ctx.String(BeaconCheckpointFlag.Name), "error", err)
+		}
+	}
+	config.Apis = ctx.StringSlice(BeaconApiFlag.Name)
+	if config.Apis == nil {
+		Fatalf("Beacon node light client API URL not specified")
+	}
+	config.CustomHeader = make(map[string]string)
+	for _, s := range ctx.StringSlice(BeaconApiHeaderFlag.Name) {
+		kv := strings.Split(s, ":")
+		if len(kv) != 2 {
+			Fatalf("Invalid custom API header entry: %s", s)
+		}
+		config.CustomHeader[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+	}
+	config.Threshold = ctx.Int(BeaconThresholdFlag.Name)
+	config.NoFilter = ctx.Bool(BeaconNoFilterFlag.Name)
+	return config
+}
+
+// SetDNSDiscoveryDefaults configures DNS discovery with the given URL if
+// no URLs are set.
 // func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 // 	if cfg.EthDiscoveryURLs != nil {
 // 		return // already set through flags/config

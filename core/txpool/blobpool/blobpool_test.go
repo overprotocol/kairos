@@ -244,32 +244,6 @@ func verifyPoolInternals(t *testing.T, pool *BlobPool) {
 	for hash := range seen {
 		t.Errorf("indexed transaction hash #%x missing from tx lookup table", hash)
 	}
-	// Verify that all blobs in the index are present in the blob lookup and nothing more
-	blobs := make(map[common.Hash]map[common.Hash]struct{})
-	for _, txs := range pool.index {
-		for _, tx := range txs {
-			for _, vhash := range tx.vhashes {
-				if blobs[vhash] == nil {
-					blobs[vhash] = make(map[common.Hash]struct{})
-				}
-				blobs[vhash][tx.hash] = struct{}{}
-			}
-		}
-	}
-	for vhash, txs := range pool.lookup.blobIndex {
-		for txhash := range txs {
-			if _, ok := blobs[vhash][txhash]; !ok {
-				t.Errorf("blob lookup entry missing from transaction index: blob hash #%x, tx hash #%x", vhash, txhash)
-			}
-			delete(blobs[vhash], txhash)
-			if len(blobs[vhash]) == 0 {
-				delete(blobs, vhash)
-			}
-		}
-	}
-	for vhash := range blobs {
-		t.Errorf("indexed transaction blob hash #%x missing from blob lookup table", vhash)
-	}
 	// Verify that transactions are sorted per account and contain no nonce gaps,
 	// and that the first nonce is the next expected one based on the state.
 	for addr, txs := range pool.index {
@@ -907,6 +881,94 @@ func TestOpenHeap(t *testing.T) {
 	verifyPoolInternals(t, pool)
 }
 
+// Tests that after the pool's previous state is loaded back, any transactions
+// over the new storage cap will get dropped.
+func TestOpenCap(t *testing.T) {
+	//log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
+
+	// Create a temporary folder for the persistent backend
+	storage, _ := os.MkdirTemp("", "blobpool-")
+	defer os.RemoveAll(storage)
+
+	os.MkdirAll(filepath.Join(storage, pendingTransactionStore), 0700)
+	store, _ := billy.Open(billy.Options{Path: filepath.Join(storage, pendingTransactionStore)}, newSlotter(), nil)
+
+	// Insert a few transactions from a few accounts
+	var (
+		key1, _ = crypto.GenerateKey()
+		key2, _ = crypto.GenerateKey()
+		key3, _ = crypto.GenerateKey()
+
+		addr1 = crypto.PubkeyToAddress(key1.PublicKey)
+		addr2 = crypto.PubkeyToAddress(key2.PublicKey)
+		addr3 = crypto.PubkeyToAddress(key3.PublicKey)
+
+		tx1 = makeTx(0, 1, 1000, 100, key1)
+		tx2 = makeTx(0, 1, 800, 70, key2)
+		tx3 = makeTx(0, 1, 1500, 110, key3)
+
+		blob1, _ = rlp.EncodeToBytes(tx1)
+		blob2, _ = rlp.EncodeToBytes(tx2)
+		blob3, _ = rlp.EncodeToBytes(tx3)
+
+		keep = []common.Address{addr1, addr3}
+		drop = []common.Address{addr2}
+		size = uint64(2 * (txAvgSize + blobSize))
+	)
+	store.Put(blob1)
+	store.Put(blob2)
+	store.Put(blob3)
+	store.Close()
+
+	// Verify pool capping twice: first by reducing the data cap, then restarting
+	// with a high cap to ensure everything was persisted previously
+	for _, datacap := range []uint64{2 * (txAvgSize + blobSize), 100 * (txAvgSize + blobSize)} {
+		// Create a blob pool out of the pre-seeded data, but cap it to 2 blob transaction
+		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+		statedb.AddBalance(addr1, uint256.NewInt(1_000_000_000), tracing.BalanceChangeUnspecified)
+		statedb.AddBalance(addr2, uint256.NewInt(1_000_000_000), tracing.BalanceChangeUnspecified)
+		statedb.AddBalance(addr3, uint256.NewInt(1_000_000_000), tracing.BalanceChangeUnspecified)
+		statedb.Commit(0, true)
+
+		chain := &testBlockChain{
+			config:  params.MainnetChainConfig,
+			basefee: uint256.NewInt(1050),
+			blobfee: uint256.NewInt(105),
+			statedb: statedb,
+		}
+		pool := New(Config{Datadir: storage, Datacap: datacap}, chain)
+		if err := pool.Init(1, chain.CurrentBlock(), makeAddressReserver()); err != nil {
+			t.Fatalf("failed to create blob pool: %v", err)
+		}
+		// Verify that enough transactions have been dropped to get the pool's size
+		// under the requested limit
+		if len(pool.index) != len(keep) {
+			t.Errorf("tracked account count mismatch: have %d, want %d", len(pool.index), len(keep))
+		}
+		for _, addr := range keep {
+			if _, ok := pool.index[addr]; !ok {
+				t.Errorf("expected account %v missing from pool", addr)
+			}
+		}
+		for _, addr := range drop {
+			if _, ok := pool.index[addr]; ok {
+				t.Errorf("unexpected account %v present in pool", addr)
+			}
+		}
+		if pool.stored != size {
+			t.Errorf("pool stored size mismatch: have %v, want %v", pool.stored, size)
+		}
+		// Verify all the calculated pool internals. Interestingly, this is **not**
+		// a duplication of the above checks, this actually validates the verifier
+		// using the above already hard coded checks.
+		//
+		// Do not remove this, nor alter the above to be generic.
+		verifyPoolInternals(t, pool)
+
+		pool.Close()
+	}
+}
+
 // Tests that adding transaction will correctly store it in the persistent store
 // and update all the indices.
 //
@@ -993,13 +1055,13 @@ func TestAdd(t *testing.T) {
 			adds: []addtx{
 				{ // New account, 1 tx pending: reject duplicate nonce 0
 					from: "alice",
-					tx:   makeUnsignedTxWithTestBlob(0, 1, 1, 1, 0),
-					err:  txpool.ErrUnderpriced,
+					tx:   makeUnsignedTx(0, 1, 1, 1),
+					err:  txpool.ErrAlreadyKnown,
 				},
 				{ // New account, 1 tx pending: reject replacement nonce 0 (ignore price for now)
 					from: "alice",
 					tx:   makeUnsignedTx(0, 1, 1, 2),
-					err:  txpool.ErrUnderpriced,
+					err:  txpool.ErrReplaceUnderpriced,
 				},
 				{ // New account, 1 tx pending: accept nonce 1
 					from: "alice",
@@ -1023,7 +1085,7 @@ func TestAdd(t *testing.T) {
 				},
 				{ // Old account, 1 tx in chain, 1 tx pending: reject duplicate nonce 1
 					from: "bob",
-					tx:   makeUnsignedTxWithTestBlob(1, 1, 1, 1, 1),
+					tx:   makeUnsignedTx(1, 1, 1, 1),
 					err:  txpool.ErrUnderpriced,
 				},
 				{ // Old account, 1 tx in chain, 1 tx pending: accept nonce 2 (ignore price for now)
@@ -1277,6 +1339,43 @@ func TestAdd(t *testing.T) {
 				},
 			},
 		},
+		// Blob transactions that don't meet the min blob gas price should be rejected
+		{
+			seeds: map[string]seed{
+				"alice": {balance: 10000000},
+			},
+			adds: []addtx{
+				{ // New account, no previous txs, nonce 0, but blob fee cap too low
+					from: "alice",
+					tx:   makeUnsignedTx(0, 1, 1, 0),
+					err:  txpool.ErrUnderpriced,
+				},
+				{ // Same as above but blob fee cap equals minimum, should be accepted
+					from: "alice",
+					tx:   makeUnsignedTx(0, 1, 1, params.BlobTxMinBlobGasprice),
+					err:  nil,
+				},
+			},
+		},
+		// Tests issue #30518 where a refactor broke internal state invariants,
+		// causing included transactions not to be properly accounted and thus
+		// account states going our of sync with the chain.
+		{
+			seeds: map[string]seed{
+				"alice": {
+					balance: 1000000,
+					txs: []*types.BlobTx{
+						makeUnsignedTx(0, 1, 1, 1),
+					},
+				},
+			},
+			block: []addtx{
+				{
+					from: "alice",
+					tx:   makeUnsignedTx(0, 1, 1, 1),
+				},
+			},
+		},
 	}
 	for i, tt := range tests {
 		// Create a temporary folder for the persistent backend
@@ -1364,11 +1463,29 @@ func TestAdd(t *testing.T) {
 	}
 }
 
+// fakeBilly is a billy.Database implementation which just drops data on the floor.
+type fakeBilly struct {
+	billy.Database
+	count uint64
+}
+
+func (f *fakeBilly) Put(data []byte) (uint64, error) {
+	f.count++
+	return f.count, nil
+}
+
+var _ billy.Database = (*fakeBilly)(nil)
+
 // Benchmarks the time it takes to assemble the lazy pending transaction list
 // from the pool contents.
 func BenchmarkPoolPending100Mb(b *testing.B) { benchmarkPoolPending(b, 100_000_000) }
 func BenchmarkPoolPending1GB(b *testing.B)   { benchmarkPoolPending(b, 1_000_000_000) }
-func BenchmarkPoolPending10GB(b *testing.B)  { benchmarkPoolPending(b, 10_000_000_000) }
+func BenchmarkPoolPending10GB(b *testing.B) {
+	if testing.Short() {
+		b.Skip("Skipping in short-mode")
+	}
+	benchmarkPoolPending(b, 10_000_000_000)
+}
 
 func benchmarkPoolPending(b *testing.B, datacap uint64) {
 	// Calculate the maximum number of transaction that would fit into the pool
@@ -1391,6 +1508,15 @@ func benchmarkPoolPending(b *testing.B, datacap uint64) {
 
 	if err := pool.Init(1, chain.CurrentBlock(), makeAddressReserver()); err != nil {
 		b.Fatalf("failed to create blob pool: %v", err)
+	}
+	// Make the pool not use disk (just drop everything). This test never reads
+	// back the data, it just iterates over the pool in-memory items
+	pool.store = &fakeBilly{pool.store, 0}
+	// Avoid validation - verifying all blob proofs take significant time
+	// when the capacity is large. The purpose of this bench is to measure assembling
+	// the lazies, not the kzg verifications.
+	pool.txValidationFn = func(tx *types.Transaction, head *types.Header, signer types.Signer, opts *txpool.ValidationOptions) error {
+		return nil // accept all
 	}
 	// Fill the pool up with one random transaction from each account with the
 	// same price and everything to maximize the worst case scenario

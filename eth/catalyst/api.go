@@ -37,7 +37,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/params/forks"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -93,7 +92,6 @@ var caps = []string{
 	"engine_getPayloadV2",
 	"engine_getPayloadV3",
 	"engine_getPayloadV4",
-	"engine_getBlobsV1",
 	"engine_newPayloadV1",
 	"engine_newPayloadV2",
 	"engine_newPayloadV3",
@@ -1194,7 +1192,7 @@ func (api *ConsensusAPI) GetClientVersionV1(info engine.ClientVersionV1) []engin
 		{
 			Code:    engine.ClientCode,
 			Name:    engine.ClientName,
-			Version: params.VersionWithMeta,
+			Version: version.WithMeta,
 			Commit:  hexutil.Encode(commit),
 		},
 	}

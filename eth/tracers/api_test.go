@@ -925,7 +925,7 @@ func TestTraceChain(t *testing.T) {
 	genesis := &core.Genesis{
 		Config: params.TestChainConfig,
 		Alloc: types.GenesisAlloc{
-			accounts[0].addr: {Balance: new(big.Int).Mul(big.NewInt(params.Ether), big.NewInt(10))},
+			accounts[0].addr: {Balance: big.NewInt(params.Ether)},
 			accounts[1].addr: {Balance: big.NewInt(params.Ether)},
 			accounts[2].addr: {Balance: big.NewInt(params.Ether)},
 		},

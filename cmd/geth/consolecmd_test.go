@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -38,7 +39,7 @@ const (
 // memory and disk IO. If the args don't set --datadir, the
 // child g gets a temporary data directory.
 func runMinimalGeth(t *testing.T, args ...string) *testgeth {
-	// --goerli to make the 'writing genesis to disk' faster (no accounts)
+	// --holesky to make the 'writing genesis to disk' faster (no accounts)
 	// --networkid=1337 to avoid cache bump
 	// --syncmode=full to avoid allocating fast sync bloom
 	allArgs := []string{"--dolphin", "--networkid", "541764", "--authrpc.port", "0", "--syncmode=full", "--port", "0",
@@ -60,7 +61,7 @@ func TestConsoleWelcome(t *testing.T) {
 	geth.SetTemplateFunc("goos", func() string { return runtime.GOOS })
 	geth.SetTemplateFunc("goarch", func() string { return runtime.GOARCH })
 	geth.SetTemplateFunc("gover", runtime.Version)
-	geth.SetTemplateFunc("gethver", func() string { return params.VersionWithCommit("", "") })
+	geth.SetTemplateFunc("gethver", func() string { return version.WithCommit("", "") })
 	geth.SetTemplateFunc("niltime", func() string {
 		return time.Unix(1733296014, 0).Format("Mon Jan 02 2006 15:04:05 GMT-0700 (MST)")
 	})

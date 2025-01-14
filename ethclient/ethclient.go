@@ -630,6 +630,23 @@ func (ec *Client) SendTransaction(ctx context.Context, tx *types.Transaction) er
 	return ec.c.CallContext(ctx, nil, "eth_sendRawTransaction", hexutil.Encode(data))
 }
 
+// RevertErrorData returns the 'revert reason' data of a contract call.
+//
+// This can be used with CallContract and EstimateGas, and only when the server is Geth.
+func RevertErrorData(err error) ([]byte, bool) {
+	var ec rpc.Error
+	var ed rpc.DataError
+	if errors.As(err, &ec) && errors.As(err, &ed) && ec.ErrorCode() == 3 {
+		if eds, ok := ed.ErrorData().(string); ok {
+			revertData, err := hexutil.Decode(eds)
+			if err == nil {
+				return revertData, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func toBlockNumArg(number *big.Int) string {
 	if number == nil {
 		return "latest"
@@ -695,8 +712,6 @@ type rpcProgress struct {
 	SyncedBytecodeBytes    hexutil.Uint64
 	SyncedStorage          hexutil.Uint64
 	SyncedStorageBytes     hexutil.Uint64
-	EstimatedStateProgress float64
-
 	HealedTrienodes        hexutil.Uint64
 	HealedTrienodeBytes    hexutil.Uint64
 	HealedBytecodes        hexutil.Uint64
@@ -705,9 +720,6 @@ type rpcProgress struct {
 	HealingBytecode        hexutil.Uint64
 	TxIndexFinishedBlocks  hexutil.Uint64
 	TxIndexRemainingBlocks hexutil.Uint64
-
-	SyncMode  string
-	Committed bool
 }
 
 func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
@@ -726,7 +738,6 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		SyncedBytecodeBytes:    uint64(p.SyncedBytecodeBytes),
 		SyncedStorage:          uint64(p.SyncedStorage),
 		SyncedStorageBytes:     uint64(p.SyncedStorageBytes),
-		EstimatedStateProgress: p.EstimatedStateProgress,
 		HealedTrienodes:        uint64(p.HealedTrienodes),
 		HealedTrienodeBytes:    uint64(p.HealedTrienodeBytes),
 		HealedBytecodes:        uint64(p.HealedBytecodes),
@@ -735,7 +746,5 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		HealingBytecode:        uint64(p.HealingBytecode),
 		TxIndexFinishedBlocks:  uint64(p.TxIndexFinishedBlocks),
 		TxIndexRemainingBlocks: uint64(p.TxIndexRemainingBlocks),
-		SyncMode:               p.SyncMode,
-		Committed:              p.Committed,
 	}
 }

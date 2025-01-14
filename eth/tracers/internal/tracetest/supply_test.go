@@ -168,7 +168,8 @@ func TestSupplyEip1559Burn(t *testing.T) {
 		// A sender who makes transactions, has some eth1
 		key1, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
-		eth1    = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		// gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
+		eth1 = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
 
 		gspec = &core.Genesis{
 			Config:  &config,
@@ -413,9 +414,10 @@ func TestSupplySelfdestructItselfAndRevert(t *testing.T) {
 		dd      = common.HexToAddress("0x4444444444444444444444444444444444444444")
 		key1, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1   = crypto.PubkeyToAddress(key1.PublicKey)
-		eth1    = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
-		eth2    = new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))
-		eth5    = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.Ether))
+		// gwei5   = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.GWei))
+		eth1 = new(big.Int).Mul(common.Big1, big.NewInt(params.Ether))
+		eth2 = new(big.Int).Mul(common.Big2, big.NewInt(params.Ether))
+		eth5 = new(big.Int).Mul(big.NewInt(5), big.NewInt(params.Ether))
 
 		gspec = &core.Genesis{
 			Config: &config,
@@ -595,6 +597,7 @@ func testSupplyTracer(t *testing.T, genesis *core.Genesis, gen func(*core.BlockG
 }
 
 func compareAsJSON(t *testing.T, expected interface{}, actual interface{}) {
+	t.Helper()
 	want, err := json.Marshal(expected)
 	if err != nil {
 		t.Fatalf("failed to marshal expected value to JSON: %v", err)
@@ -606,6 +609,6 @@ func compareAsJSON(t *testing.T, expected interface{}, actual interface{}) {
 	}
 
 	if !bytes.Equal(want, have) {
-		t.Fatalf("incorrect supply info: expected %s, got %s", string(want), string(have))
+		t.Fatalf("incorrect supply info:\nwant %s\nhave %s", string(want), string(have))
 	}
 }
