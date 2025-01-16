@@ -95,6 +95,7 @@ func testPrestateDiffTracer(tracerName string, dirPath string, t *testing.T) {
 				context = test.Context.toBlockContext(test.Genesis)
 				state   = tests.MakePreState(rawdb.NewMemoryDatabase(), test.Genesis.Alloc, false, rawdb.HashScheme)
 			)
+			context.BlobBaseFee = big.NewInt(100000)
 			defer state.Close()
 
 			tracer, err := tracers.DefaultDirectory.New(tracerName, new(tracers.Context), test.TracerConfig, test.Genesis.Config)

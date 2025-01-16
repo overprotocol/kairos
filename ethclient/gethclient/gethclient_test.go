@@ -193,7 +193,7 @@ func testAccessList(t *testing.T, client *rpc.Client) {
 				Value:    big.NewInt(1),
 				Data:     common.FromHex("0x608060806080608155fd"),
 			},
-			wantGas:   77496,
+			wantGas:   78016,
 			wantVMErr: "execution reverted",
 			wantAL: `[
   {

@@ -118,6 +118,7 @@ func testCallTracer(tracerName string, dirPath string, t *testing.T) {
 				context = test.Context.toBlockContext(test.Genesis)
 				st      = tests.MakePreState(rawdb.NewMemoryDatabase(), test.Genesis.Alloc, false, rawdb.HashScheme)
 			)
+			context.BlobBaseFee = big.NewInt(100000) // 또는 더 낮은 값으로 설정
 			st.Close()
 
 			tracer, err := tracers.DefaultDirectory.New(tracerName, new(tracers.Context), test.TracerConfig, test.Genesis.Config)

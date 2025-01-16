@@ -178,8 +178,6 @@ func main() {
 		doPurge(os.Args[2:])
 	case "sanitycheck":
 		doSanityCheck()
-	case "generate":
-		doGenerate()
 	default:
 		log.Fatal("unknown command ", os.Args[1])
 	}
@@ -460,8 +458,6 @@ func doLint(cmdline []string) {
 	linter := downloadLinter(*cachedir)
 	lflags := []string{"run", "--config", ".golangci.yml"}
 	build.MustRunCommandWithOutput(linter, append(lflags, packages...)...)
-
-	doGoModTidy()
 	fmt.Println("You have achieved perfection.")
 }
 

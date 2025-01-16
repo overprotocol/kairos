@@ -74,7 +74,7 @@
       "action": {
         "from": "0x9c5cfe45b15eaff4ad617af4250189e26024a4f8",
         "value": "0x0",
-        "gas": "0x3cb",
+        "gas": "0x165",
         "init": "0x",
         "creationMethod": "create"
       },

@@ -73,19 +73,6 @@
       "action": {
         "creationMethod": "create",
         "from": "0x1d99a1a3efa9181f540f9e24fa6e4e08eb7844ca",
-        "gas": "0x50ac",
-        "init": "0x5a",
-        "value": "0x1"
-      },
-      "error": "insufficient balance for transfer",
-      "result": {},
-      "subtraces": 0,
-      "traceAddress": [0],
-      "type": "create"
-    },
-    {
-      "action": {
-        "from": "0x1d99a1a3efa9181f540f9e24fa6e4e08eb7844ca",
         "gas": "0x4e79",
         "init": "0x5a",
         "value": "0x1"
