@@ -19,7 +19,6 @@ package core
 import (
 	"errors"
 	"fmt"
-	"math"
 	gomath "math"
 	"math/big"
 	"math/rand"
@@ -1951,7 +1950,7 @@ func testSideImport(t *testing.T, numCanonBlocksInSidechain, blocksBetweenCommon
 
 		gspec = &Genesis{
 			Config:  &chainConfig,
-			Alloc:   types.GenesisAlloc{addr: {Balance: big.NewInt(math.MaxInt64)}},
+			Alloc:   types.GenesisAlloc{addr: {Balance: big.NewInt(gomath.MaxInt64)}},
 			BaseFee: big.NewInt(params.MinimumBaseFee),
 		}
 		signer     = types.LatestSigner(gspec.Config)

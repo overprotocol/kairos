@@ -236,6 +236,7 @@ func (miner *Miner) prepareWork(genParams *generateParams, witness bool) (*envir
 		vmenv := vm.NewEVM(context, vm.TxContext{}, env.state, miner.chainConfig, vm.Config{})
 		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv, env.state)
 	}
+	// Disable EIP-2935
 	// if miner.chainConfig.IsPrague(header.Number, header.Time) {
 	// 	context := core.NewEVMBlockContext(header, miner.chain, nil)
 	// 	vmenv := vm.NewEVM(context, vm.TxContext{}, env.state, miner.chainConfig, vm.Config{})

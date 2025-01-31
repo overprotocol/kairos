@@ -1,6 +1,5 @@
-## Go Ethereum
-
-Golang execution layer implementation of the Ethereum protocol.
+## Kairos
+Official golang implementation of the Over protocol execution layer, based off of [official golang implementation of the Ethereum protocol](https://github.com/ethereum/go-ethereum).
 
 [![API Reference](
 https://pkg.go.dev/badge/github.com/ethereum/go-ethereum

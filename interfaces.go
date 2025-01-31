@@ -128,6 +128,9 @@ type SyncProgress struct {
 	// "transaction indexing" fields
 	TxIndexFinishedBlocks  uint64 // Number of blocks whose transactions are already indexed
 	TxIndexRemainingBlocks uint64 // Number of blocks whose transactions are not indexed yet
+
+	SyncMode  string // Sync mode: full, snap, light
+	Committed bool   // Whether the sync is committed
 }
 
 // Done returns the indicator if the initial sync is finished or not.

@@ -712,6 +712,8 @@ type rpcProgress struct {
 	SyncedBytecodeBytes    hexutil.Uint64
 	SyncedStorage          hexutil.Uint64
 	SyncedStorageBytes     hexutil.Uint64
+	EstimatedStateProgress float64
+
 	HealedTrienodes        hexutil.Uint64
 	HealedTrienodeBytes    hexutil.Uint64
 	HealedBytecodes        hexutil.Uint64
@@ -720,6 +722,9 @@ type rpcProgress struct {
 	HealingBytecode        hexutil.Uint64
 	TxIndexFinishedBlocks  hexutil.Uint64
 	TxIndexRemainingBlocks hexutil.Uint64
+
+	SyncMode  string
+	Committed bool
 }
 
 func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
@@ -738,6 +743,7 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		SyncedBytecodeBytes:    uint64(p.SyncedBytecodeBytes),
 		SyncedStorage:          uint64(p.SyncedStorage),
 		SyncedStorageBytes:     uint64(p.SyncedStorageBytes),
+		EstimatedStateProgress: p.EstimatedStateProgress,
 		HealedTrienodes:        uint64(p.HealedTrienodes),
 		HealedTrienodeBytes:    uint64(p.HealedTrienodeBytes),
 		HealedBytecodes:        uint64(p.HealedBytecodes),
@@ -746,5 +752,7 @@ func (p *rpcProgress) toSyncProgress() *ethereum.SyncProgress {
 		HealingBytecode:        uint64(p.HealingBytecode),
 		TxIndexFinishedBlocks:  uint64(p.TxIndexFinishedBlocks),
 		TxIndexRemainingBlocks: uint64(p.TxIndexRemainingBlocks),
+		SyncMode:               p.SyncMode,
+		Committed:              p.Committed,
 	}
 }

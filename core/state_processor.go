@@ -276,7 +276,7 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, vmenv *vm.EVM, statedb vm.St
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.
 // It returns the opaque request data returned by the contract.
-func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb *state.StateDB) []byte {
+func ProcessWithdrawalQueue(vmenv *vm.EVM, statedb vm.StateDB) []byte {
 	return processRequestsSystemCall(vmenv, statedb, 0x01, params.WithdrawalQueueAddress)
 }
 
@@ -287,7 +287,7 @@ func ProcessEmptyWithdrawalQueue() []byte {
 	return requestData
 }
 
-func processRequestsSystemCall(vmenv *vm.EVM, statedb *state.StateDB, requestType byte, addr common.Address) []byte {
+func processRequestsSystemCall(vmenv *vm.EVM, statedb vm.StateDB, requestType byte, addr common.Address) []byte {
 	if tracer := vmenv.Config.Tracer; tracer != nil {
 		if tracer.OnSystemCallStart != nil {
 			tracer.OnSystemCallStart()

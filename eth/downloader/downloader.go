@@ -107,6 +107,7 @@ type Downloader struct {
 	synchronising atomic.Bool
 	notified      atomic.Bool
 	committed     atomic.Bool
+	modeSet       atomic.Bool
 	ancientLimit  uint64 // The maximum block number which can be regarded as ancient data.
 
 	// Channels
@@ -256,6 +257,8 @@ func (d *Downloader) Progress() ethereum.SyncProgress {
 		HealedBytecodeBytes:    uint64(progress.BytecodeHealBytes),
 		HealingTrienodes:       pending.TrienodeHeal,
 		HealingBytecode:        pending.BytecodeHeal,
+		SyncMode:               d.getModeStringForApp(),
+		Committed:              d.committed.Load(),
 	}
 }
 
@@ -379,6 +382,13 @@ func (d *Downloader) synchronise(mode SyncMode, beaconPing chan struct{}) error 
 
 func (d *Downloader) getMode() SyncMode {
 	return SyncMode(d.mode.Load())
+}
+
+func (d *Downloader) getModeStringForApp() string {
+	if d.modeSet.Load() {
+		return SyncMode(d.mode.Load()).String()
+	}
+	return "unset"
 }
 
 // syncToHead starts a block synchronization based on the hash chain from
