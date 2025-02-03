@@ -3,7 +3,7 @@ Official golang implementation of the Over protocol execution layer, based off o
 
 ## Building the source
 
-Building `geth` requires both a Go (version 1.19 or later) and a C compiler. You can install
+Building `geth` requires both a Go (version 1.22 or later) and a C compiler. You can install
 them using your favourite package manager. Once the dependencies are installed, run
 
 ```shell
