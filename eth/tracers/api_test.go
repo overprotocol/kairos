@@ -467,9 +467,9 @@ func TestTraceBlock(t *testing.T) {
 	genesis := &core.Genesis{
 		Config: params.TestChainConfig,
 		Alloc: types.GenesisAlloc{
-			accounts[0].addr: {Balance: big.NewInt(params.Ether)},
-			accounts[1].addr: {Balance: big.NewInt(params.Ether)},
-			accounts[2].addr: {Balance: big.NewInt(params.Ether)},
+			accounts[0].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
+			accounts[1].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
+			accounts[2].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
 		},
 	}
 	genBlocks := 10
@@ -925,9 +925,9 @@ func TestTraceChain(t *testing.T) {
 	genesis := &core.Genesis{
 		Config: params.TestChainConfig,
 		Alloc: types.GenesisAlloc{
-			accounts[0].addr: {Balance: big.NewInt(params.Ether)},
-			accounts[1].addr: {Balance: big.NewInt(params.Ether)},
-			accounts[2].addr: {Balance: big.NewInt(params.Ether)},
+			accounts[0].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
+			accounts[1].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
+			accounts[2].addr: {Balance: new(big.Int).Mul(big.NewInt(100), big.NewInt(params.Ether))},
 		},
 	}
 	genBlocks := 50
