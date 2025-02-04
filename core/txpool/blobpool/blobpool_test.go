@@ -933,8 +933,8 @@ func TestOpenCap(t *testing.T) {
 		blob2, _ = rlp.EncodeToBytes(tx2)
 		blob3, _ = rlp.EncodeToBytes(tx3)
 
-		keep = []common.Address{addr1, addr3}
-		drop = []common.Address{addr2}
+		keep = []common.Address{addr2, addr3}
+		drop = []common.Address{addr1}
 		size = uint64(2 * (txAvgSize + blobSize))
 	)
 	store.Put(blob1)
