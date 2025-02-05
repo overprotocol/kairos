@@ -338,7 +338,29 @@ func TestT8nTracing(t *testing.T) {
 		expectedTraces []string
 	}{
 		{
-			base: "./testdata/30",
+			base: "./testdata/31",
+			input: t8nInput{
+				"alloc.json", "txs.json", "env.json", "Cancun", "",
+			},
+			extraArgs:      []string{"--trace"},
+			expectedTraces: []string{"trace-0-0x88f5fbd1524731a81e49f637aa847543268a5aaf2a6b32a69d2c6d978c45dcfb.jsonl"},
+		},
+		{
+			base: "./testdata/31",
+			input: t8nInput{
+				"alloc.json", "txs.json", "env.json", "Cancun", "",
+			},
+			extraArgs: []string{"--trace.tracer", `
+{ 
+	result: function(){ 
+		return "hello world"
+	}, 
+	fault: function(){} 
+}`},
+			expectedTraces: []string{"trace-0-0x88f5fbd1524731a81e49f637aa847543268a5aaf2a6b32a69d2c6d978c45dcfb.json"},
+		},
+		{
+			base: "./testdata/32",
 			input: t8nInput{
 				"alloc.json", "txs.json", "env.json", "Paris", "",
 			},

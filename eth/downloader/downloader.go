@@ -372,7 +372,6 @@ func (d *Downloader) synchronise(mode SyncMode, beaconPing chan struct{}) error 
 	defer d.Cancel() // No matter what, we can't leave the cancel channel open
 
 	// Atomically set the requested sync mode
-	d.modeSet.CompareAndSwap(false, true)
 	d.mode.Store(uint32(mode))
 
 	if beaconPing != nil {

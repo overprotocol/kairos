@@ -18,8 +18,6 @@
     "shanghaiTime": 780,
     "cancunTime": 840,
     "terminalTotalDifficulty": 9449856,
-    "terminalTotalDifficultyPassed": true,
-    "depositContractAddress": "0x0000000000000000000000000000000000000000",
     "ethash": {}
   },
   "nonce": "0x0",
