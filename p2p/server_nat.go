@@ -28,7 +28,7 @@ import (
 
 const (
 	portMapDuration        = 10 * time.Minute
-	portMapRefreshInterval = 8 * time.Minute
+	portMapRefreshInterval = 9 * time.Minute
 	portMapRetryInterval   = 5 * time.Minute
 	extipRetryInterval     = 2 * time.Minute
 )
