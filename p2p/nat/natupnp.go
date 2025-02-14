@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/huin/goupnp"
 	"github.com/huin/goupnp/dcps/internetgateway1"
 	"github.com/huin/goupnp/dcps/internetgateway2"
@@ -81,7 +80,6 @@ func (n *upnp) ExternalIP() (addr net.IP, err error) {
 }
 
 func (n *upnp) AddMapping(protocol string, extport, intport int, desc string, lifetime time.Duration) (uint16, error) {
-	log.Debug("AddMapping", "protocol", protocol, "extport", extport, "intport", intport, "desc", desc, "lifetime", lifetime)
 	ip, err := n.internalAddress()
 	if err != nil {
 		return 0, nil // TODO: Shouldn't we return the error?
@@ -89,10 +87,13 @@ func (n *upnp) AddMapping(protocol string, extport, intport int, desc string, li
 	protocol = strings.ToUpper(protocol)
 	lifetimeS := uint32(lifetime / time.Second)
 
+	if n.service == "IGDv1-IP1" {
+		n.client.DeletePortMapping("", uint16(extport), strings.ToUpper(protocol))
+	}
+
 	err = n.withRateLimit(func() error {
 		return n.client.AddPortMapping("", uint16(extport), protocol, uint16(intport), ip.String(), true, desc, lifetimeS)
 	})
-	log.Debug("AddPortMapping", "err", err)
 	if err == nil {
 		return uint16(extport), nil
 	}
@@ -102,7 +103,6 @@ func (n *upnp) AddMapping(protocol string, extport, intport int, desc string, li
 		if err == nil {
 			extport = int(p)
 		}
-		log.Debug("addAnyPortMapping", "err", err)
 		return err
 	})
 }

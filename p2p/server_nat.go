@@ -157,10 +157,6 @@ func (srv *Server) portMappingLoop() {
 				log := newLogger(m.protocol, external, m.port)
 
 				log.Trace("Attempting port mapping")
-				err := srv.NAT.DeleteMapping(m.protocol, external, m.port)
-				if err != nil {
-					log.Debug("Couldn't delete port mapping", "err", err)
-				}
 
 				p, err := srv.NAT.AddMapping(m.protocol, external, m.port, m.name, portMapDuration)
 				if err != nil {
