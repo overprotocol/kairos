@@ -157,6 +157,7 @@ func (srv *Server) portMappingLoop() {
 				log := newLogger(m.protocol, external, m.port)
 
 				log.Trace("Attempting port mapping")
+
 				p, err := srv.NAT.AddMapping(m.protocol, external, m.port, m.name, portMapDuration)
 				if err != nil {
 					log.Debug("Couldn't add port mapping", "err", err)
