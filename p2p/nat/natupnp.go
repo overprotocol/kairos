@@ -86,10 +86,7 @@ func (n *upnp) AddMapping(protocol string, extport, intport int, desc string, li
 	}
 	protocol = strings.ToUpper(protocol)
 	lifetimeS := uint32(lifetime / time.Second)
-
-	if n.service == "IGDv1-IP1" {
-		n.client.DeletePortMapping("", uint16(extport), strings.ToUpper(protocol))
-	}
+	n.DeleteMapping(protocol, extport, intport)
 
 	err = n.withRateLimit(func() error {
 		return n.client.AddPortMapping("", uint16(extport), protocol, uint16(intport), ip.String(), true, desc, lifetimeS)
