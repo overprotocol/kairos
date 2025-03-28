@@ -238,11 +238,11 @@ func TestSuggestTipCap(t *testing.T) {
 		fork   *big.Int // London fork number
 		expect *big.Int // Expected gasprice suggestion
 	}{
-		{nil, big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))},
-		{big.NewInt(0), big.NewInt(params.MinimumBaseFee)},                          // Fork point in genesis
-		{big.NewInt(1), big.NewInt(params.MinimumBaseFee)},                          // Fork point in first block
-		{big.NewInt(32), big.NewInt(params.MinimumBaseFee + params.GWei*int64(29))}, // Fork point in last block
-		{big.NewInt(33), big.NewInt(params.MinimumBaseFee + params.GWei*int64(30))}, // Fork point in the future
+		{nil, big.NewInt((params.MinimumBaseFee + params.GWei*int64(30)) * 8 / 10)},
+		{big.NewInt(0), big.NewInt((params.MinimumBaseFee) * 8 / 10)},                          // Fork point in genesis
+		{big.NewInt(1), big.NewInt((params.MinimumBaseFee) * 8 / 10)},                          // Fork point in first block
+		{big.NewInt(32), big.NewInt((params.MinimumBaseFee + params.GWei*int64(29)) * 8 / 10)}, // Fork point in last block
+		{big.NewInt(33), big.NewInt((params.MinimumBaseFee + params.GWei*int64(30)) * 8 / 10)}, // Fork point in the future
 	}
 	for _, c := range cases {
 		backend := newTestBackend(t, c.fork, nil, false)
