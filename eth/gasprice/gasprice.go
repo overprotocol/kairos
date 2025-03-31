@@ -177,6 +177,7 @@ func (oracle *Oracle) SuggestTipCap(ctx context.Context) (*big.Int, error) {
 		result    = make(chan results, oracle.checkBlocks)
 		quit      = make(chan struct{})
 		results   []*big.Int
+		ratios    []float64
 	)
 	for sent < oracle.checkBlocks && number > 0 {
 		go oracle.getBlockValues(ctx, number, sampleNumber, oracle.ignorePrice, result, quit)
@@ -208,6 +209,7 @@ func (oracle *Oracle) SuggestTipCap(ctx context.Context) (*big.Int, error) {
 			number--
 		}
 		results = append(results, res.values...)
+		ratios = append(ratios, res.ratio)
 	}
 	price := lastPrice
 	if len(results) > 0 {
@@ -217,16 +219,54 @@ func (oracle *Oracle) SuggestTipCap(ctx context.Context) (*big.Int, error) {
 	if price.Cmp(oracle.maxPrice) > 0 {
 		price = new(big.Int).Set(oracle.maxPrice)
 	}
+
+	if len(ratios) == 0 {
+		oracle.cacheLock.Lock()
+		oracle.lastHead = headHash
+		oracle.lastPrice = price
+		oracle.cacheLock.Unlock()
+		return new(big.Int).Set(price), nil
+	}
+
+	// caculate average ratio
+	totalRatio := 0.0
+	for _, ratio := range ratios {
+		totalRatio += ratio
+	}
+	averageRatio := totalRatio / float64(len(ratios))
+
+	var congestionFactor float64
+	switch {
+	case averageRatio <= 0.5:
+		congestionFactor = 0.8
+	case averageRatio >= 0.9:
+		congestionFactor = 1.2
+	default:
+		ratioSpan := 0.9 - 0.5  // = 0.4
+		factorSpan := 1.2 - 0.8 // = 0.4
+		congestionFactor = 0.8 + (averageRatio-0.5)*(factorSpan/ratioSpan)
+	}
+
+	tipFloat := new(big.Float).SetInt(price)
+	factorFloat := big.NewFloat(congestionFactor)
+	tipFloat.Mul(tipFloat, factorFloat)
+
+	newTip, _ := tipFloat.Int(nil)
+	if newTip.Cmp(oracle.maxPrice) > 0 {
+		newTip.Set(oracle.maxPrice)
+	}
+
 	oracle.cacheLock.Lock()
 	oracle.lastHead = headHash
-	oracle.lastPrice = price
+	oracle.lastPrice = newTip
 	oracle.cacheLock.Unlock()
 
-	return new(big.Int).Set(price), nil
+	return new(big.Int).Set(newTip), nil
 }
 
 type results struct {
 	values []*big.Int
+	ratio  float64
 	err    error
 }
 
@@ -238,7 +278,7 @@ func (oracle *Oracle) getBlockValues(ctx context.Context, blockNum uint64, limit
 	block, err := oracle.backend.BlockByNumber(ctx, rpc.BlockNumber(blockNum))
 	if block == nil {
 		select {
-		case result <- results{nil, err}:
+		case result <- results{nil, 0, err}:
 		case <-quit:
 		}
 		return
@@ -272,8 +312,20 @@ func (oracle *Oracle) getBlockValues(ctx context.Context, blockNum uint64, limit
 			}
 		}
 	}
+
+	// get average gas usage
+	gasUsed := block.GasUsed()
+	gasLimit := block.GasLimit()
+
+	var ratio float64
+	if gasLimit == 0 {
+		ratio = 0.0
+	} else {
+		ratio = float64(gasUsed) / float64(gasLimit)
+	}
+
 	select {
-	case result <- results{prices, nil}:
+	case result <- results{prices, ratio, nil}:
 	case <-quit:
 	}
 }
