@@ -48,6 +48,7 @@ func main() {
 		verbosity   = flag.Int("verbosity", 3, "log verbosity (0-5)")
 		vmodule     = flag.String("vmodule", "", "log verbosity pattern")
 		extIP       = flag.String("external-ip", "", "external ip of bootnode")
+		seedNode    = flag.String("seed-node", "", "External node to connect to")
 
 		nodeKey *ecdsa.PrivateKey
 		err     error
@@ -120,6 +121,16 @@ func main() {
 	cfg := discover.Config{
 		PrivateKey:  nodeKey,
 		NetRestrict: restrictList,
+	}
+
+	// Add seed node if provided
+	if *seedNode != "" {
+		fmt.Println("Adding seed node: ", *seedNode)
+		node, err := enode.Parse(enode.ValidSchemes, *seedNode)
+		if err != nil {
+			fmt.Println("Error parsing seed node: ", err)
+		}
+		cfg.Bootnodes = []*enode.Node{node}
 	}
 
 	if *runv5 {
