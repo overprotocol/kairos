@@ -395,10 +395,35 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		// generating the payload. It's a special corner case that a few slots are
 		// missing and we are requested to generate the payload in slot.
 	} else {
-		// If the head block is already in our canonical chain, the beacon client is
-		// probably resyncing. Ignore the update.
-		log.Info("Ignoring beacon update to old head", "number", block.NumberU64(), "hash", update.HeadBlockHash, "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)), "have", api.eth.BlockChain().CurrentBlock().Number)
-		return valid(nil), nil
+		// If the head block is already in our canonical chain but is older than current head,
+		// check if we should force a reorg due to finalized block requirements
+		currentHead := api.eth.BlockChain().CurrentBlock()
+
+		// Allow reorg to older canonical blocks if:
+		// 1. The update has a finalized block hash (indicating checkpoint recovery)
+		// 2. The requested head is significantly older (potential long gap recovery)
+		if update.FinalizedBlockHash != (common.Hash{}) {
+			// Force reorg even for older canonical blocks when finalized hash is provided
+			log.Info("Forcing reorg to older canonical head due to finalized block",
+				"number", block.NumberU64(), "hash", update.HeadBlockHash,
+				"currentHead", currentHead.Number, "finalized", update.FinalizedBlockHash)
+			if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+				return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
+			}
+		} else if currentHead.Number.Uint64() > block.NumberU64() &&
+			currentHead.Number.Uint64()-block.NumberU64() > 7200 { // Allow reorg for significant gaps (>1 day ~= 7200 blocks)
+			log.Info("Forcing reorg to significantly older canonical head",
+				"number", block.NumberU64(), "hash", update.HeadBlockHash,
+				"gap", currentHead.Number.Uint64()-block.NumberU64())
+			if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+				return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
+			}
+		} else {
+			// If the head block is already in our canonical chain, the beacon client is
+			// probably resyncing. Ignore the update.
+			log.Info("Ignoring beacon update to old head", "number", block.NumberU64(), "hash", update.HeadBlockHash, "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)), "have", currentHead.Number)
+			return valid(nil), nil
+		}
 	}
 	api.eth.SetSynced()
 
