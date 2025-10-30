@@ -411,7 +411,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 			}
 		} else if currentHead.Number.Uint64() > block.NumberU64() &&
-			currentHead.Number.Uint64()-block.NumberU64() > 7200 { // Allow reorg for significant gaps (>1 day ~= 7200 blocks)
+			currentHead.Number.Uint64()-block.NumberU64() > 72000 { // Allow reorg for significant gaps (>1 day ~= 7200 blocks)
 			log.Info("Forcing reorg to significantly older canonical head",
 				"number", block.NumberU64(), "hash", update.HeadBlockHash,
 				"gap", currentHead.Number.Uint64()-block.NumberU64())
